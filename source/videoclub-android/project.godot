@@ -1,0 +1,18 @@
+config_version=5
+
+[application]
+config/name="Vidéo Club — Coop"
+config/icon="res://icon.svg"
+run/main_scene="res://mobile.tscn"
+
+[display]
+window/size/viewport_width=480
+window/size/viewport_height=800
+window/stretch/mode="canvas_items"
+window/handheld/orientation=1
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.055, 0.09, 0.17, 1)
+textures/vram_compression/import_etc2_astc=true
+

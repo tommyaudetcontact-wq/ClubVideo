@@ -1,0 +1,55 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="Vidéo Club VR"
+config/name.pcvr="Vidéo Club PC VR"
+config/use_custom_user_dir.pcvr=true
+config/custom_user_dir_name.pcvr="VideoClub-PCVR"
+config/description="Vidéoclub nostalgique — prototype natif Quest 3S"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.7", "Mobile")
+config/icon="res://icon.svg"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=800
+
+[editor_plugins]
+
+enabled=PackedStringArray()
+
+[physics]
+
+common/physics_ticks_per_second=72
+3d/physics_engine="Jolt Physics"
+
+[rendering]
+
+renderer/rendering_method="mobile"
+renderer/rendering_method.pcvr="forward_plus"
+textures/vram_compression/import_etc2_astc=true
+textures/default_filters/anisotropic_filtering_level=4
+anti_aliasing/quality/msaa_3d=2
+textures/default_filters/texture_mipmap_bias=0.0
+lights_and_shadows/positional_shadow/atlas_size=1024
+lights_and_shadows/positional_shadow/atlas_size.pcvr=2048
+
+[xr]
+
+openxr/enabled=true
+openxr/reference_space=1
+shaders/enabled=true
+
+openxr/extensions/meta/composition_layer_settings/main_projection_layer/filtering/enable_auto_filtering=false
+openxr/extensions/meta/composition_layer_settings/main_projection_layer/filtering/sharpening_mode=2
+openxr/extensions/meta/composition_layer_settings/main_projection_layer/filtering/supersampling_mode=0

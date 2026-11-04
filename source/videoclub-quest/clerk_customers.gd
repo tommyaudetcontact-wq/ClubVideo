@@ -1,0 +1,244 @@
+extends Node3D
+const Props=preload("res://clerk_props.gd")
+var game
+var clerk
+var grid=AStarGrid2D.new()
+var customers:Array=[]
+var spawn_timer=3.0
+var next_id=0
+var clock=0.0
+var queue_gate=0.0
+var walk_cache={}
+func setup(g,c):
+	game=g
+	clerk=c
+	grid.region=Rect2i(-24,-30,48,72)
+	grid.cell_size=Vector2(.25,.25)
+	grid.diagonal_mode=AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
+	grid.update()
+	for x in range(-24,24):
+		for z in range(-30,42):
+			var p=Vector3(x*.25,0,z*.25)
+			for b in game.layout.colliders:
+				if p.x>b.min[0]-.24 and p.x<b.max[0]+.24 and p.z>b.min[2]-.24 and p.z<b.max[2]+.24:
+					grid.set_point_solid(Vector2i(x,z))
+					break
+func route(c:Dictionary,target:Vector3)->bool:
+	var start=Vector2i(roundi(c.node.position.x/.25),roundi(c.node.position.z/.25))
+	var end=Vector2i(roundi(target.x/.25),roundi(target.z/.25))
+	if not grid.is_in_boundsv(start) or not grid.is_in_boundsv(end) or grid.is_point_solid(end):return false
+	c.path=grid.get_point_path(start,end)
+	c.cursor=1
+	return not c.path.is_empty()
+func spawn_customer():
+	if customers.size()>=clerk.shift.capacity():return
+	var n=Props.customer(self,next_id)
+	n.position=Vector3(-4.0,0,9.0)
+	var c={"node":n,"id":next_id,"state":"enter","path":PackedVector2Array(),"cursor":0,"wait":0.0,"messy":randf()<minf(.40,.18+.02*clerk.shift.day),"movie":randi_range(0,game.layout.movies.size()-1)}
+	next_id+=1
+	customers.append(c)
+	if clerk.shift.day>=3 and next_id%3==0:
+		var child=Props.customer(n,next_id+30)
+		child.scale=Vector3.ONE*.62
+		child.position=Vector3(.38,0,.16)
+		c.messy=true
+		c.family=true
+	c.return_job=clerk.take_due_return()
+	c.account_id=int(c.return_job.get("account_id",-1))
+	if c.account_id<0:c.account_id=clerk.accounts.choose_account(customers.map(func(customer):return int(customer.get("account_id",-1))))
+	c.visit_balance=int(clerk.accounts.ensure(c.account_id).balance)
+	c.return_and_rent=not c.return_job.is_empty() and randf()<.55
+	if not c.return_job.is_empty():
+		c.return_job.account_id=c.account_id
+		var carry=Node3D.new()
+		n.add_child(carry)
+		load("res://held_case.gd").build(carry,game.layout.movies[c.return_job.movie])
+		carry.position=Vector3(.25,.92,-.12)
+		carry.rotation.y=PI/2
+		c.carry=carry
+	route(c,Vector3(-4,0,4.5))
+func _physics_process(dt):
+	if not game:return
+	clock+=dt
+	spawn_timer-=dt
+	if spawn_timer<=0 and customers.size()<clerk.shift.capacity() and clerk.shift.can_spawn():
+		spawn_customer()
+		clerk.shift.spawned()
+		spawn_timer=randf_range(maxf(32,58-clerk.shift.day*3),maxf(45,76-clerk.shift.day*3))
+	for c in customers.duplicate():
+		var moving=false
+		if c.cursor<c.path.size():
+			var p:Vector2=c.path[c.cursor]
+			var target=Vector3(p.x,0,p.y)
+			var offset=target-c.node.position
+			var blocked=false
+			for other in customers:
+				if other.id<c.id and c.node.position.distance_to(other.node.position)<.65:blocked=true
+			var player=game.head.global_position
+			player.y=0
+			if c.node.position.distance_to(player)<.48:blocked=true
+			if offset.length()<.07:c.cursor+=1
+			elif not blocked:
+				c.node.position+=offset.normalized()*minf(dt*.95,offset.length())
+				c.node.rotation.y=lerp_angle(c.node.rotation.y,atan2(-offset.x,-offset.z),minf(1,dt*8))
+				moving=true
+		else:
+			match c.state:
+				"approach_counter":
+					c.state="service"
+					c.patience=0.0
+				"enter":
+					if not c.return_job.is_empty():
+						c.state="return_counter" if c.get("return_and_rent",false) else "return_drop"
+						route(c,Vector3(-.6,0,-5.05) if c.state=="return_counter" else Vector3(-2.5,0,-4.8))
+					else:begin_browse(c)
+				"return_counter":
+					c.return_item=clerk.deliver_return(c.return_job,c,true)
+					c.is_return=true
+					c.movie=c.return_job.movie
+					c.return_job={}
+					c.state="queue"
+				"replacement_browse":
+					c.wait-=dt
+					if c.wait<=0:
+						var candidate=clerk.reserve_stock(c.get("replacement_movie",randi_range(0,game.layout.movies.size()-1)))
+						if not candidate.is_empty():
+							clerk.replace_requested_title(c.replace_title,candidate)
+							c.state="replacement_return"
+							route(c,Vector3(-.6,0,-5.05))
+						else:choose_alternative(c,c.replace_title,true)
+				"replacement_return":
+					c.state="service"
+					c.node.rotation.y=0
+					if not c.get("replacement_queue",[]).is_empty():
+						var next_title=c.replacement_queue.pop_front()
+						choose_alternative(c,next_title)
+					clerk.refresh_terminal()
+				"return_drop":
+					clerk.deliver_return(c.return_job,c)
+					c.return_job={}
+					dismiss(c)
+				"browse":
+					if not c.has("reservations"):
+						begin_browse(c)
+						continue
+					c.wait-=dt
+					var index=int(c.get("browse_index",0))
+					if index<c.reservations.size():
+						var toward:Vector3=c.reservations[index].world.origin-c.node.position
+						c.node.rotation.y=lerp_angle(c.node.rotation.y,atan2(-toward.x,-toward.z),minf(1,dt*5))
+					if c.messy and not c.get("mess_done",false) and index==c.get("next_mess",0) and c.wait<3:
+						clerk.make_mess(c)
+						c.mess_done=true
+					if c.wait<=0:
+						if c.has("carry") and is_instance_valid(c.carry):c.carry.visible=true
+						c.browse_index=index+1
+						if c.browse_index<c.reservations.size():browse_next(c)
+						else:
+							c.state="queue"
+							route(c,Vector3([-.6,.6,1.8,-1.8,3.0][customers.find(c)%5],0,-5.05))
+				"queue":
+					if clock<queue_gate:continue
+					queue_gate=clock+12.0
+					c.state="service"
+					c.node.rotation.y=0
+					clerk.customer_ready(c)
+				"exit":
+					customers.erase(c)
+					c.node.queue_free()
+					continue
+		update_service_visual(c,dt)
+		for side in [-1,1]:
+			c.node.get_node("Arm"+str(side)).scale.y=1.6 if c==clerk.active and side==1 else 1.0
+			c.node.get_node("Leg"+str(side)).rotation.x=sin(clock*8+side*PI/2)*(.30 if moving else 0)
+			c.node.get_node("Arm"+str(side)).rotation.x=1.25 if c==clerk.active and side==1 else -sin(clock*8+side*PI/2)*(.25 if moving else 0)
+func dismiss(c:Dictionary):
+	c.state="exit"
+	route(c,Vector3(-4,0,9.0))
+
+func choose_alternative(c:Dictionary,title:int,retry:bool=false):
+	if not retry and c.state in ["replacement_browse","replacement_return"]:
+		if not c.has("replacement_queue"):c.replacement_queue=[]
+		if not c.replacement_queue.has(title):c.replacement_queue.append(title)
+		return
+	var excluded=clerk.active.get("missing",[]).duplicate()
+	for item in clerk.active.get("items",[]):excluded.append(item.movie)
+	var candidates=game.dvd_records.filter(func(r):return not excluded.has(r.movie) and not r.get("clerk_reserved",false) and not r.get("loose",false))
+	if candidates.is_empty():
+		c.state="service"
+		game._message("Aucun autre titre disponible pour ce client.")
+		return
+	var record:Dictionary=candidates.pick_random()
+	c.replacement_movie=record.movie
+	c.replace_title=title
+	c.wait=randf_range(6,11)
+	c.state="replacement_browse"
+	route(c,aisle_for(record.world.origin))
+
+func aisle_for(shelf:Vector3)->Vector3:
+	var key=Vector2i(roundi(shelf.x*4),roundi(shelf.z*4))
+	if walk_cache.has(key):return walk_cache[key]
+	var best=Vector3(-4,0,1.5)
+	var distance=INF
+	for x in range(key.x-6,key.x+7):
+		for z in range(key.y-6,key.y+7):
+			var cell=Vector2i(x,z)
+			if not grid.is_in_boundsv(cell) or grid.is_point_solid(cell):continue
+			var point=Vector3(x*.25,0,z*.25)
+			var gap=Vector2(point.x-shelf.x,point.z-shelf.z).length_squared()
+			if gap<distance:
+				best=point
+				distance=gap
+	walk_cache[key]=best
+	return best
+func begin_browse(c:Dictionary):
+	if not clerk.select_film(c):
+		dismiss(c)
+		return
+	c.browse_index=0
+	c.next_mess=randi_range(0,c.reservations.size()-1)
+	c.mess_done=false
+	if c.has("carry") and is_instance_valid(c.carry):c.carry.visible=false
+	browse_next(c)
+func browse_next(c:Dictionary):
+	c.state="browse"
+	c.wait=randf_range(6,12)
+	var record:Dictionary=c.reservations[c.browse_index]
+	if not route(c,aisle_for(record.world.origin)):
+		# A blocked shelf never creates a permanently stuck customer.
+		c.wait=2.0
+		c.path=PackedVector2Array()
+		c.cursor=0
+
+func update_service_visual(c:Dictionary,dt:float):
+	var at_counter=c.state=="service"
+	if at_counter:
+		var toward:Vector3=game.head.global_position-c.node.global_position
+		if toward.length_squared()>.01:c.node.rotation.y=lerp_angle(c.node.rotation.y,atan2(-toward.x,-toward.z),minf(1,dt*6))
+	var bar=c.node.get_node_or_null("Patience")
+	if not bar:
+		bar=Node3D.new()
+		bar.name="Patience"
+		c.node.add_child(bar)
+		bar.position.y=1.99
+		for i in range(2):
+			var panel=MeshInstance3D.new()
+			panel.name="Fill" if i else "Background"
+			var mesh=QuadMesh.new()
+			mesh.size=Vector2(.42,.045)
+			panel.mesh=mesh
+			var mat=StandardMaterial3D.new()
+			mat.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.albedo_color=Color("43be72") if i else Color("23272b")
+			panel.material_override=mat
+			panel.position.z=.002*i
+			bar.add_child(panel)
+	bar.visible=at_counter
+	if at_counter:
+		bar.look_at(game.head.global_position,Vector3.UP,true)
+		var limit=120.0+float(c.get("patience_bonus",0))
+		var fraction=clampf(1-float(c.get("patience",0))/limit,0,1)
+		var fill=bar.get_node("Fill")
+		fill.scale.x=maxf(.001,fraction)
+		fill.position.x=-.21*(1-fraction)
+		fill.material_override.albedo_color=Color("e85249") if fraction<.25 else Color("43be72")
