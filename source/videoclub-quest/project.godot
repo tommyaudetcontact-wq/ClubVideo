@@ -23,6 +23,8 @@ config/icon="res://icon.svg"
 
 window/size/viewport_width=1280
 window/size/viewport_height=800
+window/stretch/mode.touchgame="canvas_items"
+window/handheld/orientation.touchgame=0
 
 [editor_plugins]
 

@@ -1,5 +1,7 @@
 extends Node3D
 const Props=preload("res://clerk_props.gd")
+const Actor=preload("res://customer_actor.gd")
+const MAX_VISIBLE_PEOPLE=8
 var game
 var clerk
 var grid=AStarGrid2D.new()
@@ -31,18 +33,22 @@ func route(c:Dictionary,target:Vector3)->bool:
 	c.cursor=1
 	return not c.path.is_empty()
 func spawn_customer():
-	if customers.size()>=clerk.shift.capacity():return
-	var n=Props.customer(self,next_id)
+	if customers.size()>=clerk.shift.capacity() or population()>=MAX_VISIBLE_PEOPLE:return
+	var n=Props.customer(self,next_id%6)
 	n.position=Vector3(-4.0,0,9.0)
 	var c={"node":n,"id":next_id,"state":"enter","path":PackedVector2Array(),"cursor":0,"wait":0.0,"messy":randf()<minf(.40,.18+.02*clerk.shift.day),"movie":randi_range(0,game.layout.movies.size()-1)}
 	next_id+=1
 	customers.append(c)
-	if clerk.shift.day>=3 and next_id%3==0:
-		var child=Props.customer(n,next_id+30)
-		child.scale=Vector3.ONE*.62
-		child.position=Vector3(.38,0,.16)
-		c.messy=true
+	var remaining:=MAX_VISIBLE_PEOPLE-population()
+	var group:=randf()
+	c.companions=[]
+	if remaining>=1 and group<.24:
 		c.family=true
+		c.companions.append(randi_range(6,7))
+		if remaining>=2 and randf()<.38:c.companions.append((c.companions[0]+1)%2+6)
+	elif remaining>=1 and group<.44:
+		c.companions.append((int(c.id)%6+randi_range(1,5))%6)
+	attach_companions(c)
 	c.return_job=clerk.take_due_return()
 	c.account_id=int(c.return_job.get("account_id",-1))
 	if c.account_id<0:c.account_id=clerk.accounts.choose_account(customers.map(func(customer):return int(customer.get("account_id",-1))))
@@ -51,20 +57,38 @@ func spawn_customer():
 	if not c.return_job.is_empty():
 		c.return_job.account_id=c.account_id
 		var carry=Node3D.new()
-		n.add_child(carry)
+		Actor.equip(n,carry)
 		load("res://held_case.gd").build(carry,game.layout.movies[c.return_job.movie])
-		carry.position=Vector3(.25,.92,-.12)
-		carry.rotation.y=PI/2
 		c.carry=carry
 	route(c,Vector3(-4,0,4.5))
+func attach_companions(customer:Dictionary):
+	var parent:Node3D=customer.node
+	for i in range(customer.get("companions",[]).size()):
+		var model:int=customer.companions[i]
+		var follower:=Props.customer(parent,model)
+		follower.name="Companion%d"%i
+		follower.position=Vector3(.28 if i==0 else -.23,0,.53+i*.41)
+		if model>=6 and not follower.has_node("ActorVisual"):follower.scale=Vector3.ONE*.66
+
+func population()->int:
+	var total:=customers.size()
+	for customer in customers:total+=customer.get("companions",[]).size()
+	return total
+
+func traffic_interval(progress:float,day:int)->Vector2:
+	var peak:=(progress>=.17 and progress<.38) or (progress>=.65 and progress<.87)
+	var difficulty:=clampf((day-1)*1.6,0,13)
+	return Vector2(19-difficulty*.45,32-difficulty*.65) if peak else Vector2(54-difficulty,83-difficulty)
+
 func _physics_process(dt):
 	if not game:return
 	clock+=dt
 	spawn_timer-=dt
-	if spawn_timer<=0 and customers.size()<clerk.shift.capacity() and clerk.shift.can_spawn():
+	if spawn_timer<=0 and customers.size()<clerk.shift.capacity() and population()<MAX_VISIBLE_PEOPLE and clerk.shift.can_spawn():
 		spawn_customer()
 		clerk.shift.spawned()
-		spawn_timer=randf_range(maxf(32,58-clerk.shift.day*3),maxf(45,76-clerk.shift.day*3))
+		var window:=traffic_interval(1.0-clerk.shift.time_left/maxf(clerk.shift.duration,1.0),clerk.shift.day)
+		spawn_timer=randf_range(window.x,window.y)
 	for c in customers.duplicate():
 		var moving=false
 		if c.cursor<c.path.size():
@@ -139,6 +163,13 @@ func _physics_process(dt):
 							route(c,Vector3([-.6,.6,1.8,-1.8,3.0][customers.find(c)%5],0,-5.05))
 				"queue":
 					if clock<queue_gate:continue
+					if c.node.has_node("ActorVisual") and c.has("carry") and is_instance_valid(c.carry) and c.carry.visible:
+						if not c.has("handoff_wait"):
+							c.handoff_wait=1.70
+							Actor.animate(c.node,"HandOff")
+						c.handoff_wait-=dt
+						if c.handoff_wait>0:continue
+					c.erase("handoff_wait")
 					queue_gate=clock+12.0
 					c.state="service"
 					c.node.rotation.y=0
@@ -148,10 +179,20 @@ func _physics_process(dt):
 					c.node.queue_free()
 					continue
 		update_service_visual(c,dt)
-		for side in [-1,1]:
-			c.node.get_node("Arm"+str(side)).scale.y=1.6 if c==clerk.active and side==1 else 1.0
-			c.node.get_node("Leg"+str(side)).rotation.x=sin(clock*8+side*PI/2)*(.30 if moving else 0)
-			c.node.get_node("Arm"+str(side)).rotation.x=1.25 if c==clerk.active and side==1 else -sin(clock*8+side*PI/2)*(.25 if moving else 0)
+		var holding:bool=c.has("carry") and is_instance_valid(c.carry) and c.carry.visible
+		var picking:bool=c.state=="browse" and not moving and c.cursor>=c.path.size() and c.wait<2.65
+		if picking and c.wait<1.21 and c.has("carry") and is_instance_valid(c.carry):c.carry.visible=true
+		if c.node.has_node("ActorVisual"):
+			var key:="Receive" if c==clerk.active and c.state=="service" else "Pick" if picking else ("CarryWalk" if holding else "Walk") if moving else ("CarryIdle" if holding else "Idle")
+			Actor.animate(c.node,key)
+			for i in range(c.get("companions",[]).size()):
+				var follower:Node3D=c.node.get_node_or_null("Companion%d"%i)
+				if follower:Actor.animate(follower,"Walk" if moving else "Idle")
+		else:
+			for side in [-1,1]:
+				c.node.get_node("Arm"+str(side)).scale.y=1.6 if c==clerk.active and side==1 else 1.0
+				c.node.get_node("Leg"+str(side)).rotation.x=sin(clock*8+side*PI/2)*(.30 if moving else 0)
+				c.node.get_node("Arm"+str(side)).rotation.x=1.25 if c==clerk.active and side==1 else -sin(clock*8+side*PI/2)*(.25 if moving else 0)
 func dismiss(c:Dictionary):
 	c.state="exit"
 	route(c,Vector3(-4,0,9.0))

@@ -1,5 +1,8 @@
 extends Node3D
 
+var touch_profile := OS.has_feature("touchgame") or "--touch-profile" in OS.get_cmdline_user_args()
+var touch_controls:CanvasLayer
+var lobby:Node
 var pc_vr := OS.has_feature("pcvr") or "--pcvr-profile" in OS.get_cmdline_user_args()
 var COVER_DETAIL_BUDGET := 96 if pc_vr else 48
 var COVER_DETAIL_ENTER := 5.0 if pc_vr else 4.0
@@ -128,9 +131,17 @@ func _ready() -> void:
 	clerk=load("res://clerk_simulator.gd").new()
 	add_child(clerk)
 	clerk.setup(self)
+	lobby=preload("res://club_lobby.gd").new()
+	add_child(lobby)
+	lobby.setup(self)
 	session=load("res://club_save.gd").new()
 	add_child(session)
+	if touch_profile and not OS.has_feature("android"):session.save_path="user://touch-playtest.dat"
 	session.setup(self)
+	if touch_profile:
+		touch_controls=load("res://touch_game.gd").new()
+		add_child(touch_controls)
+		touch_controls.setup(self)
 	if pc_vr:
 		var presentation=load("res://pc_presentation.gd").new()
 		add_child(presentation)
@@ -264,7 +275,7 @@ func _prepare_player() -> void:
 	add_child(origin)
 	var xr = XRServer.find_interface("OpenXR")
 	xr_interface = xr
-	if xr and xr.is_initialized():
+	if not touch_profile and xr and xr.is_initialized():
 		xr_active = true
 		get_viewport().use_xr = true
 		xr.render_target_size_multiplier = 1.0 if pc_vr else 1.4
@@ -694,7 +705,7 @@ func _recenter_entry(force := false) -> void:
 	_write_diagnostics()
 
 func _write_diagnostics() -> void:
-	var state := {"xr_active":xr_active,"tracking":xr_interface.get_tracking_status() if xr_interface else -1,"spawn_centered":spawn_centered,"head_local":[head.position.x,head.position.y,head.position.z],"head_world":[head.global_position.x,head.global_position.y,head.global_position.z],"origin":[origin.position.x,origin.position.y,origin.position.z],"viewport_xr":get_viewport().use_xr,"viewport_size":str(get_viewport().get_visible_rect().size),"xr_target_size":str(xr_interface.get_render_target_size()) if xr_interface else "none","msaa":get_viewport().msaa_3d,"camera_current":head.current,"fps":Engine.get_frames_per_second(),"dvd_count":dvd_records.size(),"near_covers":lod_selected.size(),"lod_candidates":lod_last_examined,"build":"PC-0.6.5" if pc_vr else "0.6.5","teleport_mode":teleportation.enabled,"baked_lighting":baked_lighting_active,"active_trailer":active_trailer,"trailer_playing":trailer_player.is_playing(),"video_position":trailer_player.stream_position,"screens":screens.size(),"draw_calls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)}
+	var state := {"xr_active":xr_active,"tracking":xr_interface.get_tracking_status() if xr_interface else -1,"spawn_centered":spawn_centered,"head_local":[head.position.x,head.position.y,head.position.z],"head_world":[head.global_position.x,head.global_position.y,head.global_position.z],"origin":[origin.position.x,origin.position.y,origin.position.z],"viewport_xr":get_viewport().use_xr,"viewport_size":str(get_viewport().get_visible_rect().size),"xr_target_size":str(xr_interface.get_render_target_size()) if xr_interface else "none","msaa":get_viewport().msaa_3d,"camera_current":head.current,"fps":Engine.get_frames_per_second(),"dvd_count":dvd_records.size(),"near_covers":lod_selected.size(),"lod_candidates":lod_last_examined,"build":"PC-0.6.5" if pc_vr else "0.6.7","teleport_mode":teleportation.enabled,"baked_lighting":baked_lighting_active,"active_trailer":active_trailer,"trailer_playing":trailer_player.is_playing(),"video_position":trailer_player.stream_position,"screens":screens.size(),"draw_calls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)}
 	state["texture_mip_bias"]=ProjectSettings.get_setting("rendering/textures/default_filters/texture_mipmap_bias",0.0)
 	state["foveation_level"]=xr_interface.call("get_foveation_level") if xr_interface and xr_interface.has_method("get_foveation_level") else -1
 	if Engine.has_singleton("OpenXRFbCompositionLayerSettingsExtension"):

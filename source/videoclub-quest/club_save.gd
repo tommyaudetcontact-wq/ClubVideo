@@ -3,7 +3,7 @@ const VERSION=2
 const CASE_META=["disc_movie","disc_uid","dirty","inspected","antitheft","sort_slot","in_basket","in_sort_tray","barcode_scanned","needs_relock","return_account","return_cycle","return_checked","returned_damage"]
 const SHIFT_FIELDS=["day","duration","time_left","closing","summary","started","served","abandoned","lost_sales","missed_scans","revenue","refunds","returned","restocked","damaged","initial_cash","wave","break_left","report","business_balance"]
 const COUNTER_FIELDS=["price","tender","tender_parts","tender_received","tender_deposited","paid","change","drawer_open","page","rentals","elapsed","customer_delay","chute_serial","tasks","reminders"]
-const CLIENT_FIELDS=["id","state","cursor","wait","messy","movie","patience","patience_bonus","missing","handed","is_return","replace_title","replacement_movie","replacement_queue","family","return_and_rent","browse_index","price_titles","discount","cash_started","next_mess","mess_done","account_id","visit_balance","account_due","offer_ready","subtotal","gst","qst","billed_titles"]
+const CLIENT_FIELDS=["id","state","cursor","wait","messy","movie","patience","patience_bonus","missing","handed","is_return","replace_title","replacement_movie","replacement_queue","family","companions","handoff_wait","return_and_rent","browse_index","price_titles","discount","cash_started","next_mess","mess_done","account_id","visit_balance","account_due","offer_ready","subtotal","gst","qst","billed_titles"]
 var game
 var save_path="user://club-save.dat"
 var autosave_clock=0.0
@@ -256,7 +256,7 @@ func restore(s:Dictionary)->bool:
 	c.basket.body.global_transform=s.get("basket_transform",Transform3D(Basis.IDENTITY,c.basket.home))
 	c.basket.restore_items()
 	for saved in s.clients:
-		var node=load("res://clerk_props.gd").customer(c.customers,saved.id)
+		var node=load("res://clerk_props.gd").customer(c.customers,int(saved.id)%6)
 		node.position=saved.position
 		node.rotation=saved.rotation
 		var customer={"node":node,"record":{} if saved.record<0 else game.dvd_records[saved.record],"reservations":[],"items":[],"return_job":unpack_job(saved.return_job),"path":saved.path}
@@ -268,17 +268,13 @@ func restore(s:Dictionary)->bool:
 		if saved.return_item>=0:customer.return_item=c.cases[saved.return_item]
 		if saved.carry or not saved.return_job.is_empty():
 			var carry=Node3D.new()
-			node.add_child(carry)
+			load("res://customer_actor.gd").equip(node,carry)
 			var movie=saved.return_job.movie if not saved.return_job.is_empty() else saved.movie
 			load("res://held_case.gd").build(carry,game.layout.movies[movie])
-			carry.position=Vector3(.25,.92,-.12)
-			carry.rotation.y=PI/2
 			carry.visible=saved.carry
 			customer.carry=carry
-		if saved.get("family",false):
-			var child=load("res://clerk_props.gd").customer(node,saved.id+30)
-			child.scale=Vector3.ONE*.62
-			child.position=Vector3(.38,0,.16)
+		if not customer.has("companions"):customer.companions=[6+int(saved.id)%2] if saved.get("family",false) else []
+		c.customers.attach_companions(customer)
 		c.customers.customers.append(customer)
 	c.active={} if s.active<0 else c.customers.customers[s.active]
 	for index in s.waiting:

@@ -59,6 +59,7 @@ static func rounded(parent:Node3D,pos:Vector3,scale_shape:Vector3,color:String)-
 static func customer(parent:Node3D,index:int)->Node3D:
 	var n=Node3D.new()
 	parent.add_child(n)
+	if load("res://customer_actor.gd").attach(n,index):return n
 	var skin="c99675" if index%2==0 else "82553e"
 	rounded(n,Vector3(0,1.16,0),Vector3(.22,.30,.135),"315a83" if index%2==0 else "803b35")
 	cylinder(n,Vector3(0,1.51,0),.064,.12,skin)

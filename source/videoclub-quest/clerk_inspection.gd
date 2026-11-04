@@ -141,6 +141,9 @@ func toggle_case():
 	clean_progress=0
 	game._message("Poignée sur le bord : ouvre avec ta main. Relâche après un petit mouvement pour finir le geste. Gâchette près du centre : sortir le disque.")
 func finger_transform(hand:int)->Transform3D:
+	if game.touch_profile and game.touch_controls:
+		var direction:=Basis(Vector3.UP,PI) if game.touch_controls.disc_back else Basis.IDENTITY
+		return game.head.global_transform*Transform3D(direction,Vector3(.19,-.10,-.41))
 	var visual=game.hand_visuals[hand]
 	var s:Skeleton3D=visual.skeleton
 	var tip=s.find_bone("index-finger-tip")
@@ -192,25 +195,32 @@ func interact(hand:int,grip:bool=false)->bool:
 				chosen=loose
 				nearest=gap
 		if not chosen.is_empty():
-			carried=chosen.node
-			carried_data=chosen.data
-			loose_discs.erase(chosen)
-			finger=hand
-			source_case=null
+			take_loose_disc(chosen,hand)
 			return true
 	if not opened:return false
 	if opening_amount<.30:return false
 	if hand==game.held_hand:return true
 	if finger<0 and is_instance_valid(disc) and disc.visible and fingertip.distance_to(disc.global_position)<.13:
-		finger=hand
-		carried=disc
-		carried_data={"movie":int(case_node.get_meta("disc_movie",case_node.get_meta("movie",game.movie_id))),"uid":int(case_node.get_meta("disc_uid",-1)),"dirty":case_node.get_meta("dirty",false),"inspected":false}
-		source_case=case_node
-		load("res://clerk_inventory.gd").put(case_node,-1,-1)
-		carried.reparent(self)
-		disc=null
-		game._message("Disque sur l'index : inspecte les deux faces, réinsère-le ou pose-le dans le bac À DÉMÊLER.")
+		take_open_disc(hand)
 	return true
+
+func take_loose_disc(item:Dictionary,hand:int):
+	carried=item.node
+	carried_data=item.data
+	loose_discs.erase(item)
+	finger=hand
+	source_case=null
+
+func take_open_disc(hand:int):
+	if finger>=0 or not opened or opening_amount<.30 or not is_instance_valid(disc) or not disc.visible:return
+	finger=hand
+	carried=disc
+	carried_data={"movie":int(case_node.get_meta("disc_movie",case_node.get_meta("movie",game.movie_id))),"uid":int(case_node.get_meta("disc_uid",-1)),"dirty":case_node.get_meta("dirty",false),"inspected":false}
+	source_case=case_node
+	load("res://clerk_inventory.gd").put(case_node,-1,-1)
+	carried.reparent(self)
+	disc=null
+	game._message("Inspecte le disque, puis remets-le dans le boîtier ou dépose-le au tri.")
 func _physics_process(dt):
 	if finger<0 or not is_instance_valid(carried):return
 	carried.global_transform=finger_transform(finger)

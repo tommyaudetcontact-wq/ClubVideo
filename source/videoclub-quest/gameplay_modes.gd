@@ -5,6 +5,7 @@ var rain_enabled := true
 var trailers_muted := false
 var menu_open := false
 var menu_page=0
+var invite_mode := false
 var confirm_new=false
 var confirm_load=false
 var panel: Node3D
@@ -46,7 +47,7 @@ func _build_menu() -> void:
 	title.position=Vector3(0,.57,.012)
 	title.modulate=Color("f2c362")
 	panel.add_child(title)
-	for row in range(9):
+	for row in range(10):
 		var label:=Label3D.new()
 		label.font_size=33
 		label.pixel_size=.00075
@@ -57,6 +58,19 @@ func _build_menu() -> void:
 	_refresh_labels()
 
 func _refresh_labels() -> void:
+	if menu_page==2:
+		for label in labels:label.text=""
+		labels[0].text="Retour"
+		labels[1].text="LOBBY WI-FI · Test"
+		if not game.lobby:return
+		labels[2].text="Action : "+("Inviter" if invite_mode else "Demander à rejoindre")
+		var players:Array=game.lobby.list_players()
+		for i in range(mini(players.size(),4)):labels[i+3].text=players[i].name
+		if players.is_empty():labels[3].text="Aucun joueur détecté"
+		labels[7].text="Lire / accuser réception" if not game.lobby.incoming.is_empty() else ""
+		labels[8].text="Refuser la demande" if not game.lobby.incoming.is_empty() else ""
+		labels[9].text=game.lobby.status.left(46)
+		return
 	if menu_page==1:
 		for label in labels:label.text=""
 		labels[0].text="Retour aux options"
@@ -77,6 +91,7 @@ func _refresh_labels() -> void:
 	labels[6].text="Ouvrir Netflix / connexion"
 	labels[7].text="Son des bandes-annonces : "+("COUPÉ" if trailers_muted else "ACTIVÉ")
 	labels[8].text="Partie · sauvegarder / continuer / nouvelle"
+	labels[9].text="Lobby Wi-Fi · nouvelle demande" if game.lobby and not game.lobby.incoming.is_empty() else "Lobby Wi-Fi · test de présence"
 
 func toggle_pause() -> void:
 	confirm_new=false
@@ -110,11 +125,20 @@ func _menu_hit(origin: Vector3,direction: Vector3) -> int:
 	if t<0 or t>3:return -1
 	var p:=a+d*t
 	if absf(p.x)>.43:return -1
-	for i in range(9):
+	for i in range(10):
 		if absf(p.y-(.43-i*.108))<.045:return i
 	return -1
 
 func _activate(row: int) -> void:
+	if menu_page==2:
+		match row:
+			0:menu_page=0
+			2:invite_mode=not invite_mode
+			3,4,5,6:game.lobby.request(row-3,invite_mode)
+			7:game.lobby.reply(true)
+			8:game.lobby.reply(false)
+		_refresh_labels()
+		return
 	if menu_page==1:
 		match row:
 			0:
@@ -146,6 +170,10 @@ func _activate(row: int) -> void:
 		5:game.netflix.toggle()
 		6:OS.shell_open("https://www.netflix.com/ca-fr/login")
 		8:menu_page=1
+		9:
+			if game.lobby:
+				game.lobby.start()
+				menu_page=2
 		7:
 			trailers_muted=not trailers_muted
 			_apply_trailer_audio()
@@ -159,6 +187,7 @@ func _apply_trailer_audio() -> void:
 
 func _physics_process(delta: float) -> void:
 	if menu_open:
+		if menu_page==2:_refresh_labels()
 		for i in range(2):
 			var pressed:bool=game.hands[i].get_float(&"trigger")>.6
 			var row:=_menu_hit(game.aim_hands[i].global_position,-game.aim_hands[i].global_basis.z)
@@ -166,7 +195,7 @@ func _physics_process(delta: float) -> void:
 			last_triggers[i]=pressed
 			game.hand_visuals[i].update_grip(delta,game.hands[i].get_float(&"trigger"),game.hands[i].get_float(&"grip"),game.held_hand==i)
 		return
-	if not game.xr_active:
+	if not game.xr_active and not game.touch_profile:
 		var v:=Vector2(float(Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT))-float(Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_Q) or Input.is_physical_key_pressed(KEY_LEFT)),float(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_Z) or Input.is_physical_key_pressed(KEY_UP))-float(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN)))
 		if v.length()>1:v=v.normalized()
 		var f:Vector3=-game.head.global_basis.z

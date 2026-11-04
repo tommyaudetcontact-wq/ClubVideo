@@ -319,10 +319,8 @@ func select_film(c:Dictionary)->bool:
 	if c.record.is_empty():return false
 	if c.has("carry") and is_instance_valid(c.carry):c.carry.queue_free()
 	var carry=Node3D.new()
-	c.node.add_child(carry)
+	load("res://customer_actor.gd").equip(c.node,carry)
 	load("res://held_case.gd").build(carry,game.layout.movies[c.movie])
-	carry.position=Vector3(.25,.92,-.12)
-	carry.rotation=Vector3(0,PI/2,0)
 	add_lock(carry)
 	c.carry=carry
 	c.reservations=[c.record]
@@ -801,6 +799,8 @@ func _physics_process(dt):
 	# Returning customers deliver the actual rented copy through the chute.
 func customer_hand()->Vector3:
 	if active.is_empty():return Vector3.INF
+	var mount:Node3D=load("res://customer_actor.gd").mount(active.node)
+	if mount!=active.node:return mount.global_position
 	return active.node.get_node("Arm1").to_global(Vector3(0,-.45,0))
 func build_return_chute():
 	Props.box(self,Vector3(-2.55,1.03,-5.9),Vector3(.52,.35,.32),"555c60")
