@@ -702,13 +702,25 @@ func case_drop_target()->Vector3:
 	var table:=table_point(.93)
 	if clerk.repairs.is_case_surface(table):return table
 	var counter:=table_point(1.18)
-	if counter.x>-.36 and counter.x<.52 and counter.z>-6.53 and counter.z<-6.06:
+	if on_checkout_surface(counter):
 		return counter
 	return Vector3.INF
+
+func on_checkout_surface(point:Vector3)->bool:
+	return point.x>-.36 and point.x<.52 and point.z>-6.53 and point.z<-6.06 and point.y>=1.17 and point.y<=1.21
 
 func place_held_case(destination:Vector3):
 	if clerk.inspection.opened:
 		game._message("Referme le boîtier avant de le déposer.")
+		return
+	if on_checkout_surface(destination) and not clerk.held_service.is_empty():
+		var item:RigidBody3D=game.held
+		item.reparent(clerk)
+		item.global_transform=Transform3D(Basis(Vector3.RIGHT,-PI/2),destination)
+		item.freeze=true
+		clerk.clear_hand()
+		game._message("Boîtier posé sur le comptoir.")
+		sync_hands()
 		return
 	game.held.global_position=destination
 	if clerk.repairs.is_case_surface(destination) and not clerk.held_service.is_empty():
