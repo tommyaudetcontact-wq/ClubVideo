@@ -204,7 +204,7 @@ func update_children(c:Dictionary,dt:float):
 			var child:Node3D=c.node.get_node_or_null("Companion%d"%i)
 			if not child or int(c.companions[i])<6:continue
 			var run:Dictionary={"node":child}
-			if route(run,Vector3(-4,0,1.5+i)):
+			if route(run,Vector3(-1.0 if i==0 else 1.0,0,.5)):
 				child.set_meta("aisle_run",{"path":run.path,"cursor":1,"home":child.position,"drop":count if i==0 else 0,"back":false})
 	for i in range(c.companions.size()):
 		var child:Node3D=c.node.get_node_or_null("Companion%d"%i)
