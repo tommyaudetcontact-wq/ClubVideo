@@ -6,6 +6,7 @@ var buttons:Control
 var menu:VBoxContainer
 var operations:VBoxContainer
 var basket_button:Button
+var flip_button:Button
 var lock_button:Button
 var basket_panel:VBoxContainer
 const BASKET_REACH := 1.8
@@ -148,6 +149,8 @@ func setup(g):
 	buttons.add_child(supplies)
 	basket_button=add_button(supplies,"Panier",open_basket)
 	lock_button=add_button(supplies,"Antivol",use_lock)
+	flip_button=add_button(supplies,"Voir le dos",flip_item)
+	flip_button.hide()
 	basket_button.hide()
 	lock_button.hide()
 	basket_panel=make_panel()
@@ -316,6 +319,7 @@ func _physics_process(delta:float):
 	if get_tree().paused:
 		counter_actions.hide()
 		basket_button.hide()
+		flip_button.hide()
 		lock_button.hide()
 		if game.modes.menu_open and not menu.get_parent().visible and (not lobby_panel or not lobby_panel.get_parent().visible):menu.get_parent().show()
 		return
@@ -526,6 +530,9 @@ func refresh_supply_buttons():
 	basket_button.text="Panier (%d)"%clerk.basket.items.size()
 	basket_button.disabled=action_busy()
 	lock_button.hide()
+	flip_button.visible=in_play and game.held!=null and not clerk.inspection.opened and clerk.inspection.finger<0
+	flip_button.disabled=action_busy()
+	flip_button.text="Voir la couverture" if game.held_back else "Voir le dos"
 	if not in_play or not game.held or clerk.inspection.opened:return
 	var locked:bool=game.held.get_meta("antitheft",false)
 	lock_button.visible=near(DETACHER) if locked else spare_carried or near(clerk.lock_bin)

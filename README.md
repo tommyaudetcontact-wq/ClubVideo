@@ -6,6 +6,6 @@ Simulateur de vidéoclub du début des années 2000. Les clients arrivent seuls,
 - Android : jeu 3D tactile avec sauvegarde locale.
 - Lobby Wi-Fi : détection et demandes de présence en test. Le drop-in n’est pas encore disponible.
 
-[Quest 0.7.4](https://github.com/tommyaudetcontact-wq/ClubVideo/releases/tag/v0.7.4) · [Android 0.7.5](https://github.com/tommyaudetcontact-wq/ClubVideo/releases/tag/v0.7.5) · [Page de téléchargement](https://tommyaudetcontact-wq.github.io/ClubVideo/) · [Versions](https://github.com/tommyaudetcontact-wq/ClubVideo/releases)
+[Quest 0.7.4](https://github.com/tommyaudetcontact-wq/ClubVideo/releases/tag/v0.7.4) · [Android 0.7.6](https://github.com/tommyaudetcontact-wq/ClubVideo/releases/tag/v0.7.6) · [Page de téléchargement](https://tommyaudetcontact-wq.github.io/ClubVideo/) · [Versions](https://github.com/tommyaudetcontact-wq/ClubVideo/releases)
 
 La sauvegarde complète de référence est l’archive source de la release 0.6.5. Les scripts et les nouvelles ressources suivis dans `source/` s’appliquent par-dessus cette archive.
