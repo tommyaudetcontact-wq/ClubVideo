@@ -104,9 +104,10 @@ func setup(g):
 	action_hint.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	buttons.add_child(action_hint)
 	menu=make_panel()
-	add_button(menu,"Reprendre",toggle_menu)
+	add_button(menu,"Jouer en solo",play_solo)
 	add_button(menu,"Sauvegarder",func():game.session.save_game())
-	add_button(menu,"Continuer la sauvegarde",func():game.session.continue_game())
+	var continue_button:=add_button(menu,"Continuer la sauvegarde",continue_solo)
+	continue_button.disabled=not FileAccess.file_exists(game.session.save_path) and not FileAccess.file_exists(game.session.save_path+".bak")
 	add_button(menu,"Nouvelle partie",confirm_new_game)
 	add_button(menu,"Son des bandes-annonces",func():game.modes._activate(7))
 	add_button(menu,"Lobby Wi-Fi",open_lobby)
@@ -126,6 +127,22 @@ func setup(g):
 	add_button(grid,"S’accroupir / se relever",func():crouching=not crouching)
 	add_button(operations,"Fermer",toggle_operations)
 	sync_hands()
+	if OS.has_feature("android") and not game.session.tools_run:call_deferred("show_start_menu")
+
+func show_start_menu():
+	if not game.modes.menu_open:toggle_menu()
+	else:
+		game.modes.panel.hide()
+		menu.get_parent().show()
+
+func play_solo():
+	if game.modes.menu_open:toggle_menu()
+	game.clerk.shift.started=true
+	game._message("Partie solo démarrée. Le club est ouvert.")
+
+func continue_solo():
+	if not game.session.continue_game():
+		game._message(game.session.last_status)
 
 func add_button(parent:Container,title:String,call:Callable)->Button:
 	var button:=Button.new()
@@ -506,7 +523,7 @@ func refresh_lobby():
 		lobby_panel.remove_child(child)
 		child.queue_free()
 	var heading:=Label.new()
-	heading.text="Lobby Wi-Fi · Test de présence"
+	heading.text="Lobby Wi-Fi · Joueurs disponibles"
 	lobby_panel.add_child(heading)
 	var notice:=Label.new()
 	notice.text=game.lobby.status
@@ -514,7 +531,12 @@ func refresh_lobby():
 	notice.custom_minimum_size.x=370
 	lobby_panel.add_child(notice)
 	add_button(lobby_panel,"Mode : inviter" if lobby_invite else "Mode : rejoindre",func():lobby_invite=not lobby_invite;refresh_lobby())
+	add_button(lobby_panel,"Disponible sur le Wi-Fi" if game.lobby.available else "Invisible sur le Wi-Fi",game.lobby.toggle_available)
 	var players:Array=game.lobby.list_players()
+	if players.is_empty():
+		var empty:=Label.new()
+		empty.text="Aucune partie disponible sur ce Wi-Fi."
+		lobby_panel.add_child(empty)
 	for i in range(mini(players.size(),5)):
 		var index:=i
 		add_button(lobby_panel,players[i].name,func():game.lobby.request(index,lobby_invite))

@@ -33,7 +33,7 @@ func _build_menu() -> void:
 	add_child(panel)
 	var back:=MeshInstance3D.new()
 	var quad:=QuadMesh.new()
-	quad.size=Vector2(.98,1.32)
+	quad.size=Vector2(.98,1.52)
 	back.mesh=quad
 	var material:=StandardMaterial3D.new()
 	material.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -47,7 +47,7 @@ func _build_menu() -> void:
 	title.position=Vector3(0,.57,.012)
 	title.modulate=Color("f2c362")
 	panel.add_child(title)
-	for row in range(10):
+	for row in range(11):
 		var label:=Label3D.new()
 		label.font_size=33
 		label.pixel_size=.00075
@@ -61,7 +61,7 @@ func _refresh_labels() -> void:
 	if menu_page==2:
 		for label in labels:label.text=""
 		labels[0].text="Retour"
-		labels[1].text="LOBBY WI-FI · Test"
+		labels[1].text="LOBBY WI-FI · Joueurs disponibles"
 		if not game.lobby:return
 		labels[2].text="Action : "+("Inviter" if invite_mode else "Demander à rejoindre")
 		var players:Array=game.lobby.list_players()
@@ -70,6 +70,7 @@ func _refresh_labels() -> void:
 		labels[7].text="Lire / accuser réception" if not game.lobby.incoming.is_empty() else ""
 		labels[8].text="Refuser la demande" if not game.lobby.incoming.is_empty() else ""
 		labels[9].text=game.lobby.status.left(46)
+		labels[10].text="Disponible : "+("OUI" if game.lobby.available else "NON")
 		return
 	if menu_page==1:
 		for label in labels:label.text=""
@@ -82,6 +83,7 @@ func _refresh_labels() -> void:
 		labels[6].text="Chargement : remplace la partie en cours"
 		labels[7].text="Sauvegarde automatique toutes les minutes"
 		return
+	labels[10].text=""
 	labels[0].text="Reprendre"
 	labels[1].text="Téléportation : "+("ACTIVÉE" if game.teleportation.enabled else "DÉSACTIVÉE")
 	labels[2].text="Rangement manuel : "+("ACTIVÉ" if manual_mode else "ASSISTÉ")
@@ -125,7 +127,7 @@ func _menu_hit(origin: Vector3,direction: Vector3) -> int:
 	if t<0 or t>3:return -1
 	var p:=a+d*t
 	if absf(p.x)>.43:return -1
-	for i in range(10):
+	for i in range(11):
 		if absf(p.y-(.43-i*.108))<.045:return i
 	return -1
 
@@ -137,6 +139,7 @@ func _activate(row: int) -> void:
 			3,4,5,6:game.lobby.request(row-3,invite_mode)
 			7:game.lobby.reply(true)
 			8:game.lobby.reply(false)
+			10:game.lobby.toggle_available()
 		_refresh_labels()
 		return
 	if menu_page==1:

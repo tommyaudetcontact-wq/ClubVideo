@@ -13,6 +13,8 @@ var outgoing:Dictionary={}
 var device_id:=""
 var display_name:=""
 var announce_in:=0.0
+var available:=true
+var last_playing:=false
 var status:="Recherche sur le Wi-Fi…"
 signal changed
 
@@ -42,13 +44,28 @@ func send(packet:Dictionary,ip:String):
 	body["sender"]=device_id
 	socket.put_packet(JSON.stringify(body).to_utf8_buffer())
 
+func is_playing()->bool:
+	if not game.clerk or not game.clerk.shift:return false
+	return game.clerk.shift.started and not game.clerk.shift.summary
+
+func announce(ip:String,replying:bool=false):
+	send({"type":"presence","name":display_name,"playing":is_playing(),"available":available,"reply":replying},ip)
+
+func toggle_available():
+	available=not available
+	status="Disponible sur le Wi-Fi." if available else "Invisible pour les autres joueurs."
+	if socket:announce("255.255.255.255")
+	changed.emit()
+
 func _process(delta:float):
 	if not socket:return
 	announce_in-=delta
 	var now:=Time.get_ticks_msec()
-	if announce_in<=0:
+	var playing:=is_playing()
+	if announce_in<=0 or playing!=last_playing:
+		last_playing=playing
 		announce_in=INTERVAL
-		send({"type":"presence","name":display_name},"255.255.255.255")
+		announce("255.255.255.255")
 		for id in peers.keys():
 			if now-int(peers[id].seen)>LIFETIME:
 				peers.erase(id)
@@ -71,16 +88,20 @@ func receive(packet:Variant,ip:String,now:int):
 	var sender:=str(packet.get("sender",""))
 	if sender==device_id or sender.length()!=24 or not ip.is_valid_ip_address():return
 	if packet.get("type")=="presence":
-		var added:=not peers.has(sender)
-		peers[sender]={"id":sender,"name":str(packet.get("name","Joueur")).strip_edges().left(20),"ip":ip,"seen":now}
-		if added:changed.emit()
+		var old:Dictionary=peers.get(sender,{})
+		var ready:bool=packet.get("playing",true)==true and packet.get("available",true)==true
+		var peer_name:=str(packet.get("name","Joueur")).strip_edges().left(20)
+		peers[sender]={"id":sender,"name":peer_name,"ip":ip,"seen":now,"ready":ready}
+		if old.is_empty() or old.get("ready")!=ready or old.get("name")!=peer_name:
+			changed.emit()
+		if old.is_empty() and not packet.get("reply",false):announce(ip,true)
 		return
 	if packet.get("to")!=device_id or not peers.has(sender) or peers[sender].ip!=ip:return
 	var ticket:=str(packet.get("ticket",""))
 	if ticket.length()!=16:return
 	match packet.get("type"):
 		"invite","join":
-			if not incoming.is_empty():return
+			if not available or not is_playing() or not incoming.is_empty():return
 			incoming={"from":sender,"ticket":ticket,"type":packet.type,"time":now}
 			status=("%s t’invite." if packet.type=="invite" else "%s veut rejoindre ta partie.")%peers[sender].name
 			game._message(status+" Ouvre le Lobby Wi-Fi.")
@@ -93,13 +114,13 @@ func receive(packet:Variant,ip:String,now:int):
 			changed.emit()
 
 func list_players()->Array:
-	var rows:Array=peers.values()
+	var rows:Array=peers.values().filter(func(peer):return peer.get("ready",false))
 	rows.sort_custom(func(a,b):return a.name.naturalnocasecmp_to(b.name)<0)
 	return rows
 
 func request(index:int,invite:bool):
 	var players:=list_players()
-	if index<0 or index>=players.size() or not outgoing.is_empty():return
+	if not available or index<0 or index>=players.size() or not outgoing.is_empty():return
 	var player:Dictionary=players[index]
 	var ticket:=Crypto.new().generate_random_bytes(8).hex_encode()
 	outgoing={"to":player.id,"ticket":ticket,"time":Time.get_ticks_msec()}
