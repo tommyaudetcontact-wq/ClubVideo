@@ -1,6 +1,7 @@
 extends Node
 
-const CURRENT := "0.7.0"
+const QUEST_VERSION := "0.7.0"
+const ANDROID_VERSION := "0.7.1"
 const REPOSITORY := "https://github.com/tommyaudetcontact-wq/ClubVideo"
 const RELEASES := "https://api.github.com/repos/tommyaudetcontact-wq/ClubVideo/releases?per_page=12"
 const STAGING := "user://updates/download.apk"
@@ -69,7 +70,7 @@ func on_releases(result:int,code:int,_headers:PackedStringArray,body:PackedByteA
 	if result!=HTTPRequest.RESULT_SUCCESS or code!=200:return
 	var releases:Variant=JSON.parse_string(body.get_string_from_utf8())
 	if not releases is Array:return
-	pending=select_asset(releases,prefix,CURRENT)
+	pending=select_asset(releases,prefix,ANDROID_VERSION if game.touch_profile else QUEST_VERSION)
 	if pending.is_empty():
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(STAGING))
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(READY))

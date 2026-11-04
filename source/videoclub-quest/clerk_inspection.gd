@@ -146,7 +146,7 @@ func toggle_case():
 func finger_transform(hand:int)->Transform3D:
 	if game.touch_profile and game.touch_controls:
 		var direction:=Basis(Vector3.UP,PI) if game.touch_controls.disc_back else Basis.IDENTITY
-		return game.head.global_transform*Transform3D(direction,Vector3(.19,-.10,-.41))
+		return game.head.global_transform*Transform3D(direction,Vector3(-.19,-.10,-.41))
 	var visual=game.hand_visuals[hand]
 	var s:Skeleton3D=visual.skeleton
 	var tip=s.find_bone("index-finger-tip")

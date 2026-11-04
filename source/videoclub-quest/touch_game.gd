@@ -32,6 +32,13 @@ var spare_carried := false
 var disc_back := false
 var desktop_overlay:ColorRect
 var desktop_view:TextureRect
+const CASH_HAND := 0
+const CASE_HAND := 1
+var cash_panel:VBoxContainer
+var cash_total:Label
+var cash_pieces:GridContainer
+var selected_cash:Node3D
+var cash_signature:Array=[]
 const DETACHER := Vector3(.72,1.17,-6.18)
 
 func setup(g):
@@ -81,6 +88,23 @@ func setup(g):
 	status.add_theme_font_size_override("font_size",21)
 	status.text="Gauche : avancer · Droite : regarder · Vise puis touche Utiliser"
 	buttons.add_child(status)
+	cash_panel=VBoxContainer.new()
+	cash_panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	cash_panel.offset_left=202
+	cash_panel.offset_top=-200
+	cash_panel.alignment=BoxContainer.ALIGNMENT_END
+	cash_panel.offset_bottom=-93
+	cash_panel.mouse_filter=Control.MOUSE_FILTER_IGNORE
+	buttons.add_child(cash_panel)
+	cash_total=Label.new()
+	cash_total.add_theme_font_size_override("font_size",22)
+	cash_total.add_theme_color_override("font_outline_color",Color.BLACK)
+	cash_total.add_theme_constant_override("outline_size",8)
+	cash_panel.add_child(cash_total)
+	cash_pieces=GridContainer.new()
+	cash_pieces.columns=5
+	cash_panel.add_child(cash_pieces)
+	cash_panel.hide()
 	stick_base=make_stick(Vector2(154,154),Color(.10,.17,.27,.50))
 	stick_thumb=make_stick(Vector2(62,62),Color(.71,.83,1.0,.66))
 	var bar:=HBoxContainer.new()
@@ -213,6 +237,8 @@ func action_busy()->bool:
 	return action_motion!=null and action_motion.is_running()
 
 func hand_rest(index:int)->Transform3D:
+	if index==CASH_HAND and (clerk.wallet.occupied(index) or action_support_hand==index):
+		return game.head.global_transform*Transform3D(Basis(Vector3.RIGHT,.32),Vector3(-.16,-.135,-.43))
 	var offset:=Vector3(-.20 if index==0 else .20,-.21,-.48)
 	if game.held and game.held_hand==index:
 		offset=Vector3(-.105 if index==0 else .105,-.105,-.40)
@@ -231,12 +257,14 @@ func show_grip(delta:float):
 		if not visual.visible:continue
 		visual.position=Vector3(-.070 if i==0 else .070,-.068,.028)
 		visual.rotation.z=-.28 if i==0 else .28
-		visual.update_grip(delta,.22,.70,holding)
+		var cash:bool=clerk.wallet.occupied(i)
+		visual.update_grip(delta,.04 if cash else .22,.08 if cash else .70,holding)
 
 func tween_hand(tween:Tween,index:int,target:Transform3D,seconds:float):
 	tween.tween_property(game.hands[index],"global_transform",target,seconds).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 func begin_motion():
+	if desktop_overlay:desktop_overlay.hide()
 	motion=Vector2.ZERO
 	action_support_hand=-1
 	move_touch=-1
@@ -259,6 +287,7 @@ func _physics_process(delta:float):
 		if game.modes.menu_open and not menu.get_parent().visible and (not lobby_panel or not lobby_panel.get_parent().visible):menu.get_parent().show()
 		return
 	show_grip(delta)
+	refresh_cash_panel()
 	if action_busy() or (desktop_overlay and desktop_overlay.visible):return
 	var f:Vector3=-game.head.global_basis.z
 	f.y=0
@@ -312,6 +341,7 @@ func tap_target(pixel:Vector2):
 	var aim:Node3D=game.aim_hands[0]
 	aim.global_transform=Transform3D(Basis.looking_at(direction,up),game.head.project_ray_origin(pixel))
 	tap_aim=true
+	game.aim_hands[CASE_HAND].global_transform=aim.global_transform
 	use_target()
 	tap_aim=false
 	sync_hands()
@@ -364,6 +394,12 @@ func use_target():
 	if get_tree().paused or action_busy():return
 	clerk.shift.started=true
 	if not tap_aim:sync_hands()
+	if target_customer() and clerk.wallet.occupied(CASH_HAND):
+		give_change()
+		return
+	if target_customer() and can_handoff():
+		handoff()
+		return
 	if clerk.desktop.project_ray(game.aim_hands[0]).x>=0:
 		open_desktop()
 		return
@@ -379,11 +415,9 @@ func use_target():
 		use_disc()
 		return
 	if game.held:
-		if near(clerk.customer_hand(),1.25) and aimed(clerk.customer_hand(),.34)<INF:
-			drop()
-		elif near(clerk.scanner.global_position) and aimed(clerk.scanner.global_position,.24)<INF:scan()
+		if near(clerk.scanner.global_position) and aimed(clerk.scanner.global_position,.24)<INF:scan()
 		elif near(DETACHER) and aimed(DETACHER,.20)<INF:use_lock()
-		else:toggle_case()
+		elif tap_aim and aimed(game.held.global_position,.105)<INF:toggle_case()
 		return
 	if is_instance_valid(game.candy.held_balls[0]):
 		game.candy.release_ball(0)
@@ -398,7 +432,7 @@ func use_target():
 			clerk.basket.items.erase(item)
 			clerk.basket.arrange()
 		var origin:Vector3=item.node.global_position
-		clerk.pick_case(item,0,false)
+		clerk.pick_case(item,CASE_HAND,false)
 		animate_pick(origin)
 		game._play_trailer(item.movie)
 		return
@@ -408,7 +442,7 @@ func use_target():
 			return
 	var original:bool=game.modes.manual_mode
 	game.modes.manual_mode=false
-	game._interact(0,false)
+	game._interact(CASE_HAND,false)
 	game.modes.manual_mode=original
 	if game.held:
 		var record:Dictionary=clerk.held_service.get("record",game.held_record)
@@ -447,16 +481,18 @@ func refresh_action(over_desktop:bool):
 	var item:Dictionary=pointed_item() if not game.held else {}
 	var cash:=cash_target()
 	mark_touch_target(cash,item,over_desktop)
-	if over_desktop:label="Ouvrir l’ordi"
+	if target_customer() and clerk.wallet.occupied(CASH_HAND):label="Rendre la monnaie"
+	elif target_customer() and can_handoff():label="Remettre le film"
+	elif over_desktop:label="Ouvrir l’ordi"
 	elif not cash.is_empty():
-		label={"tender":"Prendre l’argent","money":"Prendre","drawer":"Tiroir","give_change":"Rendre la monnaie","deposit":"Déposer en caisse","loose_money":"Ramasser"}.get(cash.action,"Utiliser")
+		label={"tender":"Prendre l’argent","money":"Prendre","drawer":"Tiroir","give_change":"Rendre la monnaie","deposit":"Déposer en caisse","loose_money":"Ramasser","select_cash":"Choisir"}.get(cash.action,"Utiliser")
 	elif inspection.finger>=0:
 		label="Retourner" if aimed(inspection.carried.global_position,.083)<INF else ("Déposer le disque" if not inspection.opened else "Remettre le disque")
 	elif game.held:
-		if not clerk.active.is_empty() and aimed(clerk.customer_hand(),.34)<INF:label="Remettre au client"
-		elif aimed(clerk.scanner.global_position,.24)<INF:label="Scanner"
+		if aimed(clerk.scanner.global_position,.24)<INF:label="Scanner"
 		elif aimed(DETACHER,.20)<INF:label="Antivol"
-		else:label="Fermer" if inspection.opened else "Ouvrir"
+		elif inspection.opened and is_instance_valid(inspection.disc) and aimed(inspection.disc.global_position,.085)<INF:label="Sortir le disque"
+		else:label="Utiliser"
 		hint=str(game.layout.movies[game.movie_id].title) if game.movie_id>=0 else ""
 	elif not item.is_empty():
 		label="Prendre"
@@ -464,13 +500,14 @@ func refresh_action(over_desktop:bool):
 	else:
 		label="Utiliser"
 	primary_button.text=label
-	case_button.text="Disque" if inspection.opened else "Boîtier"
+	case_button.text="Ranger le disque" if inspection.finger>=0 else ("Fermer" if inspection.opened else "Ouvrir")
 	case_button.disabled=not game.held and inspection.finger<0
-	drop_button.disabled=not game.held and not is_instance_valid(game.candy.held_balls[0])
+	drop_button.text="Remettre" if can_handoff() and near(clerk.customer_hand(),1.5) else "Déposer"
+	drop_button.disabled=not game.held and not clerk.wallet.occupied(CASH_HAND) and not is_instance_valid(game.candy.held_balls[0])
 	action_hint.text=hint
 
 func case_action():
-	if clerk.inspection.opened or clerk.inspection.finger>=0:use_disc()
+	if clerk.inspection.finger>=0:use_disc()
 	else:toggle_case()
 
 func toggle_case():
@@ -504,14 +541,17 @@ func use_disc():
 			var p:=table_point(.93)
 			clerk.repairs.place_disc(inspection,p)
 		return
+	if clerk.wallet.occupied(CASH_HAND):
+		game._message("Libère ta main gauche pour prendre le disque.")
+		return
 	if inspection.opened and is_instance_valid(inspection.disc):
-		inspection.take_open_disc(1)
+		inspection.take_open_disc(CASH_HAND)
 	elif near(clerk.repairs.station) and aimed(clerk.repairs.station,.25)<INF:
-		clerk.repairs.take_disc(inspection,1,clerk.repairs.station)
+		clerk.repairs.take_disc(inspection,CASH_HAND,clerk.repairs.station)
 	else:
 		for loose in inspection.loose_discs:
 			if aimed(loose.node.global_position,.13)<INF:
-				inspection.take_loose_disc(loose,1)
+				inspection.take_loose_disc(loose,CASH_HAND)
 				return
 
 func scan():
@@ -589,6 +629,20 @@ func take_spare():
 		game._message("Barre prête. Tu peux l’insérer où tu veux.")
 		return
 
+func can_handoff()->bool:
+	return game.held!=null and not clerk.active.is_empty() and clerk.held_service.get("kind","")=="rental"
+
+func target_customer()->bool:
+	if clerk.active.is_empty() or not near(clerk.customer_hand(),1.5):return false
+	var customer:Vector3=clerk.active.node.global_position
+	return aimed(clerk.customer_hand(),.32)<INF or aimed(customer+Vector3.UP*1.23,.34)<INF or aimed(customer+Vector3.UP*1.53,.29)<INF
+
+func handoff():
+	if not can_handoff() or clerk.inspection.opened:
+		game._message("Remets le disque et referme le boîtier avant de le donner.")
+		return
+	clerk.action("handoff",game.held_hand)
+
 func drop():
 	if action_busy():return
 	if is_instance_valid(game.candy.held_balls[0]):
@@ -597,10 +651,10 @@ func drop():
 		body.linear_velocity=-game.head.global_basis.z*3.0+Vector3.UP
 		return
 	if not game.held:
-		if clerk.wallet.occupied(1):give_change()
+		if clerk.wallet.occupied(CASH_HAND):give_change()
 		return
-	if not clerk.active.is_empty() and clerk.held_service.get("kind","")=="rental" and near(clerk.customer_hand(),1.3) and aimed(clerk.customer_hand(),.34)<INF:
-		clerk.action("handoff",game.held_hand)
+	if can_handoff() and near(clerk.customer_hand(),1.5):
+		handoff()
 		return
 	if not clerk.held_service.is_empty():
 		var record:Dictionary=clerk.held_service.get("record",{})
@@ -683,38 +737,134 @@ func cash_target()->Dictionary:
 		if distance<best and near(entry.node.global_position):
 			candidate={"action":"loose_money","node":entry.node,"entry":entry}
 			best=distance
-	if clerk.wallet.occupied(1):
-		var hand:Vector3=clerk.customer_hand()
-		var distance:=aimed(hand,.25)
-		if not clerk.active.is_empty() and near(hand,1.5) and distance<INF:
-			candidate={"action":"give_change","position":hand}
-		elif clerk.drawer_open and near(clerk.drawer.global_position) and aimed(clerk.drawer.global_position,.29)<INF:
-			for entry in clerk.wallet.palms[1]:
-				if entry.tender:
-					candidate={"action":"deposit","node":clerk.drawer}
-					break
+	if clerk.wallet.occupied(CASH_HAND) and clerk.drawer_open and near(clerk.drawer.global_position):
+		if aimed(clerk.drawer.global_position,.29)<INF and (selected_cash or has_tender_in_hand()):
+			candidate={"action":"deposit","node":clerk.drawer}
+	if tap_aim:
+		var picked:Node3D
+		var gap:=INF
+		var ray:Vector3=-game.aim_hands[0].global_basis.z
+		for entry in clerk.wallet.palms[CASH_HAND]:
+			var piece:Node3D=entry.node
+			var depth:=aimed(piece.global_position,.028 if entry.value<500 else .055)
+			if depth==INF:continue
+			var distance:float=(piece.global_position-game.head.global_position-ray*depth).length()
+			if distance<gap:
+				picked=piece
+				gap=distance
+		if picked:return {"action":"select_cash","node":picked}
+
 	return candidate
+
+func refresh_cash_panel():
+	var entries:Array=clerk.wallet.palms[CASH_HAND]
+	var signature:Array=entries.map(func(entry):return entry.node)
+	if selected_cash not in signature:selected_cash=null
+	cash_panel.visible=not entries.is_empty() and not get_tree().paused and not (desktop_overlay and desktop_overlay.visible)
+	cash_total.text="Main gauche   %.2f $"%(clerk.wallet.total(CASH_HAND)/100.0)
+	if selected_cash:
+		for entry in entries:
+			if entry.node==selected_cash:
+				cash_total.text+="   ·   Remettre %.2f $"%(entry.value/100.0)
+				break
+	if signature==cash_signature:return
+	cash_signature=signature
+	for child in cash_pieces.get_children():
+		cash_pieces.remove_child(child)
+		child.queue_free()
+	var grouped:Dictionary={}
+	var counts:Dictionary={}
+	for entry in entries:
+		grouped[entry.value]=entry.node
+		counts[entry.value]=int(counts.get(entry.value,0))+1
+	var values:=grouped.keys()
+	values.sort()
+	for value in values:
+		var piece:Node3D=grouped[value]
+		var count:int=counts[value]
+		var button:=Button.new()
+		button.text=("%.2f $"%(value/100.0))+(" ×%d"%count if count>1 else "")
+		button.custom_minimum_size=Vector2(56,42)
+		button.pressed.connect(func():select_cash(piece))
+		cash_pieces.add_child(button)
+
+func select_cash(piece:Node3D):
+	if action_busy():return
+	if selected_cash==piece:
+		selected_cash=null
+		return
+	selected_cash=piece
+	for entry in clerk.wallet.palms[CASH_HAND]:
+		if entry.node==piece:
+			game._message("%.2f $ sélectionné. Touche le tiroir pour remettre cette pièce ou ce billet."%(entry.value/100.0))
+			break
+
+func has_tender_in_hand()->bool:
+	for entry in clerk.wallet.palms[CASH_HAND]:
+		if entry.tender:return true
+	return false
 
 func use_cash(target:Dictionary):
 	match target.action:
 		"tender":take_payment()
-		"money":clerk.wallet.take(1,target.value)
-		"drawer":clerk.action("drawer",1)
-		"give_change":give_change()
+		"money":take_denomination(target.value,target.node.global_position)
+		"drawer":clerk.action("drawer",CASH_HAND)
 		"deposit":deposit_payment()
-		"loose_money":clerk.wallet.pick_loose(1,target.entry)
+		"select_cash":select_cash(target.node)
+		"loose_money":
+			var source:Vector3=target.node.global_position
+			if clerk.wallet.pick_loose(CASH_HAND,target.entry):animate_cash_pick(source)
+
+func animate_cash_pick(source:Vector3):
+	var rest:=hand_rest(CASH_HAND)
+	begin_motion()
+	action_support_hand=CASH_HAND
+	game.hands[CASH_HAND].global_transform=Transform3D(rest.basis,source+Vector3.UP*.045)
+	tween_hand(action_motion,CASH_HAND,rest,.30)
+
+func take_denomination(value:int,source:Vector3):
+	if action_busy():return
+	var count:int=clerk.wallet.palms[CASH_HAND].size()
+	clerk.wallet.take(CASH_HAND,value)
+	if clerk.wallet.palms[CASH_HAND].size()>count:animate_cash_pick(source)
 
 func take_payment():
-	if not near(clerk.tender_note.global_position):return
-	while clerk.tender_note.visible and clerk.wallet.palms[1].size()<32:
-		var count:int=clerk.wallet.palms[1].size()
-		clerk.wallet.take(1,clerk.tender,true)
-		if clerk.wallet.palms[1].size()==count:break
+	if action_busy() or not near(clerk.tender_note.global_position):return
+	var start:int=clerk.wallet.palms[CASH_HAND].size()
+	while clerk.tender_note.visible and clerk.wallet.palms[CASH_HAND].size()<32:
+		var count:int=clerk.wallet.palms[CASH_HAND].size()
+		clerk.wallet.take(CASH_HAND,clerk.tender,true)
+		if clerk.wallet.palms[CASH_HAND].size()==count:break
+	if clerk.wallet.palms[CASH_HAND].size()>start:animate_cash_pick(clerk.tender_note.global_position)
 
 func deposit_payment():
-	if not near(clerk.drawer.global_position) or not clerk.drawer_open:return
-	for index in range(clerk.wallet.palms[1].size()-1,-1,-1):
-		if clerk.wallet.palms[1][index].tender:clerk.wallet.remove_one(1,index,true)
+	if action_busy() or not near(clerk.drawer.global_position) or not clerk.drawer_open:return
+	var entries:Array=clerk.wallet.palms[CASH_HAND]
+	var pieces:Array[Node3D]=[]
+	for entry in entries:
+		if (is_instance_valid(selected_cash) and entry.node==selected_cash) or (not is_instance_valid(selected_cash) and entry.tender):
+			pieces.append(entry.node)
+	if pieces.is_empty():
+		game._message("Choisis une pièce ou un billet dans ta main gauche.")
+		return
+	var destination:Vector3=clerk.drawer.global_position+Vector3.UP*.12
+	if pieces.size()==1:
+		for entry in entries:
+			if entry.node!=pieces[0]:continue
+			for target in clerk.targets:
+				if target.action=="money" and target.value==entry.value:
+					destination=target.node.global_position+Vector3.UP*.08
+					break
+	var rest:=hand_rest(CASH_HAND)
+	begin_motion()
+	action_support_hand=CASH_HAND
+	tween_hand(action_motion,CASH_HAND,Transform3D(rest.basis,destination),.32)
+	action_motion.tween_callback(func():
+		for index in range(entries.size()-1,-1,-1):
+			if entries[index].node in pieces:clerk.wallet.remove_one(CASH_HAND,index,true)
+		selected_cash=null
+	)
+	tween_hand(action_motion,CASH_HAND,rest,.24)
 
 func open_change():
 	if not near(clerk.tender_note.global_position) or not clerk.drawer_open:return
@@ -722,12 +872,26 @@ func open_change():
 	var change:=make_panel()
 	for value in [1,5,10,25,100,200,500,1000,2000,5000]:
 		var cents:int=value
-		add_button(change,"%.2f $"%(cents/100.0),func():clerk.wallet.take(1,cents))
+		add_button(change,"%.2f $"%(cents/100.0),func():
+			change.get_parent().queue_free()
+			for target in clerk.targets:
+				if target.action=="money" and target.value==cents:
+					take_denomination(cents,target.node.global_position)
+					break)
 	add_button(change,"Fermer",change.get_parent().queue_free)
 	change.get_parent().show()
 
 func give_change():
-	if near(clerk.customer_hand(),1.5):clerk.wallet.give_customer(1)
+	if action_busy() or not near(clerk.customer_hand(),1.5) or not clerk.tender_received:return
+	if not clerk.wallet.occupied(CASH_HAND):
+		clerk.wallet.give_customer(CASH_HAND)
+		return
+	var rest:=hand_rest(CASH_HAND)
+	begin_motion()
+	action_support_hand=CASH_HAND
+	tween_hand(action_motion,CASH_HAND,Transform3D(rest.basis,clerk.customer_hand()+Vector3.UP*.06),.30)
+	action_motion.tween_callback(func():clerk.wallet.give_customer(CASH_HAND))
+	tween_hand(action_motion,CASH_HAND,rest,.23)
 
 func open_lobby():
 	game.lobby.start()
