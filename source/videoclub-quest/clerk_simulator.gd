@@ -111,7 +111,9 @@ func build_counter():
 	# Reuse the existing CRT and preserve its housing and location.
 	screen=game.model.find_child("pc-screen",true,false)
 	terminal=SubViewport.new()
-	terminal.size=Vector2i(1024,768)
+	terminal.size=Vector2i(1536,1152)
+	terminal.size_2d_override=Vector2i(1024,768)
+	terminal.size_2d_override_stretch=true
 	terminal.disable_3d=true
 	terminal.render_target_update_mode=SubViewport.UPDATE_ONCE
 	add_child(terminal)
@@ -124,7 +126,10 @@ func build_counter():
 	if screen:
 		# Imported screen UVs occupy an atlas tile; replace only the display surface.
 		var display=QuadMesh.new()
-		display.size=Vector2(.34,.245)
+		display.size=Vector2(.402,.3015)
+		screen.position+=Vector3(0,.021,.020)
+		var frame:=Props.box(screen,Vector3(0,0,-.014),Vector3(.441,.338,.022),"bbb6a8")
+		frame.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		screen.mesh=display
 		var m=StandardMaterial3D.new()
 		m.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -151,7 +156,9 @@ func build_counter():
 	target(pad,"clean",.20)
 	var receipt=Props.box(self,Vector3(.75,1.11,-5.72),Vector3(.32,.018,.22),"344533")
 	target(receipt,"handoff",.19)
-	var return_tray=Props.box(self,Vector3(-.27,1.11,-6.22),Vector3(.37,.018,.23),"726044")
+	var return_tray:=Marker3D.new()
+	add_child(return_tray)
+	return_tray.position=Vector3(-.27,1.11,-6.22)
 	target(return_tray,"return",.20)
 	drawer=Node3D.new()
 	add_child(drawer)

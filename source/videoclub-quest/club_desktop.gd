@@ -28,14 +28,14 @@ func setup(owner_clerk):
 	add_child(window)
 	rect(window,Rect2(0,0,834,678),Color("ece9d8"))
 	rect(window,Rect2(0,0,834,50),Color("235dcb"))
-	title=label(window,Rect2(18,5,720,43),26,Color.WHITE)
+	title=label(window,Rect2(18,5,720,43),32,Color.WHITE)
 	button(window,Rect2(778,7,46,36),"×",func():window.hide(),Color("b33b27"))
 	var scroll:=ScrollContainer.new()
 	scroll.position=Vector2(18,65)
 	scroll.size=Vector2(800,529)
 	scroll.horizontal_scroll_mode=ScrollContainer.SCROLL_MODE_DISABLED
 	window.add_child(scroll)
-	details=label(scroll,Rect2(0,0,780,0),25,Color("142542"))
+	details=label(scroll,Rect2(0,0,780,0),35,Color("101b2c"))
 	details.custom_minimum_size.x=776
 	details.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
 	button(window,Rect2(18,614,390,46),"Action du programme",run_action,Color("3561a6"))
@@ -68,7 +68,7 @@ func button(parent:Control,bounds:Rect2,caption:String,callback:Callable,color:C
 	item.position=bounds.position
 	item.size=bounds.size
 	item.text=caption
-	item.add_theme_font_size_override("font_size",22)
+	item.add_theme_font_size_override("font_size",25)
 	var style:=StyleBoxFlat.new()
 	style.bg_color=color
 	style.set_corner_radius_all(6)
@@ -106,8 +106,9 @@ func project_ray(ray:Node3D)->Vector2:
 	var distance:float=-start.z/direction.z
 	if distance<0 or distance>1.65:return Vector2(-1,-1)
 	var point:Vector3=start+direction*distance
-	if absf(point.x)>.17 or absf(point.y)>.1225:return Vector2(-1,-1)
-	return Vector2(.5+point.x/.34,.5-point.y/.245)*size
+	var display_size:Vector2=clerk.screen.mesh.size
+	if absf(point.x)>display_size.x*.5 or absf(point.y)>display_size.y*.5:return Vector2(-1,-1)
+	return (Vector2(.5,.5)+Vector2(point.x,-point.y)/display_size)*size
 
 func point(pixel:Vector2,click:bool=false)->bool:
 	if not cursor:return false

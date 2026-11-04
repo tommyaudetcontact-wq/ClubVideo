@@ -473,7 +473,8 @@ func mark_touch_target(cash:Dictionary,item:Dictionary,over_desktop:bool):
 	var glow:MeshInstance3D=game.interaction_glow(0)
 	glow.hide()
 	if over_desktop:
-		glow.mark(clerk.screen.global_transform,Vector3(.35,.255,.018))
+		var display_size:Vector2=clerk.screen.mesh.size
+		glow.mark(clerk.screen.global_transform,Vector3(display_size.x+.012,display_size.y+.012,.018))
 	elif not cash.is_empty():
 		var node:Node3D=cash.get("node")
 		var pose:=node.global_transform if node else Transform3D(Basis.IDENTITY,cash.position)
