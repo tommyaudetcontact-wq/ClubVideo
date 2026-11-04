@@ -5,6 +5,10 @@ var clerk
 var buttons:Control
 var menu:VBoxContainer
 var operations:VBoxContainer
+var basket_button:Button
+var lock_button:Button
+var basket_panel:VBoxContainer
+const BASKET_REACH := 1.8
 var lobby_panel:VBoxContainer
 var lobby_invite := false
 var status:Label
@@ -135,6 +139,18 @@ func setup(g):
 	change_button=add_button(counter_actions,"Rendre la monnaie",give_change)
 	handoff_button=add_button(counter_actions,"Remettre le film / jeu",handoff)
 	counter_actions.hide()
+	var supplies:=HBoxContainer.new()
+	supplies.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	supplies.offset_left=-475
+	supplies.offset_right=-18
+	supplies.offset_top=-211
+	supplies.offset_bottom=-154
+	buttons.add_child(supplies)
+	basket_button=add_button(supplies,"Panier",open_basket)
+	lock_button=add_button(supplies,"Antivol",use_lock)
+	basket_button.hide()
+	lock_button.hide()
+	basket_panel=make_panel()
 	var pause:=Button.new()
 	pause.text="☰  Menu"
 	pause.custom_minimum_size=Vector2(105,51)
@@ -299,14 +315,17 @@ func _physics_process(delta:float):
 	update_stick()
 	if get_tree().paused:
 		counter_actions.hide()
+		basket_button.hide()
+		lock_button.hide()
 		if game.modes.menu_open and not menu.get_parent().visible and (not lobby_panel or not lobby_panel.get_parent().visible):menu.get_parent().show()
 		return
 	show_grip(delta)
 	refresh_cash_panel()
+	refresh_supply_buttons()
 	counter_actions.visible=can_serve_customer() and not (desktop_overlay and desktop_overlay.visible)
 	change_button.disabled=action_busy() or not clerk.tender_received or not clerk.wallet.occupied(CASH_HAND)
 	handoff_button.disabled=action_busy() or not can_handoff()
-	if action_busy() or (desktop_overlay and desktop_overlay.visible):return
+	if action_busy() or basket_panel.get_parent().visible or (desktop_overlay and desktop_overlay.visible):return
 	var f:Vector3=-game.head.global_basis.z
 	f.y=0
 	f=f.normalized()
@@ -328,7 +347,7 @@ func _physics_process(delta:float):
 		if notice_time<=0:status.text=""
 
 func _unhandled_input(event:InputEvent):
-	if get_tree().paused or action_busy() or (desktop_overlay and desktop_overlay.visible):return
+	if get_tree().paused or action_busy() or basket_panel.get_parent().visible or (desktop_overlay and desktop_overlay.visible):return
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			if event.position.distance_to(stick_center())<=77.0 and move_touch<0:
@@ -365,6 +384,7 @@ func tap_target(pixel:Vector2):
 	sync_hands()
 
 func toggle_menu():
+	basket_panel.get_parent().hide()
 	if desktop_overlay:desktop_overlay.hide()
 	operations.get_parent().hide()
 	game.modes.toggle_pause()
@@ -376,6 +396,7 @@ func toggle_menu():
 	look_touch=-1
 
 func toggle_operations():
+	basket_panel.get_parent().hide()
 	operations.get_parent().visible=not operations.get_parent().visible
 	motion=Vector2.ZERO
 
@@ -409,9 +430,13 @@ func pointed_item()->Dictionary:
 	return best
 
 func use_target():
-	if get_tree().paused or action_busy():return
+	if get_tree().paused or action_busy() or basket_panel.get_parent().visible:return
 	clerk.shift.started=true
 	if not tap_aim:sync_hands()
+	if basket_aimed() and not clerk.inspection.opened:
+		if game.held:put_in_basket()
+		else:open_basket()
+		return
 	if target_customer() and clerk.tender_received and clerk.wallet.occupied(CASH_HAND):
 		give_change()
 		return
@@ -435,6 +460,7 @@ func use_target():
 	if game.held:
 		if near(clerk.scanner.global_position) and aimed(clerk.scanner.global_position,.24)<INF:scan()
 		elif near(DETACHER) and aimed(DETACHER,.20)<INF:use_lock()
+		elif not game.held.get_meta("antitheft",false) and near(clerk.lock_bin) and aimed(clerk.lock_bin,.20)<INF:use_lock()
 		elif tap_aim and aimed(game.held.global_position,.105)<INF:toggle_case()
 		elif tap_aim:
 			var destination:=case_drop_target()
@@ -449,13 +475,7 @@ func use_target():
 			return
 	var item:=pointed_item()
 	if not item.is_empty():
-		if item in clerk.basket.items:
-			clerk.basket.items.erase(item)
-			clerk.basket.arrange()
-		var origin:Vector3=item.node.global_position
-		clerk.pick_case(item,CASE_HAND,false)
-		animate_pick(origin)
-		game._play_trailer(item.movie)
+		pick_touch_case(item)
 		return
 	for target in clerk.targets:
 		if target.action in ["page","phone","door"] and aimed(target.node.global_position,target.radius)<INF:
@@ -496,6 +516,88 @@ func mark_touch_target(cash:Dictionary,item:Dictionary,over_desktop:bool):
 	elif aimed(DETACHER,.20)<INF and near(DETACHER):
 		glow.mark(Transform3D(Basis.IDENTITY,DETACHER),Vector3(.22,.18,.17))
 
+func basket_aimed()->bool:
+	var center:Vector3=clerk.basket.body.to_global(Vector3(0,.18,0))
+	return near(center,BASKET_REACH) and aimed(center,.29)<INF
+
+func refresh_supply_buttons():
+	var in_play:bool=not (desktop_overlay and desktop_overlay.visible) and not basket_panel.get_parent().visible
+	basket_button.visible=in_play and near(clerk.basket.body.global_position,BASKET_REACH)
+	basket_button.text="Panier (%d)"%clerk.basket.items.size()
+	basket_button.disabled=action_busy()
+	lock_button.hide()
+	if not in_play or not game.held or clerk.inspection.opened:return
+	var locked:bool=game.held.get_meta("antitheft",false)
+	lock_button.visible=near(DETACHER) if locked else spare_carried or near(clerk.lock_bin)
+	lock_button.disabled=action_busy()
+	lock_button.text="Retirer l’antivol" if locked else "Poser l’antivol"
+
+func open_basket():
+	if action_busy() or not near(clerk.basket.body.global_position,BASKET_REACH):return
+	if clerk.inspection.opened:
+		game._message("Referme le boîtier avant d’utiliser le panier.")
+		return
+	motion=Vector2.ZERO
+	move_touch=-1
+	look_touch=-1
+	operations.get_parent().hide()
+	for child in basket_panel.get_children():
+		basket_panel.remove_child(child)
+		child.queue_free()
+	var heading:=Label.new()
+	heading.text="Panier à ranger · %d / %d"%[clerk.basket.items.size(),clerk.basket.CAPACITY]
+	heading.add_theme_font_size_override("font_size",24)
+	basket_panel.add_child(heading)
+	if game.held:
+		add_button(basket_panel,"Mettre le boîtier dans le panier",put_in_basket)
+	if clerk.basket.items.is_empty():
+		var empty:=Label.new()
+		empty.text="Le panier est vide."
+		basket_panel.add_child(empty)
+	else:
+		var scroll:=ScrollContainer.new()
+		scroll.custom_minimum_size=Vector2(380,290)
+		scroll.horizontal_scroll_mode=ScrollContainer.SCROLL_MODE_DISABLED
+		basket_panel.add_child(scroll)
+		var list:=VBoxContainer.new()
+		list.size_flags_horizontal=Control.SIZE_EXPAND_FILL
+		scroll.add_child(list)
+		for item in clerk.basket.items:
+			var entry:Dictionary=item
+			var title_text:String=game.layout.movies[entry.movie].title
+			var button:=add_button(list,title_text,pick_from_basket.bind(entry))
+			button.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
+			button.disabled=game.held!=null
+	add_button(basket_panel,"Fermer",basket_panel.get_parent().hide)
+	basket_panel.get_parent().show()
+
+func pick_from_basket(item:Dictionary):
+	if action_busy() or game.held or clerk.inspection.finger>=0 or not near(clerk.basket.body.global_position,BASKET_REACH):return
+	if item not in clerk.basket.items:return
+	basket_panel.get_parent().hide()
+	pick_touch_case(item)
+	var name_text:String=game.layout.movies[item.movie].title
+	var next:="Vérifie et scanne le retour." if item.kind=="return" and not item.scanned else "Range-le dans son rayon."
+	if not item.node.get_meta("antitheft",false):next+=" Pose une barre jaune au comptoir avant de le ranger."
+	game._message(name_text+" · "+next)
+
+func pick_touch_case(item:Dictionary):
+	var origin:Vector3=item.node.global_position
+	clerk.pick_case(item,CASE_HAND,false)
+	if game.held!=item.node:return
+	if item in clerk.basket.items:
+		clerk.basket.items.erase(item)
+		clerk.basket.arrange()
+	animate_pick(origin)
+	game._play_trailer(item.movie)
+
+func put_in_basket():
+	if action_busy() or not game.held or not near(clerk.basket.body.global_position,BASKET_REACH):return
+	basket_panel.get_parent().hide()
+	var held_case:Node3D=game.held
+	place_held_case(clerk.basket.body.to_global(Vector3(0,.16,0)))
+	if game.held!=held_case:game._message("Boîtier mis dans le panier.")
+
 func refresh_action(over_desktop:bool):
 	var inspection=clerk.inspection
 	var label:="Viser un objet"
@@ -505,6 +607,7 @@ func refresh_action(over_desktop:bool):
 	mark_touch_target(cash,item,over_desktop)
 	if target_customer() and clerk.tender_received and clerk.wallet.occupied(CASH_HAND):label="Rendre la monnaie"
 	elif target_customer() and can_handoff():label="Remettre le film"
+	elif basket_aimed():label="Mettre au panier" if game.held else "Ouvrir le panier"
 	elif over_desktop:label="Ouvrir l’ordi"
 	elif not cash.is_empty():
 		label={"tender":"Prendre l’argent","money":"Prendre","drawer":"Tiroir","give_change":"Rendre la monnaie","deposit":"Déposer en caisse","loose_money":"Ramasser","select_cash":"Choisir"}.get(cash.action,"Utiliser")
@@ -607,12 +710,14 @@ func use_lock():
 			return
 		animate_unlock(game.held)
 		return
+	if not spare_carried and near(clerk.lock_bin):take_spare()
 	if not spare_carried:
-		game._message("Prends une barre de réserve dans le bac ou via Outils.")
+		game._message("Approche-toi du bac des barres jaunes pour poser un antivol.")
 		return
 	spare_carried=false
 	clerk.locks.set_locked(game.held,true)
 	clerk.refresh_terminal()
+	game._message("Antivol posé. Tu peux aller ranger le boîtier.")
 
 func animate_unlock(item:Node3D):
 	var hand:int=game.held_hand
