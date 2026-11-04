@@ -12,6 +12,9 @@ var action_hint:Label
 var primary_button:Button
 var case_button:Button
 var drop_button:Button
+var counter_actions:HBoxContainer
+var change_button:Button
+var handoff_button:Button
 var stick_base:Panel
 var stick_thumb:Panel
 var prompt_clock := 0.0
@@ -121,6 +124,17 @@ func setup(g):
 	case_button=add_button(bar,"Boîtier",case_action)
 	drop_button=add_button(bar,"Déposer",drop)
 	add_button(bar,"Outils",toggle_operations)
+	counter_actions=HBoxContainer.new()
+	counter_actions.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	counter_actions.offset_left=-475
+	counter_actions.offset_right=-18
+	counter_actions.offset_top=-149
+	counter_actions.offset_bottom=-94
+	counter_actions.add_theme_constant_override("separation",8)
+	buttons.add_child(counter_actions)
+	change_button=add_button(counter_actions,"Rendre la monnaie",give_change)
+	handoff_button=add_button(counter_actions,"Remettre le film / jeu",handoff)
+	counter_actions.hide()
 	var pause:=Button.new()
 	pause.text="☰  Menu"
 	pause.custom_minimum_size=Vector2(105,51)
@@ -284,10 +298,14 @@ func animate_pick(origin:Vector3):
 func _physics_process(delta:float):
 	update_stick()
 	if get_tree().paused:
+		counter_actions.hide()
 		if game.modes.menu_open and not menu.get_parent().visible and (not lobby_panel or not lobby_panel.get_parent().visible):menu.get_parent().show()
 		return
 	show_grip(delta)
 	refresh_cash_panel()
+	counter_actions.visible=can_serve_customer() and not (desktop_overlay and desktop_overlay.visible)
+	change_button.disabled=action_busy() or not clerk.tender_received or not clerk.wallet.occupied(CASH_HAND)
+	handoff_button.disabled=action_busy() or not can_handoff()
 	if action_busy() or (desktop_overlay and desktop_overlay.visible):return
 	var f:Vector3=-game.head.global_basis.z
 	f.y=0
@@ -394,7 +412,7 @@ func use_target():
 	if get_tree().paused or action_busy():return
 	clerk.shift.started=true
 	if not tap_aim:sync_hands()
-	if target_customer() and clerk.wallet.occupied(CASH_HAND):
+	if target_customer() and clerk.tender_received and clerk.wallet.occupied(CASH_HAND):
 		give_change()
 		return
 	if target_customer() and can_handoff():
@@ -481,7 +499,7 @@ func refresh_action(over_desktop:bool):
 	var item:Dictionary=pointed_item() if not game.held else {}
 	var cash:=cash_target()
 	mark_touch_target(cash,item,over_desktop)
-	if target_customer() and clerk.wallet.occupied(CASH_HAND):label="Rendre la monnaie"
+	if target_customer() and clerk.tender_received and clerk.wallet.occupied(CASH_HAND):label="Rendre la monnaie"
 	elif target_customer() and can_handoff():label="Remettre le film"
 	elif over_desktop:label="Ouvrir l’ordi"
 	elif not cash.is_empty():
@@ -502,7 +520,7 @@ func refresh_action(over_desktop:bool):
 	primary_button.text=label
 	case_button.text="Ranger le disque" if inspection.finger>=0 else ("Fermer" if inspection.opened else "Ouvrir")
 	case_button.disabled=not game.held and inspection.finger<0
-	drop_button.text="Remettre" if can_handoff() and near(clerk.customer_hand(),1.5) else "Déposer"
+	drop_button.text="Déposer"
 	drop_button.disabled=not game.held and not clerk.wallet.occupied(CASH_HAND) and not is_instance_valid(game.candy.held_balls[0])
 	action_hint.text=hint
 
@@ -629,15 +647,20 @@ func take_spare():
 		game._message("Barre prête. Tu peux l’insérer où tu veux.")
 		return
 
+func can_serve_customer()->bool:
+	if clerk.active.is_empty():return false
+	return near(clerk.customer_hand(),1.5) or near(clerk.drawer.global_position,1.55)
+
 func can_handoff()->bool:
 	return game.held!=null and not clerk.active.is_empty() and clerk.held_service.get("kind","")=="rental"
 
 func target_customer()->bool:
-	if clerk.active.is_empty() or not near(clerk.customer_hand(),1.5):return false
+	if not can_serve_customer():return false
 	var customer:Vector3=clerk.active.node.global_position
 	return aimed(clerk.customer_hand(),.32)<INF or aimed(customer+Vector3.UP*1.23,.34)<INF or aimed(customer+Vector3.UP*1.53,.29)<INF
 
 func handoff():
+	if action_busy() or not can_serve_customer():return
 	if not can_handoff() or clerk.inspection.opened:
 		game._message("Remets le disque et referme le boîtier avant de le donner.")
 		return
@@ -653,7 +676,7 @@ func drop():
 	if not game.held:
 		if clerk.wallet.occupied(CASH_HAND):give_change()
 		return
-	if can_handoff() and near(clerk.customer_hand(),1.5):
+	if can_handoff() and target_customer():
 		handoff()
 		return
 	if not clerk.held_service.is_empty():
@@ -882,7 +905,10 @@ func open_change():
 	change.get_parent().show()
 
 func give_change():
-	if action_busy() or not near(clerk.customer_hand(),1.5) or not clerk.tender_received:return
+	if action_busy() or not can_serve_customer():return
+	if not clerk.tender_received:
+		game._message("Dépose le paiement du client dans le tiroir avant de rendre la monnaie.")
+		return
 	if not clerk.wallet.occupied(CASH_HAND):
 		clerk.wallet.give_customer(CASH_HAND)
 		return
