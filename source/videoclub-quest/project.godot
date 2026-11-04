@@ -15,7 +15,9 @@ config/name.pcvr="Vidéo Club PC VR"
 config/use_custom_user_dir.pcvr=true
 config/custom_user_dir_name.pcvr="VideoClub-PCVR"
 config/description="Vidéoclub nostalgique — prototype natif Quest 3S"
-run/main_scene="res://main.tscn"
+run/main_scene="res://club_loading.tscn"
+boot_splash/image="res://assets/loading/checkout.png"
+boot_splash/bg_color=Color(0.04, 0.08, 0.14, 1)
 config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://icon.svg"
 

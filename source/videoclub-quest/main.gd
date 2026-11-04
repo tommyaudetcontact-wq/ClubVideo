@@ -82,6 +82,8 @@ var lod_update_usec := 0
 var lod_occlusion_tests := 0
 
 func _ready() -> void:
+	var startup:Node=get_meta("startup_loader",null) if has_meta("startup_loader") else null
+	if startup:await startup.stage(41.0,"Ouverture du magasin…")
 	if pc_vr:
 		get_viewport().msaa_3d=Viewport.MSAA_4X
 		print("VIDEOCLUB_PC_PROFILE msaa=4x resolution=runtime_recommended covers=96")
@@ -89,8 +91,10 @@ func _ready() -> void:
 	if FileAccess.file_exists("res://assets/covers.json"):
 		cover_info = JSON.parse_string(FileAccess.get_file_as_string("res://assets/covers.json"))
 	baked_lighting_active = not pc_vr and ResourceLoader.exists("res://assets/lighting-v3/decor-lit.scn")
-	model = load("res://assets/lighting-v3/decor-lit.scn" if baked_lighting_active else "res://assets/decor.glb").instantiate()
+	var decor:PackedScene=startup.prepared_decor if startup else load("res://assets/lighting-v3/decor-lit.scn" if baked_lighting_active else "res://assets/decor.glb")
+	model=decor.instantiate()
 	add_child(model)
+	if startup:await startup.stage(42.0,"Mise en place des rayons…")
 	_restore_instances()
 	load("res://catalogue_expansion.gd").expand(self)
 	load("res://scene_refresh.gd").remove_rear_shelves(self)
@@ -105,6 +109,9 @@ func _ready() -> void:
 	fake_glow.set_script(load("res://fake_lighting.gd"))
 	add_child(fake_glow)
 	_prepare_player()
+	if startup:
+		startup.follow_camera(head)
+		await startup.stage(65.0,"Préparation des films et des jeux…")
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(),true)
 	teleportation = load("res://teleport_locomotion.gd").new()
 	add_child(teleportation)
@@ -113,6 +120,7 @@ func _ready() -> void:
 	_index_dvds()
 	_prepare_cover_lod()
 	_prepare_held_pool()
+	if startup:await startup.stage(82.0,"Préparation du comptoir et des clients…")
 	candy = load("res://gumball_physics.gd").new()
 	add_child(candy)
 	candy.setup(self)
@@ -134,6 +142,7 @@ func _ready() -> void:
 	lobby=preload("res://club_lobby.gd").new()
 	add_child(lobby)
 	lobby.setup(self)
+	if startup:await startup.stage(95.0,"Vérification de la sauvegarde…")
 	session=load("res://club_save.gd").new()
 	add_child(session)
 	if touch_profile and not OS.has_feature("android"):session.save_path="user://touch-playtest.dat"
@@ -154,6 +163,7 @@ func _ready() -> void:
 	if xr_active:
 		call_deferred("_recenter_entry")
 		call_deferred("_diagnostic_capture")
+	if startup:startup.finish(self)
 
 func _request_refresh_rate() -> void:
 	if not pc_vr and xr_interface and xr_interface.has_method("set_display_refresh_rate"):
@@ -761,7 +771,7 @@ func _recenter_entry(force := false) -> void:
 	_write_diagnostics()
 
 func _write_diagnostics() -> void:
-	var state := {"xr_active":xr_active,"tracking":xr_interface.get_tracking_status() if xr_interface else -1,"spawn_centered":spawn_centered,"head_local":[head.position.x,head.position.y,head.position.z],"head_world":[head.global_position.x,head.global_position.y,head.global_position.z],"origin":[origin.position.x,origin.position.y,origin.position.z],"viewport_xr":get_viewport().use_xr,"viewport_size":str(get_viewport().get_visible_rect().size),"xr_target_size":str(xr_interface.get_render_target_size()) if xr_interface else "none","msaa":get_viewport().msaa_3d,"camera_current":head.current,"fps":Engine.get_frames_per_second(),"dvd_count":dvd_records.size(),"near_covers":lod_selected.size(),"lod_candidates":lod_last_examined,"build":"PC-0.6.5" if pc_vr else ("0.7.7" if touch_profile else "0.7.7"),"teleport_mode":teleportation.enabled,"baked_lighting":baked_lighting_active,"active_trailer":active_trailer,"trailer_playing":trailer_player.is_playing(),"video_position":trailer_player.stream_position,"screens":screens.size(),"draw_calls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)}
+	var state := {"xr_active":xr_active,"tracking":xr_interface.get_tracking_status() if xr_interface else -1,"spawn_centered":spawn_centered,"head_local":[head.position.x,head.position.y,head.position.z],"head_world":[head.global_position.x,head.global_position.y,head.global_position.z],"origin":[origin.position.x,origin.position.y,origin.position.z],"viewport_xr":get_viewport().use_xr,"viewport_size":str(get_viewport().get_visible_rect().size),"xr_target_size":str(xr_interface.get_render_target_size()) if xr_interface else "none","msaa":get_viewport().msaa_3d,"camera_current":head.current,"fps":Engine.get_frames_per_second(),"dvd_count":dvd_records.size(),"near_covers":lod_selected.size(),"lod_candidates":lod_last_examined,"build":"PC-0.7.8" if pc_vr else ("0.7.8" if touch_profile else "0.7.8"),"teleport_mode":teleportation.enabled,"baked_lighting":baked_lighting_active,"active_trailer":active_trailer,"trailer_playing":trailer_player.is_playing(),"video_position":trailer_player.stream_position,"screens":screens.size(),"draw_calls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)}
 	state["texture_mip_bias"]=ProjectSettings.get_setting("rendering/textures/default_filters/texture_mipmap_bias",0.0)
 	state["foveation_level"]=xr_interface.call("get_foveation_level") if xr_interface and xr_interface.has_method("get_foveation_level") else -1
 	if Engine.has_singleton("OpenXRFbCompositionLayerSettingsExtension"):
