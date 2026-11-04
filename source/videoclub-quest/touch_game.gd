@@ -436,6 +436,9 @@ func use_target():
 		if near(clerk.scanner.global_position) and aimed(clerk.scanner.global_position,.24)<INF:scan()
 		elif near(DETACHER) and aimed(DETACHER,.20)<INF:use_lock()
 		elif tap_aim and aimed(game.held.global_position,.105)<INF:toggle_case()
+		elif tap_aim:
+			var destination:=case_drop_target()
+			if destination.is_finite():place_held_case(destination)
 		return
 	if is_instance_valid(game.candy.held_balls[0]):
 		game.candy.release_ball(0)
@@ -676,29 +679,46 @@ func drop():
 	if not game.held:
 		if clerk.wallet.occupied(CASH_HAND):give_change()
 		return
-	if can_handoff() and target_customer():
-		handoff()
-		return
-	if not clerk.held_service.is_empty():
-		var record:Dictionary=clerk.held_service.get("record",{})
-		if not record.is_empty() and aimed(record.world.origin,.24)<INF:
-			game.held.global_position=record.world.origin
-		elif aimed(Vector3(1.75,1.19,-5.92),.26)<INF:
-			game.held.global_position=Vector3(1.75,1.19,-5.92)
-		elif aimed(clerk.basket.body.global_position,.25)<INF:
-			game.held.global_position=clerk.basket.body.to_global(Vector3(0,.16,0))
+	var destination:=case_drop_target()
+	if not destination.is_finite():
+		var counter:=Vector3(-.11,1.20,-6.20)
+		if near(counter):
+			destination=counter
 		else:
-			var table:=table_point(.93)
-			if clerk.repairs.is_case_surface(table):
-				game.held.global_position=table
-				if clerk.repairs.place_case(clerk.held_service):return
-			game.held.global_position=game.head.global_position-game.head.global_basis.z*.68
+			var forward:Vector3=-game.head.global_basis.z
+			forward.y=0
+			destination=game.head.global_position+forward.normalized()*.64
+			destination.y=maxf(.23,destination.y-.40)
+	place_held_case(destination)
+
+func case_drop_target()->Vector3:
+	var tray:=Vector3(1.75,1.19,-5.92)
+	if near(tray,1.8) and aimed(tray,.32)<INF:return tray
+	var basket_point:Vector3=clerk.basket.body.to_global(Vector3(0,.16,0))
+	if near(basket_point,1.8) and aimed(basket_point,.30)<INF:return basket_point
+	var record:Dictionary=clerk.held_service.get("record",{})
+	if not record.is_empty() and near(record.world.origin,1.45) and aimed(record.world.origin,.23)<INF:
+		return record.world.origin
+	var table:=table_point(.93)
+	if clerk.repairs.is_case_surface(table):return table
+	var counter:=table_point(1.18)
+	if counter.x>-.36 and counter.x<.52 and counter.z>-6.53 and counter.z<-6.06:
+		return counter
+	return Vector3.INF
+
+func place_held_case(destination:Vector3):
+	if clerk.inspection.opened:
+		game._message("Referme le boîtier avant de le déposer.")
+		return
+	game.held.global_position=destination
+	if clerk.repairs.is_case_surface(destination) and not clerk.held_service.is_empty():
+		if clerk.repairs.place_case(clerk.held_service):return
 	game._release()
 	sync_hands()
 
 func table_point(height:float)->Vector3:
 	var start:Vector3=game.head.global_position
-	var direction:Vector3=-game.head.global_basis.z
+	var direction:Vector3=-game.aim_hands[0].global_basis.z if tap_aim else -game.head.global_basis.z
 	if direction.y>=-.08:return Vector3.INF
 	var distance:float=(height-start.y)/direction.y
 	return start+direction*distance if distance>0 and distance<1.7 else Vector3.INF

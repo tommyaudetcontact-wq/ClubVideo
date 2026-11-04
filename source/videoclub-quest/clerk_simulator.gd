@@ -640,8 +640,8 @@ func action(which:String,hand:int,value:int=0):
 func handoff_rental():
 	if active.is_empty() or held_service.is_empty() or held_service.kind!="rental":return
 	if held_service not in active.items or inspection.opened:return
-	if game.held.get_meta("antitheft",false) or not active.missing.is_empty():
-		game._message("Retire l’antivol et trouve les films manquants avant de remettre ce boîtier.")
+	if not active.missing.is_empty():
+		game._message("Trouve les films manquants avant de remettre ce boîtier.")
 		return
 	var was_scanned:bool=held_service.scanned
 	if was_scanned and not paid:
@@ -655,8 +655,10 @@ func handoff_rental():
 	else:
 		shift.missed_scans+=1
 		shift.lost_sales+=Pricing.unit(game.layout.movies[id])
+	var unchecked:bool=not game.held.get_meta("inspected",false)
+	var locked:bool=game.held.get_meta("antitheft",false)
 	var defective:bool=game.held.get_meta("dirty",false) or game.held.get_meta("disc_movie",-1)!=id
-	var refund:int=Pricing.unit(game.layout.movies[id]) if was_scanned and defective else 0
+	var refund:int=Pricing.unit(game.layout.movies[id]) if was_scanned and (unchecked or locked or defective) else 0
 	active.items.erase(held_service)
 	consume_case()
 	active.handed+=1
@@ -690,7 +692,7 @@ func release()->bool:
 		return true
 	if repairs.drop_into_bin(held_service):return true
 	var p:Vector3=game.held.global_position
-	if held_service.kind=="rental" and not active.is_empty() and in_customer_zone(p):
+	if not game.touch_profile and held_service.kind=="rental" and not active.is_empty() and in_customer_zone(p):
 		action("handoff",game.held_hand)
 		return true
 	if held_service.kind in ["return","shelve","sorting"]:
@@ -844,7 +846,7 @@ func deliver_return(job:Dictionary,customer:Dictionary={},at_counter:bool=false)
 	var refund:=int(job.get("refund",0))
 	if refund>0:
 		shift.refunds+=refund
-		game._message("Le client revient pour un disque incorrect ou abîmé. Remboursement de %.2f $ enregistré."%(refund/100.0))
+		game._message("Le client demande un remboursement pour ce boîtier. Perte de %.2f $ enregistrée."%(refund/100.0))
 	var dirty=bool(job.record.get("dirty",false)) if refund>0 else randf()<minf(.45,.30+.015*(shift.day-1))
 	returned.node.set_meta("dirty",dirty)
 	returned.node.set_meta("returned_damage",dirty and refund==0)
@@ -1058,8 +1060,8 @@ func scan_held()->bool:
 	if held_service.is_empty() or not game.held:
 		game._message("Présente un boîtier au scanner.")
 		return false
-	if inspection.opened or not game.held.get_meta("inspected",false):
-		game._message("Inspecte le disque et referme le boîtier, puis passe son dos au scanner.")
+	if inspection.opened:
+		game._message("Referme le boîtier, puis passe son dos au scanner.")
 		return false
 	if game.held.get_meta("needs_relock",false) and not game.held.get_meta("return_checked",false):
 		var fee=accounts.scan_return(game.held)
