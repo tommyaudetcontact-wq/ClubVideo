@@ -82,6 +82,8 @@ func snapshot()->Dictionary:
 	state.loose_locks=c.locks.snapshot()
 	state.queue_gap=maxf(0,c.customers.queue_gate-c.customers.clock)
 	state.basket_transform=c.basket.body.global_transform if c.basket.hand<0 else Transform3D(Basis.IDENTITY,c.basket.home)
+	if game.touch_profile and game.touch_controls and game.touch_controls.basket_carried:
+		state.basket_transform=game.touch_controls.basket_resting_pose
 	for record in game.dvd_records:
 		state.records.append({"movie":record.movie,"disc_movie":record.get("disc_movie",record.movie),"disc_uid":record.get("disc_uid",record.id),"dirty":record.get("dirty",false),"locked":record.get("locked",true),"reserved":record.get("clerk_reserved",false)})
 	for item in c.cases:state.cases.append(pack_case(item,item.node))

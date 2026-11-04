@@ -9,6 +9,12 @@ var basket_button:Button
 var flip_button:Button
 var lock_button:Button
 var basket_panel:VBoxContainer
+var basket_carried:=false
+var basket_resting_pose:Transform3D
+var checkout_panel:VBoxContainer
+var checkout_button:Button
+var coop_panel:PanelContainer
+var coop_button:Button
 const BASKET_REACH := 1.8
 var lobby_panel:VBoxContainer
 var lobby_invite := false
@@ -154,6 +160,18 @@ func setup(g):
 	basket_button.hide()
 	lock_button.hide()
 	basket_panel=make_panel()
+	checkout_panel=make_panel()
+	checkout_button=Button.new()
+	checkout_button.text="Caisse"
+	checkout_button.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	checkout_button.offset_left=-250
+	checkout_button.offset_right=-135
+	checkout_button.offset_top=16
+	checkout_button.offset_bottom=67
+	checkout_button.add_theme_font_size_override("font_size",22)
+	checkout_button.pressed.connect(open_checkout)
+	buttons.add_child(checkout_button)
+	checkout_button.hide()
 	var pause:=Button.new()
 	pause.text="☰  Menu"
 	pause.custom_minimum_size=Vector2(105,51)
@@ -163,6 +181,19 @@ func setup(g):
 	pause.offset_top=16
 	pause.pressed.connect(toggle_menu)
 	buttons.add_child(pause)
+	coop_panel=preload("res://touch_coop.gd").new()
+	buttons.add_child(coop_panel)
+	coop_panel.setup(game)
+	coop_button=Button.new()
+	coop_button.text="Caisse coop"
+	coop_button.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	coop_button.offset_left=-272
+	coop_button.offset_right=-136
+	coop_button.offset_top=16
+	coop_button.offset_bottom=67
+	coop_button.pressed.connect(open_coop)
+	buttons.add_child(coop_button)
+	coop_button.hide()
 	action_hint=Label.new()
 	action_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	action_hint.offset_left=-350
@@ -181,6 +212,7 @@ func setup(g):
 	continue_button.disabled=not FileAccess.file_exists(game.session.save_path) and not FileAccess.file_exists(game.session.save_path+".bak")
 	add_button(menu,"Nouvelle partie",confirm_new_game)
 	add_button(menu,"Son des bandes-annonces",func():game.modes._activate(7))
+	add_button(menu,"Coop avec un Quest",open_coop)
 	add_button(menu,"Lobby Wi-Fi",open_lobby)
 	operations=make_panel()
 	var grid:=GridContainer.new()
@@ -303,6 +335,7 @@ func begin_motion():
 	move_touch=-1
 	look_touch=-1
 	operations.get_parent().hide()
+	checkout_panel.get_parent().hide()
 	action_motion=create_tween()
 
 func animate_pick(origin:Vector3):
@@ -314,10 +347,22 @@ func animate_pick(origin:Vector3):
 	begin_motion()
 	tween_hand(action_motion,hand,rest,.26)
 
+func open_coop():
+	if game.modes.menu_open:toggle_menu()
+	operations.get_parent().hide()
+	basket_panel.get_parent().hide()
+	checkout_panel.get_parent().hide()
+	motion=Vector2.ZERO
+	move_touch=-1
+	look_touch=-1
+	coop_panel.show()
+
 func _physics_process(delta:float):
 	update_stick()
+	coop_button.visible=coop_panel.connected and not coop_panel.visible and not get_tree().paused
 	if get_tree().paused:
 		counter_actions.hide()
+		checkout_button.hide()
 		basket_button.hide()
 		flip_button.hide()
 		lock_button.hide()
@@ -325,11 +370,16 @@ func _physics_process(delta:float):
 		return
 	show_grip(delta)
 	refresh_cash_panel()
+	if coop_panel.connected:
+		cash_panel.hide()
+		primary_button.get_parent().hide()
+	else:primary_button.get_parent().show()
+	if clerk.active.is_empty():checkout_panel.get_parent().hide()
 	refresh_supply_buttons()
 	counter_actions.visible=can_serve_customer() and not (desktop_overlay and desktop_overlay.visible)
-	change_button.disabled=action_busy() or not clerk.tender_received or not clerk.wallet.occupied(CASH_HAND)
-	handoff_button.disabled=action_busy() or not can_handoff()
-	if action_busy() or basket_panel.get_parent().visible or (desktop_overlay and desktop_overlay.visible):return
+	change_button.disabled=action_busy()
+	handoff_button.disabled=action_busy()
+	if action_busy() or coop_panel.visible or basket_panel.get_parent().visible or checkout_panel.get_parent().visible or (desktop_overlay and desktop_overlay.visible):return
 	var f:Vector3=-game.head.global_basis.z
 	f.y=0
 	f=f.normalized()
@@ -351,7 +401,7 @@ func _physics_process(delta:float):
 		if notice_time<=0:status.text=""
 
 func _unhandled_input(event:InputEvent):
-	if get_tree().paused or action_busy() or basket_panel.get_parent().visible or (desktop_overlay and desktop_overlay.visible):return
+	if get_tree().paused or action_busy() or coop_panel.visible or basket_panel.get_parent().visible or checkout_panel.get_parent().visible or (desktop_overlay and desktop_overlay.visible):return
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			if event.position.distance_to(stick_center())<=77.0 and move_touch<0:
@@ -388,6 +438,8 @@ func tap_target(pixel:Vector2):
 	sync_hands()
 
 func toggle_menu():
+	coop_panel.hide()
+	checkout_panel.get_parent().hide()
 	basket_panel.get_parent().hide()
 	if desktop_overlay:desktop_overlay.hide()
 	operations.get_parent().hide()
@@ -400,6 +452,7 @@ func toggle_menu():
 	look_touch=-1
 
 func toggle_operations():
+	checkout_panel.get_parent().hide()
 	basket_panel.get_parent().hide()
 	operations.get_parent().visible=not operations.get_parent().visible
 	motion=Vector2.ZERO
@@ -434,7 +487,7 @@ func pointed_item()->Dictionary:
 	return best
 
 func use_target():
-	if get_tree().paused or action_busy() or basket_panel.get_parent().visible:return
+	if get_tree().paused or action_busy() or coop_panel.connected or coop_panel.visible or basket_panel.get_parent().visible or checkout_panel.get_parent().visible:return
 	clerk.shift.started=true
 	if not tap_aim:sync_hands()
 	if basket_aimed() and not clerk.inspection.opened:
@@ -520,14 +573,18 @@ func mark_touch_target(cash:Dictionary,item:Dictionary,over_desktop:bool):
 	elif aimed(DETACHER,.20)<INF and near(DETACHER):
 		glow.mark(Transform3D(Basis.IDENTITY,DETACHER),Vector3(.22,.18,.17))
 
+func basket_accessible()->bool:
+	return basket_carried or near(clerk.basket.body.global_position,BASKET_REACH)
+
 func basket_aimed()->bool:
 	var center:Vector3=clerk.basket.body.to_global(Vector3(0,.18,0))
 	return near(center,BASKET_REACH) and aimed(center,.29)<INF
 
 func refresh_supply_buttons():
-	var in_play:bool=not (desktop_overlay and desktop_overlay.visible) and not basket_panel.get_parent().visible
-	basket_button.visible=in_play and near(clerk.basket.body.global_position,BASKET_REACH)
-	basket_button.text="Panier (%d)"%clerk.basket.items.size()
+	var in_play:bool=not coop_panel.connected and not coop_panel.visible and not (desktop_overlay and desktop_overlay.visible) and not basket_panel.get_parent().visible and not checkout_panel.get_parent().visible
+	basket_button.visible=in_play and basket_accessible()
+	checkout_button.visible=in_play and can_serve_customer()
+	basket_button.text=("Panier en main (%d)" if basket_carried else "Panier (%d)")%clerk.basket.items.size()
 	basket_button.disabled=action_busy()
 	lock_button.hide()
 	flip_button.visible=in_play and game.held!=null and not clerk.inspection.opened and clerk.inspection.finger<0
@@ -540,7 +597,7 @@ func refresh_supply_buttons():
 	lock_button.text="Retirer l’antivol" if locked else "Poser l’antivol"
 
 func open_basket():
-	if action_busy() or not near(clerk.basket.body.global_position,BASKET_REACH):return
+	if action_busy() or not basket_accessible():return
 	if clerk.inspection.opened:
 		game._message("Referme le boîtier avant d’utiliser le panier.")
 		return
@@ -548,6 +605,7 @@ func open_basket():
 	move_touch=-1
 	look_touch=-1
 	operations.get_parent().hide()
+	checkout_panel.get_parent().hide()
 	for child in basket_panel.get_children():
 		basket_panel.remove_child(child)
 		child.queue_free()
@@ -575,11 +633,43 @@ func open_basket():
 			var button:=add_button(list,title_text,pick_from_basket.bind(entry))
 			button.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
 			button.disabled=game.held!=null
-	add_button(basket_panel,"Fermer",basket_panel.get_parent().hide)
+	var controls:=HBoxContainer.new()
+	basket_panel.add_child(controls)
+	add_button(controls,"Poser le panier" if basket_carried else "Prendre le panier",toggle_basket_carry)
+	add_button(controls,"Fermer",basket_panel.get_parent().hide)
 	basket_panel.get_parent().show()
 
+func toggle_basket_carry():
+	if action_busy() or not basket_accessible():return
+	var body:RigidBody3D=clerk.basket.body
+	if basket_carried:
+		var forward:Vector3=-game.head.global_basis.z
+		forward.y=0
+		var position:Vector3=game.head.global_position+forward.normalized()*.62
+		var query:=PhysicsRayQueryParameters3D.create(position+Vector3.UP*.22,position-Vector3.UP*2.3,1)
+		var hit:Dictionary=game.get_world_3d().direct_space_state.intersect_ray(query)
+		if hit.is_empty() or hit.normal.y<.7:
+			game._message("Place-toi devant une surface libre pour poser le panier.")
+			return
+		body.reparent(clerk.basket)
+		body.global_transform=Transform3D(Basis(Vector3.UP,game.origin.rotation.y),hit.position+Vector3.UP*.023)
+		body.collision_layer=8
+		body.collision_mask=1|8
+		basket_carried=false
+		game._message("Panier posé.")
+	else:
+		basket_resting_pose=body.global_transform
+		body.freeze=true
+		body.collision_layer=0
+		body.collision_mask=0
+		body.reparent(game.head,false)
+		body.transform=Transform3D(Basis(Vector3.UP,.10),Vector3(-.35,-.43,-.77))
+		basket_carried=true
+		game._message("Panier en main. Ouvre-le pour choisir un boîtier ou le poser.")
+	basket_panel.get_parent().hide()
+
 func pick_from_basket(item:Dictionary):
-	if action_busy() or game.held or clerk.inspection.finger>=0 or not near(clerk.basket.body.global_position,BASKET_REACH):return
+	if action_busy() or game.held or clerk.inspection.finger>=0 or not basket_accessible():return
 	if item not in clerk.basket.items:return
 	basket_panel.get_parent().hide()
 	pick_touch_case(item)
@@ -599,7 +689,7 @@ func pick_touch_case(item:Dictionary):
 	game._play_trailer(item.movie)
 
 func put_in_basket():
-	if action_busy() or not game.held or not near(clerk.basket.body.global_position,BASKET_REACH):return
+	if action_busy() or not game.held or not basket_accessible():return
 	basket_panel.get_parent().hide()
 	var held_case:Node3D=game.held
 	place_held_case(clerk.basket.body.to_global(Vector3(0,.16,0)))
@@ -764,8 +854,9 @@ func take_spare():
 		return
 
 func can_serve_customer()->bool:
-	if clerk.active.is_empty():return false
-	return near(clerk.customer_hand(),1.5) or near(clerk.drawer.global_position,1.55)
+	if coop_panel.connected or clerk.active.is_empty():return false
+	var offset:Vector3=game.head.global_position-clerk.drawer.global_position
+	return near(clerk.customer_hand(),1.65) or Vector2(offset.x,offset.z).length()<2.0
 
 func can_handoff()->bool:
 	return game.held!=null and not clerk.active.is_empty() and clerk.held_service.get("kind","")=="rental"
@@ -777,9 +868,13 @@ func target_customer()->bool:
 
 func handoff():
 	if action_busy() or not can_serve_customer():return
-	if not can_handoff() or clerk.inspection.opened:
+	if clerk.inspection.opened:
 		game._message("Remets le disque et referme le boîtier avant de le donner.")
 		return
+	if not can_handoff():
+		game._message("Prends en main un film ou un jeu de ce client.")
+		return
+	checkout_panel.get_parent().hide()
 	clerk.action("handoff",game.held_hand)
 
 func drop():
@@ -997,7 +1092,7 @@ func take_denomination(value:int,source:Vector3):
 	if clerk.wallet.palms[CASH_HAND].size()>count:animate_cash_pick(source)
 
 func take_payment():
-	if action_busy() or not near(clerk.tender_note.global_position):return
+	if action_busy() or not (near(clerk.tender_note.global_position) or can_serve_customer()):return
 	var start:int=clerk.wallet.palms[CASH_HAND].size()
 	while clerk.tender_note.visible and clerk.wallet.palms[CASH_HAND].size()<32:
 		var count:int=clerk.wallet.palms[CASH_HAND].size()
@@ -1005,8 +1100,10 @@ func take_payment():
 		if clerk.wallet.palms[CASH_HAND].size()==count:break
 	if clerk.wallet.palms[CASH_HAND].size()>start:animate_cash_pick(clerk.tender_note.global_position)
 
-func deposit_payment():
-	if action_busy() or not near(clerk.drawer.global_position) or not clerk.drawer_open:return
+func deposit_payment(all_tender:bool=false):
+	if action_busy() or not clerk.drawer_open:return
+	if not near(clerk.drawer.global_position) and not (all_tender and can_serve_customer()):return
+	if all_tender:selected_cash=null
 	var entries:Array=clerk.wallet.palms[CASH_HAND]
 	var pieces:Array[Node3D]=[]
 	for entry in entries:
@@ -1035,12 +1132,17 @@ func deposit_payment():
 	tween_hand(action_motion,CASH_HAND,rest,.24)
 
 func open_change():
-	if not near(clerk.tender_note.global_position) or not clerk.drawer_open:return
+	if not can_serve_customer() or not clerk.tender_received:return
+	if not clerk.drawer_open:clerk.action("drawer",CASH_HAND)
+	checkout_panel.get_parent().hide()
 	operations.get_parent().hide()
 	var change:=make_panel()
+	var denominations:=GridContainer.new()
+	denominations.columns=3
+	change.add_child(denominations)
 	for value in [1,5,10,25,100,200,500,1000,2000,5000]:
 		var cents:int=value
-		add_button(change,"%.2f $"%(cents/100.0),func():
+		add_button(denominations,"%.2f $"%(cents/100.0),func():
 			change.get_parent().queue_free()
 			for target in clerk.targets:
 				if target.action=="money" and target.value==cents:
@@ -1049,19 +1151,65 @@ func open_change():
 	add_button(change,"Fermer",change.get_parent().queue_free)
 	change.get_parent().show()
 
+func open_checkout():
+	if action_busy() or not can_serve_customer():return
+	basket_panel.get_parent().hide()
+	operations.get_parent().hide()
+	motion=Vector2.ZERO
+	move_touch=-1
+	look_touch=-1
+	for child in checkout_panel.get_children():
+		checkout_panel.remove_child(child)
+		child.queue_free()
+	var status_label:=Label.new()
+	status_label.text="Caisse  ·  Total %.2f $  ·  Donné %.2f $"%[clerk.price/100.0,clerk.tender/100.0]
+	checkout_panel.add_child(status_label)
+	if clerk.tender_note.visible:
+		add_button(checkout_panel,"Prendre le paiement",take_payment)
+	if has_tender_in_hand():
+		add_button(checkout_panel,"Déposer le paiement dans le tiroir",func():
+			if not clerk.drawer_open:clerk.action("drawer",CASH_HAND)
+			deposit_payment(true)
+		)
+	if clerk.tender_received:
+		add_button(checkout_panel,"Choisir les pièces et billets",open_change)
+		if clerk.wallet.occupied(CASH_HAND) and not has_tender_in_hand():
+			add_button(checkout_panel,"Rendre la monnaie au client",give_change)
+	if can_handoff():
+		add_button(checkout_panel,"Remettre le boîtier en main",handoff)
+	elif not game.held:
+		for item in clerk.active.get("items",[]):
+			if item.kind!="rental" or item.node.get_meta("customer_animating",false) or not near(item.node.global_position,2.0):continue
+			var title_text:String=game.layout.movies[item.movie].title
+			var button:=add_button(checkout_panel,"Prendre "+title_text,func():
+				checkout_panel.get_parent().hide()
+				pick_touch_case(item)
+			)
+			button.text_overrun_behavior=TextServer.OVERRUN_TRIM_ELLIPSIS
+	add_button(checkout_panel,"Fermer",checkout_panel.get_parent().hide)
+	checkout_panel.get_parent().show()
+
 func give_change():
 	if action_busy() or not can_serve_customer():return
 	if not clerk.tender_received:
-		game._message("Dépose le paiement du client dans le tiroir avant de rendre la monnaie.")
+		open_checkout()
+		game._message("Encaisse le paiement avant de rendre la monnaie.")
 		return
 	if not clerk.wallet.occupied(CASH_HAND):
-		clerk.wallet.give_customer(CASH_HAND)
+		if clerk.tender>clerk.price and not clerk.paid:open_change()
 		return
+	if has_tender_in_hand():
+		open_checkout()
+		game._message("Dépose le paiement dans le tiroir avant de rendre la monnaie.")
+		return
+	var customer_id:int=clerk.active.id
 	var rest:=hand_rest(CASH_HAND)
 	begin_motion()
 	action_support_hand=CASH_HAND
 	tween_hand(action_motion,CASH_HAND,Transform3D(rest.basis,clerk.customer_hand()+Vector3.UP*.06),.30)
-	action_motion.tween_callback(func():clerk.wallet.give_customer(CASH_HAND))
+	action_motion.tween_callback(func():
+		if clerk.active.get("id",-1)==customer_id:clerk.wallet.give_customer(CASH_HAND)
+	)
 	tween_hand(action_motion,CASH_HAND,rest,.23)
 
 func open_lobby():
