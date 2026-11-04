@@ -597,7 +597,60 @@ func _process(_delta: float) -> void:
 			frame_ring_cursor = (frame_ring_cursor+1)%4320
 	previous_frame_usec = now
 
+var interaction_glows:Array[MeshInstance3D]=[]
+var interaction_timer:=0.0
+
+func interaction_glow(hand:int)->MeshInstance3D:
+	while interaction_glows.size()<=hand:
+		var glow:=preload("res://interaction_glow.gd").new()
+		add_child(glow)
+		interaction_glows.append(glow)
+	return interaction_glows[hand]
+
+func update_vr_glows(delta:float):
+	if not xr_active or not clerk:return
+	interaction_timer+=delta
+	if interaction_timer<.055:return
+	interaction_timer=0
+	for i in range(2):
+		var glow:=interaction_glow(i)
+		glow.hide()
+		if i==held_hand or i==clerk.secondary_hand or i==clerk.basket.hand:continue
+		var p:=hands[i].global_position
+		var best:=.23
+		var pose:=Transform3D.IDENTITY
+		var bounds:=Vector3(.151,.212,.034)
+		for item in clerk.cases:
+			if item==clerk.held_service or item==clerk.secondary or item.node.get_meta("customer_animating",false):continue
+			var distance:float=p.distance_to(item.node.global_position)
+			if distance<best:
+				best=distance
+				pose=item.node.global_transform
+		for target in clerk.targets:
+			if target.action=="tender" and not clerk.tender_note.visible:continue
+			if target.action=="money" and not clerk.drawer_open:continue
+			var distance:float=p.distance_to(target.node.global_position)
+			if distance<minf(best,target.radius+.025):
+				best=distance
+				pose=target.node.global_transform
+				bounds=Vector3.ONE*clampf(target.radius*1.6,.065,.26)
+		if best==.23 and not held and modes.manual_mode:
+			for index in _nearby_dvd_indices(p,.3):
+				var record:Dictionary=dvd_records[index]
+				if record.get("loose",false) or record.get("clerk_reserved",false):continue
+				var distance:float=p.distance_to(record.world.origin)
+				if distance<best:
+					best=distance
+					pose=record.world
+		elif best==.23 and not held:
+			var record:=shelf_ray(aim_hands[i].global_position,-aim_hands[i].global_basis.z)
+			if not record.is_empty():
+				best=0
+				pose=record.world
+		if best<.23:glow.mark(pose,bounds)
+
 func _physics_process(delta: float) -> void:
+	update_vr_glows(delta)
 	elapsed += delta
 	if trailer_player and trailer_player.is_playing():
 		trailer_timer += delta
@@ -708,7 +761,7 @@ func _recenter_entry(force := false) -> void:
 	_write_diagnostics()
 
 func _write_diagnostics() -> void:
-	var state := {"xr_active":xr_active,"tracking":xr_interface.get_tracking_status() if xr_interface else -1,"spawn_centered":spawn_centered,"head_local":[head.position.x,head.position.y,head.position.z],"head_world":[head.global_position.x,head.global_position.y,head.global_position.z],"origin":[origin.position.x,origin.position.y,origin.position.z],"viewport_xr":get_viewport().use_xr,"viewport_size":str(get_viewport().get_visible_rect().size),"xr_target_size":str(xr_interface.get_render_target_size()) if xr_interface else "none","msaa":get_viewport().msaa_3d,"camera_current":head.current,"fps":Engine.get_frames_per_second(),"dvd_count":dvd_records.size(),"near_covers":lod_selected.size(),"lod_candidates":lod_last_examined,"build":"PC-0.6.5" if pc_vr else "0.6.9","teleport_mode":teleportation.enabled,"baked_lighting":baked_lighting_active,"active_trailer":active_trailer,"trailer_playing":trailer_player.is_playing(),"video_position":trailer_player.stream_position,"screens":screens.size(),"draw_calls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)}
+	var state := {"xr_active":xr_active,"tracking":xr_interface.get_tracking_status() if xr_interface else -1,"spawn_centered":spawn_centered,"head_local":[head.position.x,head.position.y,head.position.z],"head_world":[head.global_position.x,head.global_position.y,head.global_position.z],"origin":[origin.position.x,origin.position.y,origin.position.z],"viewport_xr":get_viewport().use_xr,"viewport_size":str(get_viewport().get_visible_rect().size),"xr_target_size":str(xr_interface.get_render_target_size()) if xr_interface else "none","msaa":get_viewport().msaa_3d,"camera_current":head.current,"fps":Engine.get_frames_per_second(),"dvd_count":dvd_records.size(),"near_covers":lod_selected.size(),"lod_candidates":lod_last_examined,"build":"PC-0.6.5" if pc_vr else "0.7.0","teleport_mode":teleportation.enabled,"baked_lighting":baked_lighting_active,"active_trailer":active_trailer,"trailer_playing":trailer_player.is_playing(),"video_position":trailer_player.stream_position,"screens":screens.size(),"draw_calls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)}
 	state["texture_mip_bias"]=ProjectSettings.get_setting("rendering/textures/default_filters/texture_mipmap_bias",0.0)
 	state["foveation_level"]=xr_interface.call("get_foveation_level") if xr_interface and xr_interface.has_method("get_foveation_level") else -1
 	if Engine.has_singleton("OpenXRFbCompositionLayerSettingsExtension"):
@@ -813,9 +866,16 @@ func _interact(hand_index: int, by_grip: bool) -> void:
 				near_record=record
 		if not near_record.is_empty():_take(near_record,hand_index,true)
 		return
+	var closest:=shelf_ray(p,direction)
+	if closest.is_empty():
+		_message("Vise un boîtier\nGâchette : prendre · Joystick gauche : marcher")
+		return
+	_take(closest,hand_index,by_grip)
+
+func shelf_ray(p:Vector3,direction:Vector3,max_distance:float=3.5)->Dictionary:
 	var closest: Dictionary = {}
-	var distance := 3.5
-	for index in _nearby_dvd_indices(p,3.65):
+	var distance := max_distance
+	for index in _nearby_dvd_indices(p,max_distance+.15):
 		var record: Dictionary = dvd_records[index]
 		if record.get("loose",false) or record.get("clerk_reserved",false):continue
 		var center: Vector3 = record.world.origin
@@ -827,10 +887,7 @@ func _interact(hand_index: int, by_grip: bool) -> void:
 		if hit != null:
 			distance = t
 			closest = record
-	if closest.is_empty():
-		_message("Vise un boîtier\nGâchette : prendre · Joystick gauche : marcher")
-		return
-	_take(closest,hand_index,by_grip)
+	return closest
 
 func _take(record: Dictionary, hand_index: int, by_grip: bool) -> void:
 	held_record = record

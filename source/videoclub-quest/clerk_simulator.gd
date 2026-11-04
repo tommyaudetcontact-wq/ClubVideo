@@ -407,7 +407,7 @@ func refresh_tender_visual():
 	tender_note.visible=not tender_parts.is_empty() and active.get("missing",[]).is_empty()
 func make_mess(c:Dictionary):
 	if cases.filter(func(item):return str(item.get("task","")).begins_with("Ramasser")).size()>=8:return
-	var nearby=game.dvd_records.filter(func(r):return not r.get("clerk_reserved",false) and not r.get("loose",false) and r!=game.held_record and r.world.origin.distance_to(c.node.position+Vector3(0,1,0))<2.0)
+	var nearby=game.dvd_records.filter(func(r):return not r.get("clerk_reserved",false) and not r.get("loose",false) and r!=game.held_record and r.world.origin.distance_to(c.node.global_position+Vector3(0,1,0))<2.0)
 	if nearby.is_empty():return
 	var record:Dictionary=nearby.pick_random()
 	record.clerk_reserved=true
@@ -652,17 +652,17 @@ func handoff_rental():
 	if was_scanned:
 		if not active.has("billed_titles"):active.billed_titles=[]
 		active.billed_titles.append(id)
-		if game.held.get_meta("dirty",false) or game.held.get_meta("disc_movie",-1)!=id:
-			shift.refunds+=Pricing.unit(game.layout.movies[id])
 	else:
 		shift.missed_scans+=1
 		shift.lost_sales+=Pricing.unit(game.layout.movies[id])
+	var defective:bool=game.held.get_meta("dirty",false) or game.held.get_meta("disc_movie",-1)!=id
+	var refund:int=Pricing.unit(game.layout.movies[id]) if was_scanned and defective else 0
 	active.items.erase(held_service)
 	consume_case()
 	active.handed+=1
 	var account=int(active.get("account_id",active.id))
 	var cycle=accounts.rental(account,id,record.id)
-	returns_due.append({"movie":id,"time":elapsed+60,"record":record,"account_id":account,"rental_id":cycle})
+	returns_due.append({"movie":id,"time":elapsed+60,"record":record,"account_id":account,"rental_id":cycle,"refund":refund})
 	if not active.items.is_empty():
 		refresh_invoice()
 		game._message("Film remis sans scan. Perte enregistrée." if not was_scanned else "Remets les autres boîtiers au client.")
@@ -682,9 +682,10 @@ func release()->bool:
 		return true
 	if held_service.is_empty() and game.held and (repairs.is_case_surface(game.held.global_position) or basket.contains(game.held.global_position) or in_sort_tray(game.held.global_position)):adopt_held_case()
 	if held_service.is_empty():return false
-	if game.held.get_meta("disc_movie",-1)!=held_service.movie and held_service.kind!="sorting":flag_wrong_case(held_service)
 	if basket.store(held_service):return true
 	if in_sort_tray(game.held.global_position):
+		if game.held.get_meta("inspected",false) and game.held.get_meta("disc_movie",-1)!=held_service.movie:
+			flag_wrong_case(held_service)
 		store_sort_tray(held_service)
 		return true
 	if repairs.drop_into_bin(held_service):return true
@@ -698,7 +699,7 @@ func release()->bool:
 				if active.get("is_return",false) and held_service in active.get("items",[]):
 					game._message("Termine le retour à l'ordinateur avant de ranger ce boîtier.")
 					return true
-				if game.held.get_meta("disc_movie",-1)!=held_service.movie:
+				if (held_service.kind!="shelve" or game.held.get_meta("inspected",false)) and game.held.get_meta("disc_movie",-1)!=held_service.movie:
 					game._message("Ce boîtier ne contient pas encore le bon disque.")
 					return true
 				if not game.held.get_meta("antitheft",false):
@@ -840,9 +841,13 @@ func deliver_return(job:Dictionary,customer:Dictionary={},at_counter:bool=false)
 	returned.node.set_meta("return_account",account)
 	returned.node.set_meta("return_cycle",int(job.get("rental_id",-1)))
 	returned.node.set_meta("return_checked",false)
-	var dirty=randf()<minf(.45,.30+.015*(shift.day-1))
+	var refund:=int(job.get("refund",0))
+	if refund>0:
+		shift.refunds+=refund
+		game._message("Le client revient pour un disque incorrect ou abîmé. Remboursement de %.2f $ enregistré."%(refund/100.0))
+	var dirty=bool(job.record.get("dirty",false)) if refund>0 else randf()<minf(.45,.30+.015*(shift.day-1))
 	returned.node.set_meta("dirty",dirty)
-	returned.node.set_meta("returned_damage",dirty)
+	returned.node.set_meta("returned_damage",dirty and refund==0)
 	job.record.dirty=dirty
 	returned.node.rotation=Vector3(-PI/2,0,0)
 	if not customer.is_empty() and customer.has("carry") and is_instance_valid(customer.carry):customer.carry.visible=false
@@ -950,7 +955,7 @@ func refresh_basket():
 	scanned=active.missing.is_empty()
 	unlocked=true
 	for item in active.items:
-		scanned=scanned and item.scanned and (active.get("is_return",false) or item.node.get_meta("disc_movie",-1)==item.movie)
+		scanned=scanned and item.scanned
 		unlocked=unlocked and not item.node.get_meta("antitheft",false)
 func flag_wrong_case(item:Dictionary):
 	if item.kind=="sorting":return
@@ -1059,13 +1064,6 @@ func scan_held()->bool:
 	if game.held.get_meta("needs_relock",false) and not game.held.get_meta("return_checked",false):
 		var fee=accounts.scan_return(game.held)
 		game._message("Retour enregistré au dossier client. Frais de 2.00 $ à sa prochaine visite." if fee>0 else "Retour enregistré au bon dossier client.")
-	if int(game.held.get_meta("disc_movie",-1))!=held_service.movie:
-		flag_wrong_case(held_service)
-		refresh_invoice()
-		return false
-	if game.held.get_meta("dirty",false) and held_service.kind!="return":
-		game._message("Répare le disque avant de le proposer en location.")
-		return false
 	if held_service.kind=="rental" and not held_service.scanned and active.get("cash_started",false):
 		game._message("Le paiement est commencé. Ce boîtier n’a pas été facturé.")
 		return false

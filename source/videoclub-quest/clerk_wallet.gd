@@ -88,15 +88,7 @@ func interact(hand:int,grip:bool)->bool:
 		var other=1-hand
 		for entry in loose:
 			if reach_distance(hand,entry.node.global_position)<.14 and palms[hand].size()<32:
-				var body=entry.body
-				entry.node.reparent(roots[hand],false)
-				body.queue_free()
-				entry.erase("body")
-				loose.erase(entry)
-				palms[hand].append(entry)
-				supported[hand]=false
-				arrange(hand)
-				return true
+				return pick_loose(hand,entry)
 		var palm_piece={}
 		var palm_distance=.10
 		for entry in palms[other]:
@@ -133,6 +125,18 @@ func interact(hand:int,grip:bool)->bool:
 	if not occupied(hand):return false
 	release_grip(hand)
 	return true
+func pick_loose(hand:int,entry:Dictionary)->bool:
+	if palms[hand].size()>=32 or entry not in loose:return false
+	var body=entry.body
+	entry.node.reparent(roots[hand],false)
+	body.queue_free()
+	entry.erase("body")
+	loose.erase(entry)
+	palms[hand].append(entry)
+	supported[hand]=false
+	arrange(hand)
+	return true
+
 func reach_distance(hand:int,p:Vector3)->float:
 	return minf(game.hands[hand].global_position.distance_to(p),minf(roots[hand].global_position.distance_to(p),clerk.inspection.finger_transform(hand).origin.distance_to(p)))
 func release_grip(hand:int):

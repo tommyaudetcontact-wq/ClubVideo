@@ -26,7 +26,7 @@ func setup(g,c):
 					grid.set_point_solid(Vector2i(x,z))
 					break
 func route(c:Dictionary,target:Vector3)->bool:
-	var start=Vector2i(roundi(c.node.position.x/.25),roundi(c.node.position.z/.25))
+	var start=Vector2i(roundi(c.node.global_position.x/.25),roundi(c.node.global_position.z/.25))
 	var end=Vector2i(roundi(target.x/.25),roundi(target.z/.25))
 	if not grid.is_in_boundsv(start) or not grid.is_in_boundsv(end) or grid.is_point_solid(end):return false
 	c.path=grid.get_point_path(start,end)
@@ -113,7 +113,7 @@ func _physics_process(dt):
 					c.patience=0.0
 				"enter":
 					if not c.return_job.is_empty():
-						c.state="return_counter" if c.get("return_and_rent",false) else "return_drop"
+						c.state="return_counter" if c.get("return_and_rent",false) or int(c.return_job.get("refund",0))>0 else "return_drop"
 						route(c,Vector3(-.6,0,-5.05) if c.state=="return_counter" else Vector3(-2.5,0,-4.8))
 					else:begin_browse(c)
 				"return_counter":
@@ -178,6 +178,7 @@ func _physics_process(dt):
 					customers.erase(c)
 					c.node.queue_free()
 					continue
+		update_children(c,dt)
 		update_service_visual(c,dt)
 		var holding:bool=c.has("carry") and is_instance_valid(c.carry) and c.carry.visible
 		var picking:bool=c.state=="browse" and not moving and c.cursor>=c.path.size() and c.wait<2.65
@@ -187,12 +188,52 @@ func _physics_process(dt):
 			Actor.animate(c.node,key)
 			for i in range(c.get("companions",[]).size()):
 				var follower:Node3D=c.node.get_node_or_null("Companion%d"%i)
-				if follower:Actor.animate(follower,"Walk" if moving else "Idle")
+				if follower and not follower.has_meta("aisle_run"):Actor.animate(follower,"Walk" if moving else "Idle")
 		else:
 			for side in [-1,1]:
 				c.node.get_node("Arm"+str(side)).scale.y=1.6 if c==clerk.active and side==1 else 1.0
 				c.node.get_node("Leg"+str(side)).rotation.x=sin(clock*8+side*PI/2)*(.30 if moving else 0)
 				c.node.get_node("Arm"+str(side)).rotation.x=1.25 if c==clerk.active and side==1 else -sin(clock*8+side*PI/2)*(.25 if moving else 0)
+func update_children(c:Dictionary,dt:float):
+	if not c.get("family",false):return
+	var remaining:=120.0+float(c.get("patience_bonus",0))-float(c.get("patience",0))
+	if c.state=="service" and remaining<=30.0 and not (c==clerk.active and clerk.paid) and not c.get("children_played",false):
+		c.children_played=true
+		var count:=randi_range(1,2)
+		for i in range(c.companions.size()):
+			var child:Node3D=c.node.get_node_or_null("Companion%d"%i)
+			if not child or int(c.companions[i])<6:continue
+			var run:Dictionary={"node":child}
+			if route(run,Vector3(-4,0,1.5+i)):
+				child.set_meta("aisle_run",{"path":run.path,"cursor":1,"home":child.position,"drop":count if i==0 else 0,"back":false})
+	for i in range(c.companions.size()):
+		var child:Node3D=c.node.get_node_or_null("Companion%d"%i)
+		if not child or not child.has_meta("aisle_run"):continue
+		var run:Dictionary=child.get_meta("aisle_run")
+		if run.cursor>=run.path.size():
+			if not run.back:
+				for j in range(run.drop):clerk.make_mess({"node":child})
+				run.back=true
+			var home:Vector3=c.node.to_global(run.home)
+			var route_back:Dictionary={"node":child}
+			if not run.get("routed_home",false):
+				run.routed_home=true
+				if route(route_back,home):
+					run.path=route_back.path
+					run.cursor=1
+			if run.cursor>=run.path.size() or child.global_position.distance_to(home)<.36:
+				child.position=run.home
+				child.rotation.y=0
+				child.remove_meta("aisle_run")
+				continue
+		var point:Vector2=run.path[run.cursor]
+		var target:=Vector3(point.x,0,point.y)
+		var offset:=target-child.global_position
+		child.global_position=child.global_position.move_toward(target,dt*2.1)
+		if offset.length()>.05:child.global_rotation.y=atan2(-offset.x,-offset.z)
+		else:run.cursor+=1
+		Actor.animate(child,"Walk")
+
 func dismiss(c:Dictionary):
 	c.state="exit"
 	route(c,Vector3(-4,0,9.0))

@@ -30,6 +30,8 @@ var original_camera_height := 1.65
 var crouching := false
 var spare_carried := false
 var disc_back := false
+var desktop_overlay:ColorRect
+var desktop_view:TextureRect
 const DETACHER := Vector3(.72,1.17,-6.18)
 
 func setup(g):
@@ -79,8 +81,8 @@ func setup(g):
 	status.add_theme_font_size_override("font_size",21)
 	status.text="Gauche : avancer · Droite : regarder · Vise puis touche Utiliser"
 	buttons.add_child(status)
-	stick_base=make_stick(Vector2(130,130),Color(.10,.17,.27,.50))
-	stick_thumb=make_stick(Vector2(54,54),Color(.71,.83,1.0,.66))
+	stick_base=make_stick(Vector2(154,154),Color(.10,.17,.27,.50))
+	stick_thumb=make_stick(Vector2(62,62),Color(.71,.83,1.0,.66))
 	var bar:=HBoxContainer.new()
 	bar.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
 	bar.offset_left=-595
@@ -183,11 +185,13 @@ func make_stick(dimensions:Vector2,color:Color)->Panel:
 	buttons.add_child(panel)
 	return panel
 
+func stick_center()->Vector2:
+	return Vector2(111,get_viewport().get_visible_rect().size.y-145)
+
 func update_stick():
-	var height:=get_viewport().get_visible_rect().size.y
-	var center:=move_start if move_touch>=0 else Vector2(105,height-106)
+	var center:=stick_center()
 	stick_base.position=center-stick_base.size*.5
-	stick_thumb.position=center+motion*47-stick_thumb.size*.5
+	stick_thumb.position=center+motion*54-stick_thumb.size*.5
 	stick_base.visible=not get_tree().paused
 	stick_thumb.visible=stick_base.visible
 
@@ -223,7 +227,7 @@ func show_grip(delta:float):
 	for i in range(2):
 		var visual:Node3D=game.hand_visuals[i]
 		var holding:bool=is_instance_valid(game.held) and game.held_hand==i
-		visual.visible=holding or (action_busy() and i==action_support_hand)
+		visual.visible=holding or clerk.wallet.occupied(i) or (action_busy() and i==action_support_hand)
 		if not visual.visible:continue
 		visual.position=Vector3(-.070 if i==0 else .070,-.068,.028)
 		visual.rotation.z=-.28 if i==0 else .28
@@ -233,6 +237,7 @@ func tween_hand(tween:Tween,index:int,target:Transform3D,seconds:float):
 	tween.tween_property(game.hands[index],"global_transform",target,seconds).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 func begin_motion():
+	motion=Vector2.ZERO
 	action_support_hand=-1
 	move_touch=-1
 	look_touch=-1
@@ -254,7 +259,7 @@ func _physics_process(delta:float):
 		if game.modes.menu_open and not menu.get_parent().visible and (not lobby_panel or not lobby_panel.get_parent().visible):menu.get_parent().show()
 		return
 	show_grip(delta)
-	if action_busy():return
+	if action_busy() or (desktop_overlay and desktop_overlay.visible):return
 	var f:Vector3=-game.head.global_basis.z
 	f.y=0
 	f=f.normalized()
@@ -276,12 +281,12 @@ func _physics_process(delta:float):
 		if notice_time<=0:status.text=""
 
 func _unhandled_input(event:InputEvent):
-	if get_tree().paused or action_busy():return
+	if get_tree().paused or action_busy() or (desktop_overlay and desktop_overlay.visible):return
 	if event is InputEventScreenTouch:
 		if event.pressed:
-			if event.position.x<get_viewport().get_visible_rect().size.x*.44 and move_touch<0:
+			if event.position.distance_to(stick_center())<=77.0 and move_touch<0:
 				move_touch=event.index
-				move_start=event.position
+				move_start=stick_center()
 			elif look_touch<0:
 				look_touch=event.index
 				look_start=event.position
@@ -312,6 +317,7 @@ func tap_target(pixel:Vector2):
 	sync_hands()
 
 func toggle_menu():
+	if desktop_overlay:desktop_overlay.hide()
 	operations.get_parent().hide()
 	game.modes.toggle_pause()
 	game.modes.panel.hide()
@@ -358,8 +364,18 @@ func use_target():
 	if get_tree().paused or action_busy():return
 	clerk.shift.started=true
 	if not tap_aim:sync_hands()
-	if clerk.desktop.point(clerk.desktop.project_ray(game.aim_hands[0]),true):return
+	if clerk.desktop.project_ray(game.aim_hands[0]).x>=0:
+		open_desktop()
+		return
+	var cash:=cash_target()
+	if not cash.is_empty():
+		use_cash(cash)
+		return
 	if clerk.inspection.finger>=0:
+		if aimed(clerk.inspection.carried.global_position,.083)<INF:flip_item()
+		else:use_disc()
+		return
+	if clerk.inspection.opened and is_instance_valid(clerk.inspection.disc) and aimed(clerk.inspection.disc.global_position,.085)<INF:
 		use_disc()
 		return
 	if game.held:
@@ -387,25 +403,55 @@ func use_target():
 		game._play_trailer(item.movie)
 		return
 	for target in clerk.targets:
-		if target.action in ["tender","money","page","phone","door","drawer"] and aimed(target.node.global_position,target.radius)<INF:
-			if target.action=="tender":take_payment()
-			elif target.action=="money":clerk.wallet.take(1,target.value)
-			else:clerk.action(target.action,1,target.value)
+		if target.action in ["page","phone","door"] and aimed(target.node.global_position,target.radius)<INF:
+			clerk.action(target.action,1,target.value)
 			return
 	var original:bool=game.modes.manual_mode
 	game.modes.manual_mode=false
 	game._interact(0,false)
 	game.modes.manual_mode=original
-	if game.held and not game.held_record.is_empty():animate_pick(game.held_record.world.origin)
+	if game.held:
+		var record:Dictionary=clerk.held_service.get("record",game.held_record)
+		if not record.is_empty():animate_pick(record.world.origin)
+
+func mark_touch_target(cash:Dictionary,item:Dictionary,over_desktop:bool):
+	var glow:MeshInstance3D=game.interaction_glow(0)
+	glow.hide()
+	if over_desktop:
+		glow.mark(clerk.screen.global_transform,Vector3(.35,.255,.018))
+	elif not cash.is_empty():
+		var node:Node3D=cash.get("node")
+		var pose:=node.global_transform if node else Transform3D(Basis.IDENTITY,cash.position)
+		var width:=.32 if cash.action=="deposit" else .14
+		glow.mark(pose,Vector3(width,.09,.12))
+	elif clerk.inspection.finger>=0:
+		var disc:Node3D=clerk.inspection.carried
+		if aimed(disc.global_position,.083)<INF:glow.mark(disc.global_transform,Vector3(.13,.13,.015))
+	elif clerk.inspection.opened:
+		var disc:Node3D=clerk.inspection.disc
+		if is_instance_valid(disc) and aimed(disc.global_position,.085)<INF:glow.mark(disc.global_transform,Vector3(.13,.13,.015))
+	elif not item.is_empty():
+		glow.mark(item.node.global_transform,Vector3(.15,.21,.033))
+	elif not game.held:
+		var record:Dictionary=game.shelf_ray(game.head.global_position,-game.head.global_basis.z)
+		if not record.is_empty():glow.mark(record.world,Vector3(.15,.21,.033))
+	elif aimed(clerk.scanner.global_position,.24)<INF and near(clerk.scanner.global_position):
+		glow.mark(clerk.scanner.global_transform,Vector3(.22,.17,.18))
+	elif aimed(DETACHER,.20)<INF and near(DETACHER):
+		glow.mark(Transform3D(Basis.IDENTITY,DETACHER),Vector3(.22,.18,.17))
 
 func refresh_action(over_desktop:bool):
 	var inspection=clerk.inspection
 	var label:="Viser un objet"
 	var hint:=""
 	var item:Dictionary=pointed_item() if not game.held else {}
-	if over_desktop:label="Cliquer"
+	var cash:=cash_target()
+	mark_touch_target(cash,item,over_desktop)
+	if over_desktop:label="Ouvrir l’ordi"
+	elif not cash.is_empty():
+		label={"tender":"Prendre l’argent","money":"Prendre","drawer":"Tiroir","give_change":"Rendre la monnaie","deposit":"Déposer en caisse","loose_money":"Ramasser"}.get(cash.action,"Utiliser")
 	elif inspection.finger>=0:
-		label="Déposer le disque" if not inspection.opened else "Remettre le disque"
+		label="Retourner" if aimed(inspection.carried.global_position,.083)<INF else ("Déposer le disque" if not inspection.opened else "Remettre le disque")
 	elif game.held:
 		if not clerk.active.is_empty() and aimed(clerk.customer_hand(),.34)<INF:label="Remettre au client"
 		elif aimed(clerk.scanner.global_position,.24)<INF:label="Scanner"
@@ -550,12 +596,11 @@ func drop():
 		game.candy.release_ball(0)
 		body.linear_velocity=-game.head.global_basis.z*3.0+Vector3.UP
 		return
-	if not game.held:return
+	if not game.held:
+		if clerk.wallet.occupied(1):give_change()
+		return
 	if not clerk.active.is_empty() and clerk.held_service.get("kind","")=="rental" and near(clerk.customer_hand(),1.3) and aimed(clerk.customer_hand(),.34)<INF:
-		if game.held.get_meta("disc_movie",-1)!=clerk.held_service.movie:
-			clerk.flag_wrong_case(clerk.held_service)
-		else:
-			clerk.action("handoff",game.held_hand)
+		clerk.action("handoff",game.held_hand)
 		return
 	if not clerk.held_service.is_empty():
 		var record:Dictionary=clerk.held_service.get("record",{})
@@ -581,6 +626,84 @@ func table_point(height:float)->Vector3:
 	var distance:float=(height-start.y)/direction.y
 	return start+direction*distance if distance>0 and distance<1.7 else Vector3.INF
 
+func open_desktop():
+	motion=Vector2.ZERO
+	move_touch=-1
+	look_touch=-1
+	if not desktop_overlay:
+		desktop_overlay=ColorRect.new()
+		desktop_overlay.color=Color(.025,.035,.055,.96)
+		desktop_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		buttons.add_child(desktop_overlay)
+		desktop_view=TextureRect.new()
+		desktop_view.expand_mode=TextureRect.EXPAND_IGNORE_SIZE
+		desktop_view.texture=clerk.desktop.get_viewport().get_texture()
+		desktop_overlay.add_child(desktop_view)
+		desktop_view.gui_input.connect(desktop_input)
+		var close:=Button.new()
+		close.text="Fermer"
+		close.custom_minimum_size=Vector2(100,52)
+		close.position=Vector2(12,12)
+		close.pressed.connect(func():desktop_overlay.hide();clerk.desktop.point(Vector2(-1,-1)))
+		desktop_overlay.add_child(close)
+	var bounds:=get_viewport().get_visible_rect().size
+	var height:=minf(bounds.y-18,(bounds.x-118)*.75)
+	desktop_view.size=Vector2(height/.75,height)
+	desktop_view.position=(bounds-desktop_view.size)*.5+Vector2(48,0)
+	desktop_overlay.show()
+
+func desktop_input(event:InputEvent):
+	if event is InputEventScreenTouch:
+		desktop_view.accept_event()
+		if event.pressed:
+			var point:Vector2=event.position/desktop_view.size*clerk.desktop.size
+			clerk.desktop.point(point,true)
+
+func cash_target()->Dictionary:
+	var candidate:Dictionary={}
+	var best:=INF
+	for target in clerk.targets:
+		if target.action not in ["tender","money","drawer"]:continue
+		if target.action=="tender" and not clerk.tender_note.visible:continue
+		if target.action=="money" and (not clerk.drawer_open or not clerk.tender_received or int(clerk.till.get(target.value,0))<=0):continue
+		var position:Vector3=target.node.global_position
+		if not near(position):continue
+		var depth:=aimed(position,minf(target.radius+.022,.14))
+		if depth==INF:continue
+		var ray:Vector3=-game.aim_hands[0].global_basis.z
+		var distance:float=(position-game.head.global_position-ray*depth).length()+depth*.02
+		if distance<best:
+			candidate=target
+			best=distance
+	for entry in clerk.wallet.loose:
+		var depth:=aimed(entry.node.global_position,.055)
+		if depth==INF:continue
+		var ray:Vector3=-game.aim_hands[0].global_basis.z
+		var distance:float=(entry.node.global_position-game.head.global_position-ray*depth).length()+depth*.02
+		if distance<best and near(entry.node.global_position):
+			candidate={"action":"loose_money","node":entry.node,"entry":entry}
+			best=distance
+	if clerk.wallet.occupied(1):
+		var hand:Vector3=clerk.customer_hand()
+		var distance:=aimed(hand,.25)
+		if not clerk.active.is_empty() and near(hand,1.5) and distance<INF:
+			candidate={"action":"give_change","position":hand}
+		elif clerk.drawer_open and near(clerk.drawer.global_position) and aimed(clerk.drawer.global_position,.29)<INF:
+			for entry in clerk.wallet.palms[1]:
+				if entry.tender:
+					candidate={"action":"deposit","node":clerk.drawer}
+					break
+	return candidate
+
+func use_cash(target:Dictionary):
+	match target.action:
+		"tender":take_payment()
+		"money":clerk.wallet.take(1,target.value)
+		"drawer":clerk.action("drawer",1)
+		"give_change":give_change()
+		"deposit":deposit_payment()
+		"loose_money":clerk.wallet.pick_loose(1,target.entry)
+
 func take_payment():
 	if not near(clerk.tender_note.global_position):return
 	while clerk.tender_note.visible and clerk.wallet.palms[1].size()<32:
@@ -589,7 +712,7 @@ func take_payment():
 		if clerk.wallet.palms[1].size()==count:break
 
 func deposit_payment():
-	if not near(clerk.tender_note.global_position) or not clerk.drawer_open:return
+	if not near(clerk.drawer.global_position) or not clerk.drawer_open:return
 	for index in range(clerk.wallet.palms[1].size()-1,-1,-1):
 		if clerk.wallet.palms[1][index].tender:clerk.wallet.remove_one(1,index,true)
 

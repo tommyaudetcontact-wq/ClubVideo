@@ -139,6 +139,9 @@ func toggle_case():
 	label_seen=false
 	inspected=false
 	clean_progress=0
+	if game.touch_profile:
+		game._message("Touche le disque pour le sortir. Touche sa face pour le retourner.")
+		return
 	game._message("Poignée sur le bord : ouvre avec ta main. Relâche après un petit mouvement pour finir le geste. Gâchette près du centre : sortir le disque.")
 func finger_transform(hand:int)->Transform3D:
 	if game.touch_profile and game.touch_controls:
@@ -249,8 +252,7 @@ func close_case():
 	case_node=null
 	disc=null
 	if label_seen and game.held and game.held.get_meta("disc_movie",-1)!=game.movie_id:
-		var item=game.clerk.adopt_held_case()
-		if not item.is_empty():game.clerk.flag_wrong_case(item)
+		game._message("Mauvais disque. Tu peux mettre le boîtier dans À DÉMÊLER ou poursuivre la location.")
 		return
 	if game.clerk and game.clerk.accept_replacement():return
 	if game.clerk and not game.clerk.held_service.is_empty() and game.held and game.held.get_meta("inspected",false):

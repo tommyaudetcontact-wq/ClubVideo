@@ -3,7 +3,7 @@ const VERSION=2
 const CASE_META=["disc_movie","disc_uid","dirty","inspected","antitheft","sort_slot","in_basket","in_sort_tray","barcode_scanned","needs_relock","return_account","return_cycle","return_checked","returned_damage"]
 const SHIFT_FIELDS=["day","duration","time_left","closing","summary","started","served","abandoned","lost_sales","missed_scans","revenue","refunds","returned","restocked","damaged","initial_cash","wave","break_left","report","business_balance"]
 const COUNTER_FIELDS=["price","tender","tender_parts","tender_received","tender_deposited","paid","change","drawer_open","page","rentals","elapsed","customer_delay","chute_serial","tasks","reminders"]
-const CLIENT_FIELDS=["id","state","cursor","wait","messy","movie","patience","patience_bonus","missing","handed","is_return","replace_title","replacement_movie","replacement_queue","family","companions","handoff_wait","return_and_rent","browse_index","price_titles","discount","cash_started","next_mess","mess_done","account_id","visit_balance","account_due","offer_ready","subtotal","gst","qst","billed_titles"]
+const CLIENT_FIELDS=["id","state","cursor","wait","messy","movie","patience","patience_bonus","missing","handed","is_return","replace_title","replacement_movie","replacement_queue","family","companions","children_played","handoff_wait","return_and_rent","browse_index","price_titles","discount","cash_started","next_mess","mess_done","account_id","visit_balance","account_due","offer_ready","subtotal","gst","qst","billed_titles"]
 var game
 var save_path="user://club-save.dat"
 var autosave_clock=0.0
@@ -63,10 +63,10 @@ func _notification(what):
 func record_id(record:Dictionary)->int:return int(record.get("id",-1))
 func pack_job(job:Dictionary)->Dictionary:
 	if job.is_empty():return {}
-	return {"movie":job.movie,"time":job.get("time",0.0),"record":record_id(job.record),"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1))}
+	return {"movie":job.movie,"time":job.get("time",0.0),"record":record_id(job.record),"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0))}
 func unpack_job(job:Dictionary)->Dictionary:
 	if job.is_empty():return {}
-	return {"movie":job.movie,"time":job.time,"record":game.dvd_records[job.record],"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1))}
+	return {"movie":job.movie,"time":job.time,"record":game.dvd_records[job.record],"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0))}
 
 func pack_case(item:Dictionary,node:Node3D)->Dictionary:
 	var result={"movie":item.movie,"kind":item.kind,"scanned":item.get("scanned",false),"task":item.get("task",""),"record":record_id(item.get("record",{})),"transform":node.global_transform,"meta":{}}

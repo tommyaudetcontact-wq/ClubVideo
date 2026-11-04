@@ -1,6 +1,6 @@
 extends Node
 
-const CURRENT := "0.6.9"
+const CURRENT := "0.7.0"
 const REPOSITORY := "https://github.com/tommyaudetcontact-wq/ClubVideo"
 const RELEASES := "https://api.github.com/repos/tommyaudetcontact-wq/ClubVideo/releases?per_page=12"
 const STAGING := "user://updates/download.apk"
