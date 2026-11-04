@@ -16,6 +16,8 @@ var stick_base:Panel
 var stick_thumb:Panel
 var prompt_clock := 0.0
 var tap_aim := false
+var action_motion:Tween
+var action_support_hand:=-1
 var move_touch := -1
 var look_touch := -1
 var look_start := Vector2.ZERO
@@ -36,7 +38,7 @@ func setup(g):
 	name="TouchControls"
 	process_mode=Node.PROCESS_MODE_ALWAYS
 	game.hud.hide()
-	game.head.fov=72
+	game.head.fov=58
 	game.get_viewport().msaa_3d=Viewport.MSAA_2X
 	game.get_viewport().scaling_3d_scale=.87
 	for i in range(2):
@@ -46,14 +48,24 @@ func setup(g):
 	buttons.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	buttons.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	add_child(buttons)
-	var reticle:=Label.new()
-	reticle.text="+"
-	reticle.add_theme_font_size_override("font_size",22)
+	var reticle:=Control.new()
 	reticle.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	reticle.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	reticle.offset_left=-7
-	reticle.offset_top=-15
 	buttons.add_child(reticle)
+	for bounds in [Rect2(-19,-2,38,4),Rect2(-2,-19,4,38)]:
+		var outline:=ColorRect.new()
+		outline.position=bounds.position-Vector2.ONE*2
+		outline.size=bounds.size+Vector2.ONE*4
+		outline.color=Color(.03,.04,.06,.92)
+		outline.mouse_filter=Control.MOUSE_FILTER_IGNORE
+		reticle.add_child(outline)
+	for bounds in [Rect2(-18,-1.5,36,3),Rect2(-1.5,-18,3,36)]:
+		var stroke:=ColorRect.new()
+		stroke.position=bounds.position
+		stroke.size=bounds.size
+		stroke.color=Color("fff1d0")
+		stroke.mouse_filter=Control.MOUSE_FILTER_IGNORE
+		reticle.add_child(stroke)
 	status=Label.new()
 	status.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	status.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
@@ -193,16 +205,56 @@ func make_panel()->VBoxContainer:
 	panel.hide()
 	return box
 
+func action_busy()->bool:
+	return action_motion!=null and action_motion.is_running()
+
+func hand_rest(index:int)->Transform3D:
+	var offset:=Vector3(-.20 if index==0 else .20,-.21,-.48)
+	if game.held and game.held_hand==index:
+		offset=Vector3(-.105 if index==0 else .105,-.105,-.40)
+	return game.head.global_transform*Transform3D(Basis.IDENTITY,offset)
+
 func sync_hands():
 	for i in range(2):
 		game.aim_hands[i].global_transform=game.head.global_transform
-		game.hands[i].global_transform=game.head.global_transform*Transform3D(Basis.IDENTITY,Vector3(-.20 if i==0 else .20,-.21,-.48))
+		if not action_busy():game.hands[i].global_transform=hand_rest(i)
+
+func show_grip(delta:float):
+	for i in range(2):
+		var visual:Node3D=game.hand_visuals[i]
+		var holding:bool=is_instance_valid(game.held) and game.held_hand==i
+		visual.visible=holding or (action_busy() and i==action_support_hand)
+		if not visual.visible:continue
+		visual.position=Vector3(-.070 if i==0 else .070,-.068,.028)
+		visual.rotation.z=-.28 if i==0 else .28
+		visual.update_grip(delta,.22,.70,holding)
+
+func tween_hand(tween:Tween,index:int,target:Transform3D,seconds:float):
+	tween.tween_property(game.hands[index],"global_transform",target,seconds).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+func begin_motion():
+	action_support_hand=-1
+	move_touch=-1
+	look_touch=-1
+	operations.get_parent().hide()
+	action_motion=create_tween()
+
+func animate_pick(origin:Vector3):
+	if not game.held or action_busy():return
+	var hand:int=game.held_hand
+	var rest:=hand_rest(hand)
+	if origin.distance_to(rest.origin)<.05:return
+	game.hands[hand].global_transform=Transform3D(rest.basis,origin)
+	begin_motion()
+	tween_hand(action_motion,hand,rest,.26)
 
 func _physics_process(delta:float):
 	update_stick()
 	if get_tree().paused:
 		if game.modes.menu_open and not menu.get_parent().visible and (not lobby_panel or not lobby_panel.get_parent().visible):menu.get_parent().show()
 		return
+	show_grip(delta)
+	if action_busy():return
 	var f:Vector3=-game.head.global_basis.z
 	f.y=0
 	f=f.normalized()
@@ -224,7 +276,7 @@ func _physics_process(delta:float):
 		if notice_time<=0:status.text=""
 
 func _unhandled_input(event:InputEvent):
-	if get_tree().paused:return
+	if get_tree().paused or action_busy():return
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			if event.position.x<get_viewport().get_visible_rect().size.x*.44 and move_touch<0:
@@ -303,7 +355,7 @@ func pointed_item()->Dictionary:
 	return best
 
 func use_target():
-	if get_tree().paused:return
+	if get_tree().paused or action_busy():return
 	clerk.shift.started=true
 	if not tap_aim:sync_hands()
 	if clerk.desktop.point(clerk.desktop.project_ray(game.aim_hands[0]),true):return
@@ -329,7 +381,9 @@ func use_target():
 		if item in clerk.basket.items:
 			clerk.basket.items.erase(item)
 			clerk.basket.arrange()
+		var origin:Vector3=item.node.global_position
 		clerk.pick_case(item,0,false)
+		animate_pick(origin)
 		game._play_trailer(item.movie)
 		return
 	for target in clerk.targets:
@@ -342,6 +396,7 @@ func use_target():
 	game.modes.manual_mode=false
 	game._interact(0,false)
 	game.modes.manual_mode=original
+	if game.held and not game.held_record.is_empty():animate_pick(game.held_record.world.origin)
 
 func refresh_action(over_desktop:bool):
 	var inspection=clerk.inspection
@@ -373,6 +428,7 @@ func case_action():
 	else:toggle_case()
 
 func toggle_case():
+	if action_busy():return
 	if not game.held:
 		game._message("Prends un boîtier.")
 		return
@@ -383,10 +439,12 @@ func toggle_case():
 	if clerk.inspection.opened:clerk.inspection.finish_lid(true)
 
 func flip_item():
+	if action_busy():return
 	if clerk.inspection.finger>=0:disc_back=not disc_back
 	elif not clerk.inspection.opened:game._flip_held()
 
 func use_disc():
+	if action_busy():return
 	var inspection=clerk.inspection
 	if inspection.finger>=0:
 		var station:Vector3=clerk.repairs.station
@@ -411,22 +469,35 @@ func use_disc():
 				return
 
 func scan():
+	if action_busy() or not game.held or clerk.inspection.opened:return
 	if not near(clerk.scanner.global_position):
 		game._message("Approche-toi du scanner du comptoir.")
 		return
-	if clerk.scan_held():
-		clerk.scanner.flash=.16
-		clerk.scanner.sound.play()
+	var item:Node3D=game.held
+	var hand:int=game.held_hand
+	var rest:=hand_rest(hand)
+	var scanner_direction:Vector3=clerk.scanner.direction
+	var facing:=Basis.looking_at(-scanner_direction,Vector3.UP)
+	var center:Vector3=clerk.scanner.global_position+scanner_direction*.23-facing*Vector3(0,-.045,-.008)
+	var hand_basis:=facing*item.basis.inverse()
+	begin_motion()
+	tween_hand(action_motion,hand,Transform3D(hand_basis,center+Vector3(.095,0,0)),.26)
+	tween_hand(action_motion,hand,Transform3D(hand_basis,center),.16)
+	action_motion.tween_callback(func():
+		if is_instance_valid(item) and game.held==item and clerk.scan_held():
+			clerk.scanner.flash=.16
+			clerk.scanner.sound.play()
+	)
+	tween_hand(action_motion,hand,Transform3D(hand_basis,center-Vector3(.09,0,0)),.15)
+	tween_hand(action_motion,hand,rest,.25)
 
 func use_lock():
-	if not game.held or clerk.inspection.opened:return
+	if action_busy() or not game.held or clerk.inspection.opened:return
 	if game.held.get_meta("antitheft",false):
 		if not near(DETACHER):
 			game._message("Approche-toi du détacheur pour retirer la barre.")
 			return
-		clerk.locks.set_locked(game.held,false)
-		clerk.locks.put_in_bin(clerk.locks.create_bar())
-		clerk.refresh_terminal()
+		animate_unlock(game.held)
 		return
 	if not spare_carried:
 		game._message("Prends une barre de réserve dans le bac ou via Outils.")
@@ -434,6 +505,32 @@ func use_lock():
 	spare_carried=false
 	clerk.locks.set_locked(game.held,true)
 	clerk.refresh_terminal()
+
+func animate_unlock(item:Node3D):
+	var hand:int=game.held_hand
+	var other:=1-hand
+	var rest:=hand_rest(hand)
+	var free_rest:=hand_rest(other)
+	var facing:Basis=game.head.global_basis.orthonormalized()
+	var object_basis:=Basis(Vector3.UP,facing.get_euler().y+PI*.27)
+	var aligned:=Transform3D(object_basis*item.basis.inverse(),DETACHER+Vector3(0,.08,0))
+	var latch:=aligned.origin+object_basis*Vector3(.061,-.087,.018)
+	var pull:=Vector3.DOWN*.145
+	begin_motion()
+	action_support_hand=other
+	tween_hand(action_motion,hand,aligned,.28)
+	tween_hand(action_motion,other,Transform3D(facing,latch),.18)
+	tween_hand(action_motion,other,Transform3D(facing,latch+pull),.21)
+	var bar:=item.get_node_or_null("Antitheft") as Node3D
+	if bar:action_motion.parallel().tween_property(bar,"position:y",-.145,.21)
+	action_motion.tween_callback(func():
+		if is_instance_valid(item) and game.held==item:
+			clerk.locks.set_locked(item,false)
+			clerk.locks.put_in_bin(clerk.locks.create_bar())
+			clerk.refresh_terminal()
+	)
+	tween_hand(action_motion,hand,rest,.27)
+	action_motion.parallel().tween_property(game.hands[other],"global_transform",free_rest,.27).set_trans(Tween.TRANS_SINE)
 
 func take_spare():
 	if not near(clerk.lock_bin) or spare_carried:return
@@ -447,6 +544,7 @@ func take_spare():
 		return
 
 func drop():
+	if action_busy():return
 	if is_instance_valid(game.candy.held_balls[0]):
 		var body:RigidBody3D=game.candy.held_balls[0]
 		game.candy.release_ball(0)

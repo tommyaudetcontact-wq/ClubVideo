@@ -175,6 +175,7 @@ func at_detacher() -> bool:
 	return is_instance_valid(side_case) and side_case==game.held and game.held.global_position.distance_to(DETACHER)<.34
 
 func update_case_pose(delta:float):
+	if game.touch_profile:return
 	var held:Node3D=game.held
 	if side_case!=held:side_case=null
 	if not held or clerk.inspection.opened:return

@@ -55,6 +55,7 @@ func tick(dt:float):
 	clock+=dt
 	flash=maxf(0,flash-dt)
 	fan.material_override.albedo_color=Color(1,.015,.01,.55 if flash>0 else (.18+.10*absf(sin(clock*24))))
+	if game.touch_profile:return
 	var node:Node3D=game.held
 	if not clerk.inspection.opened and not clerk.secondary.is_empty() and intersects_case(clerk.secondary.node) and (not is_instance_valid(node) or not intersects_case(node)):
 		var previous=clerk.held_service
