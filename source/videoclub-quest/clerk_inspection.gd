@@ -96,8 +96,11 @@ func toggle_case():
 	if game.held.get_meta("antitheft",false):
 		game._message("Retire d'abord l'antivol sur le détacheur du comptoir.")
 		return
-	case_node=game.held
 	if game.flip_tween and game.flip_tween.is_valid():game.flip_tween.kill()
+	open_case(game.held)
+
+func open_case(node:Node3D):
+	case_node=node
 	interior=Node3D.new()
 	case_node.add_child(interior)
 	for name in ["MoldedPlasticOnly","PaperInsert_front","PaperInsert_spine"]:
@@ -174,22 +177,8 @@ func interact(hand:int,grip:bool=false)->bool:
 		if game.clerk.repairs and game.clerk.repairs.insert_disc(self):return true
 		if game.clerk.repairs and game.clerk.repairs.place_disc(self,fingertip):return true
 		if opened and opening_amount>.30 and carried.global_position.distance_to(interior.to_global(Vector3(0,-.012,.004)))<.10:
-			if int(case_node.get_meta("disc_movie",-1))>=0:
-				game._message("Retire d'abord le disque présent dans ce boîtier.")
-				return true
-			if is_instance_valid(disc):disc.queue_free()
-			disc=carried
-			disc.reparent(interior)
-			disc.position=Vector3(0,-.012,.004)
-			disc.rotation=Vector3.ZERO
-			load("res://clerk_inventory.gd").put(case_node,carried_data.movie,carried_data.uid)
-			case_node.set_meta("dirty",carried_data.dirty)
-			var record:Dictionary=case_node.get_meta("inventory_record",{})
-			if not record.is_empty():record.dirty=carried_data.dirty
-			case_node.set_meta("inspected",carried_data.inspected)
-			carried=null
-			finger=-1
-			game._message("Disque inséré. Tu peux refermer le boîtier à la main.")
+			if put_carried_in_case():game._message("Disque inséré. Tu peux refermer le boîtier à la main.")
+			else:game._message("Retire d’abord le disque présent dans ce boîtier.")
 		return true
 	if finger<0 and hand!=game.held_hand:
 		if game.clerk.repairs and game.clerk.repairs.take_disc(self,hand,fingertip):return true
@@ -210,6 +199,22 @@ func interact(hand:int,grip:bool=false)->bool:
 	if not opened:return false
 	if opening_amount<.30:return false
 	if hand==game.held_hand:return true
+	return true
+
+func put_carried_in_case()->bool:
+	if not opened or not is_instance_valid(carried) or int(case_node.get_meta("disc_movie",-1))>=0:return false
+	if is_instance_valid(disc):disc.queue_free()
+	disc=carried
+	disc.reparent(interior)
+	disc.position=Vector3(0,-.012,.004)
+	disc.rotation=Vector3.ZERO
+	load("res://clerk_inventory.gd").put(case_node,carried_data.movie,carried_data.uid)
+	case_node.set_meta("dirty",carried_data.dirty)
+	var record:Dictionary=case_node.get_meta("inventory_record",{})
+	if not record.is_empty():record.dirty=carried_data.dirty
+	case_node.set_meta("inspected",carried_data.inspected)
+	carried=null
+	finger=-1
 	return true
 
 func take_loose_disc(item:Dictionary,hand:int):
@@ -255,11 +260,12 @@ func close_case():
 	if is_instance_valid(interior):interior.queue_free()
 	opened=false
 	lid_hand=-1
+	var closed_node:=case_node
 	case_node=null
 	disc=null
-	if (label_seen or opening_amount>.45) and game.held:
-		var mismatch:bool=int(game.held.get_meta("disc_movie",-1))!=game.movie_id
-		game.held.set_meta("disc_mismatch_seen",mismatch)
+	if (label_seen or opening_amount>.45) and is_instance_valid(closed_node):
+		var mismatch:bool=int(closed_node.get_meta("disc_movie",-1))!=int(closed_node.get_meta("movie",game.movie_id))
+		closed_node.set_meta("disc_mismatch_seen",mismatch)
 		if mismatch:
 			game._message("Disque incorrect ou absent. Dépose le boîtier dans À DÉMÊLER pour chercher un remplacement.")
 			return

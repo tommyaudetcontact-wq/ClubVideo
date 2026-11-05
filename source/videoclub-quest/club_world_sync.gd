@@ -28,7 +28,7 @@ static func capture(game)->String:
 	for item in c.cases:
 		var node:Node3D=item.node
 		if not is_instance_valid(node):continue
-		cases.append({"id":str(node.get_instance_id()),"movie":item.movie,"disc":node.get_meta("disc_movie",item.movie),"dirty":node.get_meta("dirty",false),"locked":node.get_meta("antitheft",false),"transform":node.global_transform,"opened":c.inspection.opened and node==c.inspection.case_node,"held":node==game.held or item==c.secondary or node.get_meta("guest_held",false),"kind":item.kind,"in_basket":item in c.basket.items,"scanned":item.scanned})
+		cases.append({"id":str(node.get_instance_id()),"movie":item.movie,"disc":node.get_meta("disc_movie",item.movie),"dirty":node.get_meta("dirty",false),"locked":node.get_meta("antitheft",false),"transform":node.global_transform,"opened":(c.inspection.opened and node==c.inspection.case_node) or (is_instance_valid(c.lan.guest_inspection) and c.lan.guest_inspection.opened and node==c.lan.guest_inspection.case_node),"held":node==game.held or item==c.secondary or node.get_meta("guest_held",false),"kind":item.kind,"in_basket":item in c.basket.items,"scanned":item.scanned})
 	for record in game.modes.loose_dvds:
 		var loose:Node3D=record.get("loose_body")
 		if is_instance_valid(loose):
@@ -47,6 +47,12 @@ static func capture(game)->String:
 		discs.append(disc_state(loose.node,loose.data.movie,loose.data.get("dirty",false)))
 	if is_instance_valid(c.inspection.carried):
 		discs.append(disc_state(c.inspection.carried,c.inspection.carried_data.movie,c.inspection.carried_data.get("dirty",false)))
+	var guest=c.lan.guest_inspection
+	if is_instance_valid(guest):
+		if guest.opened and is_instance_valid(guest.disc) and guest.disc.visible:
+			discs.append(disc_state(guest.disc,guest.case_node.get_meta("disc_movie",-1),guest.case_node.get_meta("dirty",false)))
+		if is_instance_valid(guest.carried):
+			discs.append(disc_state(guest.carried,guest.carried_data.movie,guest.carried_data.get("dirty",false)))
 	if is_instance_valid(c.repairs.disc):
 		discs.append(disc_state(c.repairs.disc,c.repairs.data.movie,c.repairs.data.get("dirty",false)))
 	var cash:Array=[]

@@ -98,6 +98,7 @@ func run_action():
 	if touch and touch.coop_panel and touch.coop_panel.connected:
 		if app==0:touch.coop_panel.send("drawer")
 		elif app==2:touch.coop_panel.send("return")
+		elif app==3:touch.coop_panel.send("day")
 		return
 	if app==4:
 		clerk.game.lobby.toggle_available()

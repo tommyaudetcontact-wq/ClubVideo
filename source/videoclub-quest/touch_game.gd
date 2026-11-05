@@ -499,15 +499,9 @@ func use_target():
 	if get_tree().paused or action_busy() or coop_panel.visible or basket_panel.get_parent().visible or checkout_panel.get_parent().visible:return
 	if coop_panel.connected:
 		if not tap_aim:sync_hands()
-		if clerk.desktop.project_ray(game.aim_hands[0]).x>=0:
-			open_desktop()
-		elif coop_panel.guest_case_id.is_empty():
-			var target:=coop_case_target()
-			if not target.is_empty():coop_panel.send(target.action,target.id)
-		elif basket_aimed():
-			coop_panel.send("held_basket")
-		else:
-			coop_panel.send("case_flip")
+		var target:=coop_interaction()
+		if target.action=="computer":open_desktop()
+		elif not target.action.is_empty():coop_panel.send(target.action,target.get("id",""),target.get("target",""))
 		return
 	clerk.shift.started=true
 	if not tap_aim:sync_hands()
@@ -716,6 +710,37 @@ func put_in_basket():
 	place_held_case(clerk.basket.body.to_global(Vector3(0,.16,0)))
 	if game.held!=held_case:game._message("Boîtier mis dans le panier.")
 
+func coop_interaction()->Dictionary:
+	if clerk.desktop.project_ray(game.aim_hands[0]).x>=0:return {"action":"computer","label":"Ouvrir l’ordi"}
+	var holding:bool=not coop_panel.guest_case_id.is_empty()
+	if near(clerk.repairs.station) and aimed(clerk.repairs.station,.23)<INF:
+		return {"action":"disc_use","target":"repair","label":"Surfaceuse"}
+	if not coop_panel.guest_disc.is_empty():
+		if clerk.repairs.is_sorting_surface(table_point(.93)):return {"action":"disc_use","target":"table","label":"Déposer le disque"}
+		if coop_panel.guest_open:return {"action":"disc_use","label":"Remettre le disque"}
+		return {"action":"disc_flip","label":"Retourner le disque"}
+	if holding:
+		if coop_panel.guest_open:return {"action":"disc_use","label":"Sortir le disque"}
+		if near(clerk.scanner.global_position) and aimed(clerk.scanner.global_position,.24)<INF:return {"action":"case_scan","label":"Scanner"}
+		if near(DETACHER) and aimed(DETACHER,.20)<INF:return {"action":"case_lock","target":"unlock","label":"Retirer l’antivol"}
+		if near(clerk.lock_bin) and aimed(clerk.lock_bin,.20)<INF:return {"action":"case_lock","target":"relock","label":"Poser l’antivol"}
+		if coop_panel.customer_pos.is_finite() and near(coop_panel.customer_pos) and aimed(coop_panel.customer_pos,.42)<INF:
+			return {"action":"case_handoff","label":"Remettre le film"}
+		if basket_aimed():return {"action":"held_basket","label":"Mettre au panier"}
+		return {"action":"case_flip","label":"Retourner"}
+	if is_instance_valid(coop_panel.mirror):
+		for entry in coop_panel.mirror.state.get("discs",[]):
+			if clerk.repairs.is_sorting_surface(entry.transform.origin) and aimed(entry.transform.origin,.10)<INF:
+				return {"action":"disc_use","target":entry.id,"label":"Prendre le disque"}
+	for target in clerk.targets:
+		if target.action in ["phone","door"] and aimed(target.node.global_position,target.radius)<INF:
+			return {"action":target.action,"label":"Répondre" if target.action=="phone" else "Porte"}
+	var chosen:=coop_case_target()
+	if not chosen.is_empty():
+		chosen.label="Prendre"
+		return chosen
+	return {"action":"","label":"Viser un objet"}
+
 func coop_case_target()->Dictionary:
 	if not is_instance_valid(coop_panel.mirror):return {}
 	var best:=INF
@@ -735,8 +760,10 @@ func coop_case_target()->Dictionary:
 func refresh_action(over_desktop:bool):
 	if coop_panel.connected:
 		var holding:bool=not coop_panel.guest_case_id.is_empty()
-		primary_button.text="Ouvrir l’ordi" if over_desktop else (("Mettre au panier" if basket_aimed() else "Retourner") if holding else "Prendre")
-		case_button.text="Voir le dos" if not coop_panel.guest_flipped else "Voir la couverture"
+		primary_button.text=coop_interaction().label
+		case_button.text="Fermer" if coop_panel.guest_open else "Ouvrir"
+		flip_button.visible=not coop_panel.guest_disc.is_empty() or (holding and not coop_panel.guest_open)
+		flip_button.text="Retourner le disque" if not coop_panel.guest_disc.is_empty() else ("Voir la couverture" if coop_panel.guest_flipped else "Voir le dos")
 		case_button.disabled=not holding
 		drop_button.disabled=not holding
 		action_hint.text=""
@@ -775,7 +802,7 @@ func refresh_action(over_desktop:bool):
 
 func case_action():
 	if coop_panel.connected:
-		coop_panel.send("case_flip")
+		coop_panel.send("case_open")
 		return
 	if clerk.inspection.finger>=0:use_disc()
 	else:toggle_case()
@@ -793,6 +820,9 @@ func toggle_case():
 
 func flip_item():
 	if action_busy():return
+	if coop_panel.connected:
+		coop_panel.send("disc_flip" if not coop_panel.guest_disc.is_empty() else "case_flip")
+		return
 	if clerk.inspection.finger>=0:disc_back=not disc_back
 	elif not clerk.inspection.opened:game._flip_held()
 
@@ -927,7 +957,13 @@ func handoff():
 
 func drop():
 	if coop_panel.connected:
-		coop_panel.send("case_drop")
+		var tray:=Vector3(1.75,1.19,-5.92)
+		if not coop_panel.guest_disc.is_empty() and clerk.repairs.is_sorting_surface(table_point(.93)):
+			coop_panel.send("disc_use","","table")
+		elif near(tray,1.8) and aimed(tray,.32)<INF:coop_panel.send("case_sort")
+		elif coop_panel.guest_shelf.is_finite() and near(coop_panel.guest_shelf,1.45) and aimed(coop_panel.guest_shelf,.23)<INF:
+			coop_panel.send("case_rack")
+		else:coop_panel.send("case_drop")
 		return
 	if action_busy():return
 	if is_instance_valid(game.candy.held_balls[0]):

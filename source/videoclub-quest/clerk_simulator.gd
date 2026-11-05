@@ -651,29 +651,35 @@ func action(which:String,hand:int,value:int=0):
 			game._message("Julie : « Avez-vous Shrek ce soir ? Pouvez-vous me rappeler ? »\nLa demande est inscrite sur l'ordinateur, onglet Rappels.")
 	refresh_terminal()
 func handoff_rental():
-	if active.is_empty() or held_service.is_empty() or held_service.kind!="rental":return
-	if held_service not in active.items or inspection.opened:return
+	if inspection.opened or held_service.is_empty():return
+	handoff_item(held_service)
+
+func handoff_item(item:Dictionary)->bool:
+	if active.is_empty() or item.is_empty() or item.kind!="rental" or item not in active.items:return false
+	var node:Node3D=item.node
 	if not active.missing.is_empty():
 		game._message("Trouve les films manquants avant de remettre ce boîtier.")
-		return
-	var was_scanned:bool=held_service.scanned
+		return false
+	var was_scanned:bool=item.scanned
 	if was_scanned and not paid:
 		game._message("Règle le panier avant de remettre les films facturés.")
-		return
-	var id:int=held_service.movie
-	var record:Dictionary=held_service.record
+		return false
+	var id:int=item.movie
+	var record:Dictionary=item.record
 	if was_scanned:
 		if not active.has("billed_titles"):active.billed_titles=[]
 		active.billed_titles.append(id)
 	else:
 		shift.missed_scans+=1
 		shift.lost_sales+=Pricing.unit(game.layout.movies[id])
-	var unchecked:bool=not game.held.get_meta("inspected",false)
-	var locked:bool=game.held.get_meta("antitheft",false)
-	var defective:bool=game.held.get_meta("dirty",false) or game.held.get_meta("disc_movie",-1)!=id
+	var unchecked:bool=not node.get_meta("inspected",false)
+	var locked:bool=node.get_meta("antitheft",false)
+	var defective:bool=node.get_meta("dirty",false) or node.get_meta("disc_movie",-1)!=id
 	var refund:int=Pricing.unit(game.layout.movies[id]) if was_scanned and (unchecked or locked or defective) else 0
-	active.items.erase(held_service)
-	consume_case()
+	active.items.erase(item)
+	cases.erase(item)
+	node.queue_free()
+	if item==held_service:clear_hand()
 	active.handed+=1
 	var account=int(active.get("account_id",active.id))
 	var cycle=accounts.rental(account,id,record.id)
@@ -681,7 +687,7 @@ func handoff_rental():
 	if not active.items.is_empty():
 		refresh_invoice()
 		game._message("Film remis sans scan. Perte enregistrée." if not was_scanned else "Remets les autres boîtiers au client.")
-		return
+		return true
 	shift.record_sale(price if paid else 0)
 	if paid:accounts.settle(account,int(active.get("account_due",0)))
 	clear_change()
@@ -690,6 +696,7 @@ func handoff_rental():
 	rentals+=1
 	customer_delay=8
 	game._message("Film remis sans scan. Perte enregistrée au bilan." if not was_scanned else "Panier payé et remis. Le client repart.")
+	return true
 
 func release()->bool:
 	if inspection.opened:
@@ -921,10 +928,7 @@ func abandon_customer(c:Dictionary):
 	if c==active:
 		for item in active.items:
 			item.kind="shelve"
-			item.node.set_meta("antitheft",false)
-			var bar=item.node.get_node_or_null("Antitheft")
-			if bar:bar.queue_free()
-			if item!=held_service and item!=secondary:send_to_chute(item)
+			if item!=held_service and item!=secondary and not item.node.get_meta("guest_held",false):send_to_chute(item)
 			item.task="Ranger après abandon : "+str(game.layout.movies[item.movie].title)
 			if not tasks.has(item.task):tasks.append(item.task)
 		active={}
@@ -945,8 +949,17 @@ func abandon_customer(c:Dictionary):
 
 func send_to_chute(item:Dictionary):
 	var n:RigidBody3D=item.node
+	locks.set_locked(n,true)
+	basket.items.erase(item)
+	basket.arrange()
+	n.set_meta("in_basket",false)
+	n.set_meta("in_sort_tray",false)
+	n.set_meta("sort_slot",-1)
+	n.set_meta("customer_animating",true)
 	n.freeze=true
-	n.reparent(self)
+	n.collision_layer=0
+	n.collision_mask=0
+	if n.get_parent()!=self:n.reparent(self)
 	var slot=chute_serial
 	chute_serial+=1
 	var destination=return_bin+Vector3(-.11+.22*(slot%2),.04+.022*(slot/4),-.12+.24*((slot/2)%2))
@@ -954,6 +967,8 @@ func send_to_chute(item:Dictionary):
 	tween.tween_property(n,"global_position",Vector3(-2.55,1.10,-5.72),.35)
 	tween.tween_property(n,"global_position",destination,.35)
 	tween.tween_callback(func():
+		if not is_instance_valid(n):return
+		n.remove_meta("customer_animating")
 		n.rotation=Vector3(-PI/2,0,0)
 		n.collision_layer=8
 		n.collision_mask=1|8
@@ -1024,12 +1039,9 @@ func adopt_held_case()->Dictionary:
 func has_identified_mismatch(node:Node3D,title:int)->bool:
 	return int(node.get_meta("disc_movie",-1))!=title and (node.get_meta("disc_mismatch_seen",false) or node.get_meta("inspected",false))
 
-func accept_replacement()->bool:
-	if active.is_empty() or not game.held or active.get("is_return",false):return false
-	var record:Dictionary=game.held_record if held_service.is_empty() else held_service.record
-	if record.is_empty() or not active.missing.has(record.movie) or held_service.get("kind","")=="return":return false
-	var item=adopt_held_case()
-	if item.is_empty():return false
+func accept_replacement(item:Dictionary)->bool:
+	if active.is_empty() or active.get("is_return",false):return false
+	if item.record.is_empty() or item.movie not in active.missing or item.kind=="return":return false
 	active.missing.erase(item.movie)
 	item.kind="rental"
 	if item.has("task"):
@@ -1049,7 +1061,7 @@ func build_sort_tray():
 	for x in [-.23,.23]:Props.box(self,center+Vector3(x,.07,0),Vector3(.015,.14,.40),"53604d")
 	Props.box(self,center+Vector3(0,.07,.20),Vector3(.46,.14,.015),"53604d")
 	Props.label(self,"À DÉMÊLER",center+Vector3(0,.10,-.21),.0008,27).rotation.y=PI
-func store_sort_tray(item:Dictionary):
+func store_sort_tray(item:Dictionary,clear_local_hand:bool=true):
 	var count=0
 	for other in cases:
 		if other!=item and other.node.get_meta("in_sort_tray",false):count+=1
@@ -1060,7 +1072,7 @@ func store_sort_tray(item:Dictionary):
 	item.node.collision_layer=0
 	item.node.collision_mask=0
 	item.node.set_meta("in_sort_tray",true)
-	clear_hand()
+	if clear_local_hand:clear_hand()
 
 func scan_held()->bool:
 	if not game.held:
@@ -1070,18 +1082,22 @@ func scan_held()->bool:
 		game._message("Referme le boîtier, puis passe son dos au scanner.")
 		return false
 	if held_service.is_empty() and adopt_held_case().is_empty():return false
-	if active.get("missing",[]).has(held_service.movie) and has_identified_mismatch(game.held,held_service.movie):
+	return scan_item(held_service)
+
+func scan_item(item:Dictionary)->bool:
+	var node:Node3D=item.node
+	if active.get("missing",[]).has(item.movie) and has_identified_mismatch(node,item.movie):
 		game._message("Dépose cet exemplaire dans À DÉMÊLER et essaie un autre boîtier.")
 		return false
-	if game.held.get_meta("needs_relock",false) and not game.held.get_meta("return_checked",false):
-		var fee=accounts.scan_return(game.held)
+	if node.get_meta("needs_relock",false) and not node.get_meta("return_checked",false):
+		var fee=accounts.scan_return(node)
 		game._message("Retour enregistré au dossier client. Frais de 2.00 $ à sa prochaine visite." if fee>0 else "Retour enregistré au bon dossier client.")
-	if held_service.kind=="rental" and not held_service.scanned and paid:
+	if item.kind=="rental" and not item.scanned and paid:
 		game._message("Le paiement est terminé. Ce boîtier n’a pas été facturé.")
 		return false
-	game.held.set_meta("barcode_scanned",true)
-	held_service.scanned=true
-	accept_replacement()
+	node.set_meta("barcode_scanned",true)
+	item.scanned=true
+	accept_replacement(item)
 	refresh_basket()
 	refresh_invoice()
 	refresh_terminal()

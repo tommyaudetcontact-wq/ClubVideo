@@ -114,6 +114,9 @@ func snapshot()->Dictionary:
 	for key in COUNTER_FIELDS:state.counter[key]=c.get(key)
 	for loose in c.inspection.loose_discs:
 		state.loose_discs.append({"data":loose.data.duplicate(),"transform":loose.node.global_transform})
+	var guest=c.lan.guest_inspection
+	if is_instance_valid(guest) and is_instance_valid(guest.carried):
+		state.loose_discs.append({"data":guest.carried_data.duplicate(),"transform":Transform3D(Basis(Vector3.RIGHT,-PI/2),Vector3(1.65,.916,-8.7))})
 	if is_instance_valid(c.inspection.carried):
 		state.loose_discs.append({"data":c.inspection.carried_data.duplicate(),"transform":Transform3D(Basis(Vector3.RIGHT,-PI/2),Vector3(.3,.916,-8.7))})
 	if is_instance_valid(c.repairs.disc):

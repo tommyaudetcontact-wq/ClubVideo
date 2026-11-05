@@ -16,6 +16,8 @@ var accept_time := 0
 var remote_avatar:Node3D
 var guest_case:Dictionary={}
 var guest_flipped:=false
+var guest_inspection:Node3D
+var guest_disc_back:=false
 const PeerPose=preload("res://club_peer_pose.gd")
 
 func _ready():
@@ -48,6 +50,9 @@ func permit(ip:String)->String:
 	return token
 
 func disconnect_client():
+	if is_instance_valid(guest_inspection) and is_instance_valid(guest_inspection.carried):
+		var drop:=Vector3(1.6,.93,-8.7)
+		clerk.repairs.place_disc(guest_inspection,drop)
 	drop_guest_case()
 	if client:client.disconnect_from_host()
 	client=null
@@ -96,6 +101,7 @@ func handle_request(request:Variant):
 			disconnect_client()
 			return
 		permits.erase(token)
+		ensure_guest_inspection()
 		authenticated=true
 		last_request=0
 	if request.has("pose"):
@@ -121,8 +127,11 @@ func handle_request(request:Variant):
 		"held_basket":
 			receipt=store_guest_case()
 		"case_flip":
-			guest_flipped=not guest_flipped
-			update_guest_case_pose()
+			if not guest_case.is_empty() and not guest_inspection.opened:
+				guest_flipped=not guest_flipped
+				update_guest_case_pose()
+		"case_open","disc_use","disc_flip","case_scan","case_lock","case_handoff","case_sort","case_rack","phone","door","day":
+			receipt=guest_action(action,request)
 		"case_basket","case_shelf":
 			receipt=assist_case(action,str(request.get("case","")))
 		"cash_deposit","cash_change":
@@ -151,7 +160,16 @@ func handle_request(request:Variant):
 		response["checkout"]={"customer":clerk.active.get("id",-1),"price":clerk.price,"tender":clerk.tender,"received":clerk.tender_received,"paid":clerk.paid,"cash_visible":clerk.tender_note.visible,"till":inventory}
 		response["notice"]=receipt
 		response["guest_case"]=str(guest_case.node.get_instance_id()) if not guest_case.is_empty() else ""
+		if not guest_case.is_empty() and not guest_case.record.is_empty():
+			var slot:Vector3=guest_case.record.world.origin
+			response["guest_shelf"]=[slot.x,slot.y,slot.z]
 		response["guest_flipped"]=guest_flipped
+		response["guest_open"]=is_instance_valid(guest_inspection) and guest_inspection.opened
+		response["guest_disc"]=str(guest_inspection.carried.get_instance_id()) if is_instance_valid(guest_inspection) and is_instance_valid(guest_inspection.carried) else ""
+		response["guest_disc_back"]=guest_disc_back
+		if not clerk.active.is_empty():
+			var p:Vector3=clerk.customer_hand()
+			response["customer_pos"]=[p.x,p.y,p.z]
 		response["pose"]=PeerPose.pack(clerk.game)
 		response["avatar"]=PeerPose.appearance(clerk.game)
 	if features is Array and "world_sync" in features:
@@ -193,10 +211,8 @@ func remote_cash(action:String,coins:Variant)->String:
 		if count<0 or count>int(clerk.till.get(value,0)) or not clerk.till.has(value):
 			return "Une pièce n’est plus disponible dans le tiroir."
 		total+=value*count
-	if total!=clerk.tender-clerk.price:
-		return "La monnaie sélectionnée ne correspond pas au montant à rendre."
 	for denomination in coins:clerk.till[int(denomination)]-=int(coins[denomination])
-	clerk.change=total
+	clerk.change+=total
 	clerk.paid=true
 	clerk.refresh_terminal()
 	clerk.game._message("Monnaie rendue sur Android. Remets les boîtiers au client.")
@@ -240,6 +256,14 @@ func assist_case(action:String,id:String)->String:
 			return "Boîtier remis en rayon."
 	return "Ce boîtier n’est plus disponible."
 
+func ensure_guest_inspection():
+	if not is_instance_valid(guest_inspection):
+		guest_inspection=load("res://clerk_inspection.gd").new()
+		add_child(guest_inspection)
+		guest_inspection.setup(clerk.game)
+		guest_inspection.loose_discs=clerk.inspection.loose_discs
+		guest_inspection.set_physics_process(false)
+
 func pick_guest_case(action:String,id:String)->String:
 	if not guest_case.is_empty():return "Dépose d’abord le boîtier que tu tiens."
 	if not is_instance_valid(remote_avatar) or not remote_avatar.valid_pose:return "Attends la synchronisation de ta position."
@@ -282,12 +306,22 @@ static func held_pose(head_pose:Transform3D,flipped:bool)->Transform3D:
 	return head_pose*Transform3D(Basis(Vector3.UP,PI if flipped else 0.0),Vector3(.105,-.105,-.50))
 
 func update_guest_case_pose():
-	if not guest_case.is_empty() and is_instance_valid(guest_case.node) and remote_avatar.valid_pose:
-		guest_case.node.global_transform=held_pose(remote_avatar.targets[0],guest_flipped)
+	if not is_instance_valid(remote_avatar) or not remote_avatar.valid_pose:return
+	var head_pose:Transform3D=remote_avatar.targets[0]
+	if not guest_case.is_empty() and is_instance_valid(guest_case.node):
+		guest_case.node.global_transform=held_pose(head_pose,guest_flipped)
+	if is_instance_valid(guest_inspection) and is_instance_valid(guest_inspection.carried):
+		var disc:MeshInstance3D=guest_inspection.carried
+		disc.global_transform=disc_pose(head_pose,guest_disc_back)
+		if clerk.game.layout.movies[guest_inspection.carried_data.movie].get("console","")=="GameCube":disc.scale=Vector3(.667,.667,1)
+
+static func disc_pose(head_pose:Transform3D,back:bool)->Transform3D:
+	return head_pose*Transform3D(Basis(Vector3.UP,PI if back else 0.0),Vector3(-.19,-.10,-.41))
 
 func drop_guest_case():
 	if guest_case.is_empty():return
 	var item:=guest_case
+	if guest_inspection.opened:guest_inspection.close_case()
 	guest_case={}
 	guest_flipped=false
 	var node:RigidBody3D=item.node
@@ -306,7 +340,7 @@ func drop_guest_case():
 	node.sleeping=false
 
 func store_guest_case()->String:
-	if guest_case.is_empty():return ""
+	if guest_case.is_empty() or guest_inspection.opened:return ""
 	var basket:RigidBody3D=clerk.basket.body
 	if basket.global_position.distance_to(remote_avatar.targets[0].origin)>2.0:return "Approche-toi du panier."
 	if clerk.basket.items.size()>=clerk.basket.CAPACITY:return "Le panier est plein."
@@ -318,3 +352,115 @@ func store_guest_case()->String:
 	guest_flipped=false
 	clerk.refresh_terminal()
 	return "Boîtier ajouté au panier."
+
+func guest_action(action:String,request:Dictionary)->String:
+	if not is_instance_valid(remote_avatar) or not remote_avatar.valid_pose:return ""
+	var p:Vector3=remote_avatar.targets[0].origin
+	if action=="day":
+		if p.distance_to(clerk.screen.global_position)>2.0:return "Approche-toi de l’ordinateur."
+		if clerk.shift.summary:clerk.shift.next_day()
+		else:clerk.shift.finish()
+		clerk.refresh_terminal()
+		return ""
+	if action in ["phone","door"]:
+		for target in clerk.targets:
+			if target.action!=action or p.distance_to(target.node.global_position)>1.8:continue
+			if action=="phone":
+				if not clerk.ringing:return ""
+				clerk.ringing=false
+				clerk.phone_audio.stop()
+				clerk.reminders.append("Rappeler Julie : disponibilité de Shrek.")
+				clerk.refresh_terminal()
+			else:clerk.action("door",-1)
+			break
+		return ""
+	if not is_instance_valid(guest_inspection):return ""
+	if action=="disc_flip" and is_instance_valid(guest_inspection.carried):
+		guest_disc_back=not guest_disc_back
+		guest_inspection.carried_data.inspected=true
+		update_guest_case_pose()
+		return ""
+	if action=="disc_use":return use_guest_disc(p,str(request.get("target","")))
+	if guest_case.is_empty():return ""
+	var node:Node3D=guest_case.node
+	if action=="case_open":
+		if guest_inspection.opened:
+			if is_instance_valid(guest_inspection.carried):return "Remets le disque ou pose-le avant de fermer."
+			guest_inspection.close_case()
+		elif node.get_meta("antitheft",false):
+			return "Retire d’abord l’antivol."
+		else:
+			guest_flipped=false
+			guest_inspection.open_case(node)
+			guest_inspection.finish_lid(true)
+		return ""
+	if guest_inspection.opened and action!="case_sort":return "Referme d’abord le boîtier."
+	match action:
+		"case_scan":
+			if p.distance_to(clerk.scanner.global_position)>1.8:return "Approche-toi du scanner."
+			if clerk.scan_item(guest_case):
+				clerk.scanner.sound.play()
+				return "Boîtier scanné."
+		"case_lock":
+			var target:=str(request.get("target",""))
+			if target=="unlock" and not node.get_meta("antitheft",false):return "L’antivol est déjà retiré."
+			if target=="relock" and node.get_meta("antitheft",false):return "L’antivol est déjà posé."
+			if node.get_meta("antitheft",false):
+				if p.distance_to(Vector3(.72,1.17,-6.18))>1.8:return "Approche-toi du détacheur."
+				clerk.locks.set_locked(node,false)
+				clerk.locks.put_in_bin(clerk.locks.create_bar())
+			else:
+				if p.distance_to(clerk.lock_bin)>1.8:return "Approche-toi des barres jaunes."
+				clerk.locks.ensure_spare()
+				for bar in clerk.locks.bars:
+					if not bar.get_meta("in_bin",false):continue
+					clerk.locks.bars.erase(bar)
+					bar.queue_free()
+					clerk.locks.set_locked(node,true)
+					break
+			clerk.refresh_terminal()
+		"case_handoff":
+			if clerk.active.is_empty() or int(request.get("customer",-2))!=int(clerk.active.get("id",-1)):return ""
+			if p.distance_to(clerk.customer_hand())>1.8:return "Approche-toi du client."
+			if clerk.handoff_item(guest_case):
+				guest_case={}
+				guest_flipped=false
+				return "Boîtier remis au client."
+		"case_sort":
+			var tray:=Vector3(1.75,1.19,-5.92)
+			if p.distance_to(tray)>1.8:return "Approche-toi du bac À démêler."
+			if guest_inspection.opened:guest_inspection.close_case()
+			if clerk.has_identified_mismatch(node,guest_case.movie):clerk.flag_wrong_case(guest_case)
+			node.remove_meta("guest_held")
+			clerk.store_sort_tray(guest_case,false)
+			guest_case={}
+		"case_rack":
+			node.remove_meta("guest_held")
+			var result:String=assist_case("case_shelf",str(node.get_instance_id()))
+			if node.is_queued_for_deletion():guest_case={}
+			else:node.set_meta("guest_held",true)
+			return result
+	return ""
+
+func use_guest_disc(p:Vector3,target:String)->String:
+	var repairs=clerk.repairs
+	if target=="repair" and p.distance_to(repairs.station)<1.8:
+		if is_instance_valid(guest_inspection.carried):
+			if is_instance_valid(repairs.disc):return "La surfaceuse est occupée."
+			guest_inspection.carried.global_position=repairs.station
+			repairs.insert_disc(guest_inspection)
+		else:repairs.take_disc(guest_inspection,0,repairs.station)
+	elif is_instance_valid(guest_inspection.carried):
+		if target=="table" and p.distance_to(Vector3(2.1,.93,-8.7))<1.9:
+			repairs.place_disc(guest_inspection,Vector3(clampf(p.x,1.25,3.0),.93,-8.7))
+		elif target.is_empty() and not guest_inspection.put_carried_in_case():return "Ouvre un boîtier vide pour y remettre le disque."
+	elif target.is_empty():
+		guest_inspection.take_open_disc(0)
+	else:
+		for loose in clerk.inspection.loose_discs:
+			if str(loose.node.get_instance_id())!=target or p.distance_to(loose.node.global_position)>1.8:continue
+			guest_inspection.take_loose_disc(loose,0)
+			break
+	guest_disc_back=false
+	update_guest_case_pose()
+	return ""

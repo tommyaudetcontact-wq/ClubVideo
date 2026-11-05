@@ -10,10 +10,11 @@ var side_case:Node3D
 const DETACHER := Vector3(.72,1.17,-6.18)
 var last_bar_count=0
 const LOOSE_RENDER_SLOTS=256
+const VISIBLE_BAR_X := .071
 static func visual(node:Node3D)->Node3D:
 	var existing=node.get_node_or_null("Antitheft")
 	if existing:return existing
-	var bar=Props.box(node,Vector3(.061,0,0),Vector3(.009,.17,.009),"e7bd28")
+	var bar=Props.box(node,Vector3(VISIBLE_BAR_X,0,0),Vector3(.012,.17,.012),"e7bd28")
 	bar.name="Antitheft"
 	Props.box(bar,Vector3(0,-.09,0),Vector3(.018,.012,.014),"e7bd28")
 	return bar
@@ -222,7 +223,7 @@ func tick(delta:float=1.0/72.0):
 func release(hand:int):
 	if hand!=clerk.lock_hand:return
 	if is_instance_valid(clerk.lock_source):
-		clerk.loose_lock.position=Vector3(.061,0,0)
+		clerk.loose_lock.position=Vector3(VISIBLE_BAR_X,0,0)
 		clerk.lock_source=null
 	else:
 		var body:RigidBody3D=clerk.loose_lock

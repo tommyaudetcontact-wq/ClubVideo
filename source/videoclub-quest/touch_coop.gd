@@ -5,6 +5,11 @@ const Port=39165
 var game
 var guest_case_id:=""
 var guest_flipped:=false
+var guest_open:=false
+var guest_disc:=""
+var guest_disc_back:=false
+var customer_pos:=Vector3.INF
+var guest_shelf:=Vector3.INF
 const LAN=preload("res://club_lan.gd")
 var socket:StreamPeerTCP
 var players:VBoxContainer
@@ -178,6 +183,10 @@ func reset(message:String):
 	connected=false
 	guest_case_id=""
 	guest_flipped=false
+	guest_open=false
+	guest_disc=""
+	customer_pos=Vector3.INF
+	guest_shelf=Vector3.INF
 	pages.clear()
 	selected_case=""
 	if is_instance_valid(avatar):avatar.queue_free()
@@ -252,7 +261,14 @@ func receive(reply:Dictionary):
 		checkout=reply.checkout
 		guest_case_id=str(reply.get("guest_case",""))
 		guest_flipped=bool(reply.get("guest_flipped",false))
-		if not str(reply.get("notice","")).is_empty():feedback.text=reply.notice
+		guest_open=bool(reply.get("guest_open",false))
+		guest_disc=str(reply.get("guest_disc",""))
+		guest_disc_back=bool(reply.get("guest_disc_back",false))
+		customer_pos=decode_position(reply.get("customer_pos"))
+		guest_shelf=decode_position(reply.get("guest_shelf"))
+		if not str(reply.get("notice","")).is_empty():
+			feedback.text=reply.notice
+			game._message(reply.notice)
 		refresh()
 	elif not connected and reply.has("pages"):
 		reset("L’hôte doit recevoir la mise à jour coop pour le poste Android.")
@@ -265,14 +281,20 @@ func receive(reply:Dictionary):
 			game.add_child(avatar)
 		avatar.receive(reply.pose,reply.get("avatar",{}))
 
+func decode_position(position:Variant)->Vector3:
+	if not position is Array or position.size()!=3:return Vector3.INF
+	return Vector3(float(position[0]),float(position[1]),float(position[2]))
+
 func _physics_process(_delta:float):
-	if guest_case_id.is_empty() or not is_instance_valid(mirror):return
+	if not is_instance_valid(mirror):return
 	var node:Node3D=mirror.nodes.get("cases"+guest_case_id)
 	if is_instance_valid(node):node.global_transform=LAN.held_pose(game.head.global_transform,guest_flipped)
+	var disc_node:Node3D=mirror.nodes.get("discs"+guest_disc)
+	if is_instance_valid(disc_node):disc_node.global_transform=LAN.disc_pose(game.head.global_transform,guest_disc_back)
 
-func send(action:String,id:String=""):
+func send(action:String,id:String="",target:String=""):
 	if not socket or socket.get_status()!=StreamPeerTCP.STATUS_CONNECTED:return
-	var message:={"case":selected_case if id.is_empty() else id,"v":1,"grant":grant,"features":["checkout","world_sync"],"action":action,"customer":checkout.get("customer",-1),"coins":selected,"pose":PeerPose.pack(game)}
+	var message:={"case":selected_case if id.is_empty() else id,"v":1,"grant":grant,"features":["checkout","world_sync"],"action":action,"target":target,"customer":checkout.get("customer",-1),"coins":selected,"pose":PeerPose.pack(game)}
 	message.merge(PeerPose.appearance(game))
 	socket.put_data((JSON.stringify(message)+"\n").to_utf8_buffer())
 
@@ -335,4 +357,4 @@ func refresh():
 		if not shift.is_empty():
 			var seconds:=int(shift.get("time_left",0))
 			info.text+="\nJour %d · %d:%02d · %d servis"%[int(shift.get("day",1)),seconds/60,seconds%60,int(shift.get("served",0))]
-	payout_button.disabled=total!=int(checkout.get("tender",0))-int(checkout.get("price",0))
+	payout_button.disabled=total<=0
