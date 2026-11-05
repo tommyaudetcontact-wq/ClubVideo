@@ -7,6 +7,8 @@ var clerk
 var server:TCPServer
 var client:StreamPeerTCP
 var pin := ""
+var permits:Dictionary={}
+const WorldSync=preload("res://club_world_sync.gd")
 var receive_buffer := ""
 var authenticated := false
 var last_request := 0
@@ -15,15 +17,15 @@ var remote_avatar:Node3D
 const PeerPose=preload("res://club_peer_pose.gd")
 
 func host_status()->String:
-	if not server:return "Héberge une partie pour relier un téléphone Android sur le même Wi-Fi."
-	var addresses:=Array(IP.get_local_addresses()).filter(func(ip):return ip.begins_with("192.168.") or ip.begins_with("10.") or (ip.begins_with("172.") and int(ip.split(".")[1]) in range(16,32)))
-	return "Partie locale ouverte\nAdresse du Quest : %s\nCode : %s\n\n%s"%[", ".join(addresses),pin,"Coéquipier connecté." if authenticated else "En attente du téléphone."]
+	if not server:return "Active la coop pour apparaître dans la liste des joueurs."
+	return "Partie visible sur le Wi-Fi\n\n%s"%("Coéquipier connecté." if authenticated else "En attente d’un joueur.")
 
 func toggle_host():
 	if server:
 		disconnect_client()
 		server.stop()
 		server=null
+		permits.clear()
 		return
 	var listener:=TCPServer.new()
 	if listener.listen(PORT)!=OK:
@@ -31,6 +33,14 @@ func toggle_host():
 		return
 	server=listener
 	pin="%06d"%randi_range(0,999999)
+
+func permit(ip:String)->String:
+	if not server or authenticated:return ""
+	for token in permits.keys():
+		if int(permits[token].expires)<Time.get_ticks_msec():permits.erase(token)
+	var token:=Crypto.new().generate_random_bytes(12).hex_encode()
+	permits[token]={"ip":ip,"expires":Time.get_ticks_msec()+15000}
+	return token
 
 func disconnect_client():
 	if client:client.disconnect_from_host()
@@ -72,10 +82,14 @@ func handle_request(request:Variant):
 		disconnect_client()
 		return
 	if not authenticated:
-		if request.get("pin")!=pin:
-			client.put_data((JSON.stringify({"error":"Code incorrect."})+"\n").to_utf8_buffer())
+		var token:=str(request.get("grant",""))
+		var access:Dictionary=permits.get(token,{})
+		var valid:bool=not access.is_empty() and access.ip==client.get_connected_host() and int(access.expires)>=Time.get_ticks_msec()
+		if not valid and request.get("pin")!=pin:
+			send_response({"error":"La demande de connexion a expiré."})
 			disconnect_client()
 			return
+		permits.erase(token)
 		authenticated=true
 		last_request=0
 	if request.has("pose"):
@@ -93,6 +107,8 @@ func handle_request(request:Variant):
 	var receipt:=""
 	var action:=str(request.get("action",""))
 	match action:
+		"case_basket","case_shelf":
+			receipt=assist_case(action,str(request.get("case","")))
 		"cash_deposit","cash_change":
 			if clerk.active.is_empty() or int(request.get("customer",-2))!=int(clerk.active.get("id",-1)):
 				receipt="Le client a changé. Vérifie la caisse."
@@ -120,6 +136,8 @@ func handle_request(request:Variant):
 		response["notice"]=receipt
 		response["pose"]=PeerPose.pack(clerk.game)
 		response["avatar"]=PeerPose.appearance(clerk.game)
+	if features is Array and "world_sync" in features:
+		response["world"]=WorldSync.capture(clerk.game)
 	send_response(response)
 
 func send_response(response:Dictionary):
@@ -165,3 +183,41 @@ func remote_cash(action:String,coins:Variant)->String:
 	clerk.refresh_terminal()
 	clerk.game._message("Monnaie rendue sur Android. Remets les boîtiers au client.")
 	return "Monnaie rendue au client."
+
+
+func assist_case(action:String,id:String)->String:
+	if not is_instance_valid(remote_avatar) or not remote_avatar.valid_pose:return "Attends la synchronisation de ta position."
+	var guest:Vector3=remote_avatar.targets[0].origin
+	for item in clerk.cases.duplicate():
+		var node:Node3D=item.node
+		if str(node.get_instance_id())!=id:continue
+		if node==clerk.game.held or item==clerk.secondary or node.get_meta("customer_animating",false):
+			return "Ce boîtier est déjà manipulé par l’hôte."
+		if node.global_position.distance_to(guest)>2.0:return "Approche-toi du boîtier."
+		if action=="case_basket":
+			var basket:RigidBody3D=clerk.basket.body
+			if item in clerk.basket.items:return "Ce boîtier est déjà dans le panier."
+			if basket.global_position.distance_to(guest)>2.0:return "Approche-toi du panier."
+			if clerk.basket.items.size()>=clerk.basket.CAPACITY:return "Le panier est plein."
+			node.global_position=basket.to_global(Vector3(0,.16,0))
+			if clerk.basket.store(item):
+				clerk.refresh_terminal()
+				return "Boîtier ajouté au panier."
+		else:
+			var record:Dictionary=item.get("record",{})
+			if record.is_empty() or item.kind not in ["return","shelve","sorting"]:return "Ce boîtier n’est pas à ranger."
+			if record.world.origin.distance_to(guest)>1.7:return "Approche-toi de son emplacement en rayon."
+			if clerk.active.get("is_return",false) and item in clerk.active.items:return "Termine le retour au comptoir."
+			if node.get_meta("disc_movie",-1)!=item.movie or node.get_meta("dirty",false):return "Le disque doit être vérifié ou réparé."
+			if not node.get_meta("antitheft",false):return "Pose l’antivol avant le rangement."
+			if item.kind=="return" and not item.scanned:return "Scanne le retour avant de le ranger."
+			clerk.basket.items.erase(item)
+			clerk.basket.arrange()
+			clerk.restore_stock(record)
+			if item.kind=="return":clerk.shift.restocked+=1
+			clerk.tasks.erase(item.get("task",""))
+			clerk.cases.erase(item)
+			node.queue_free()
+			clerk.refresh_terminal()
+			return "Boîtier remis en rayon."
+	return "Ce boîtier n’est plus disponible."

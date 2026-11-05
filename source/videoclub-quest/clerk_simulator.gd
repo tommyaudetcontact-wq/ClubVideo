@@ -400,6 +400,7 @@ func start_next():
 	tender=0
 	tender_received=active.get("is_return",false)
 	paid=active.get("is_return",false)
+	offer_rental_payment()
 	refresh_tender_visual()
 	if active.has("carry") and is_instance_valid(active.carry):active.carry.visible=false
 	refresh_terminal()
@@ -1073,8 +1074,8 @@ func scan_held()->bool:
 	if game.held.get_meta("needs_relock",false) and not game.held.get_meta("return_checked",false):
 		var fee=accounts.scan_return(game.held)
 		game._message("Retour enregistré au dossier client. Frais de 2.00 $ à sa prochaine visite." if fee>0 else "Retour enregistré au bon dossier client.")
-	if held_service.kind=="rental" and not held_service.scanned and active.get("cash_started",false):
-		game._message("Le paiement est commencé. Ce boîtier n’a pas été facturé.")
+	if held_service.kind=="rental" and not held_service.scanned and paid:
+		game._message("Le paiement est terminé. Ce boîtier n’a pas été facturé.")
 		return false
 	game.held.set_meta("barcode_scanned",true)
 	held_service.scanned=true
@@ -1083,12 +1084,21 @@ func scan_held()->bool:
 	refresh_invoice()
 	refresh_terminal()
 	return true
+func offer_rental_payment():
+	if active.is_empty() or active.get("is_return",false) or active.get("offer_ready",false) or active.get("cash_started",false):return
+	var titles:Array=active.get("price_titles",active.items.map(func(item):return item.movie))
+	var expected:int=Pricing.quote(game.layout.movies,titles).total+int(active.get("account_due",0))
+	if expected<=0:return
+	active.offer_ready=true
+	tender_parts=Pricing.payment(expected)
+	tender=0
+	for value in tender_parts:tender+=value
+
 func refresh_invoice():
 	if active.is_empty() or active.get("is_return",false):return
 	var ids:Array=active.get("billed_titles",[]).duplicate()
 	for item in active.items:
 		if item.scanned:ids.append(item.movie)
-	var previous_price:int=price
 	var quote=Pricing.quote(game.layout.movies,ids)
 	active.subtotal=quote.subtotal
 	active.discount=quote.discount
@@ -1096,10 +1106,6 @@ func refresh_invoice():
 	active.qst=quote.qst
 	price=quote.total+int(active.get("account_due",0))
 	refresh_basket()
-	if not active.get("cash_started",false) and (price!=previous_price or not active.get("offer_ready",false)):
-		active.offer_ready=price>0
-		tender_parts=Pricing.payment(price) if price>0 else []
-		tender=0
-		for value in tender_parts:tender+=value
+	offer_rental_payment()
 	refresh_tender_visual()
 

@@ -86,13 +86,21 @@ func open_program(index:int):
 func refresh():
 	if not details:return
 	title.text="Gestion Vidéo Club  /  "+(PROGRAMS[app] if app<4 else "Coop Wi-Fi")
-	details.text=clerk.terminal_content(app) if app<4 else clerk.lan.host_status()
+	var touch=clerk.game.touch_controls
+	if app<4 and touch and touch.coop_panel and touch.coop_panel.connected and app<touch.coop_panel.pages.size():
+		details.text=str(touch.coop_panel.pages[app])
+	else:details.text=clerk.terminal_content(app) if app<4 else clerk.lan.host_status()
 	targets[8].text=["Ouvrir le tiroir","Actualiser","Terminer le retour","Clôturer / continuer","Ouvrir / fermer la partie"][app]
 	get_viewport().render_target_update_mode=SubViewport.UPDATE_ONCE
 
 func run_action():
+	var touch=clerk.game.touch_controls
+	if touch and touch.coop_panel and touch.coop_panel.connected:
+		if app==0:touch.coop_panel.send("drawer")
+		elif app==2:touch.coop_panel.send("return")
+		return
 	if app==4:
-		clerk.lan.toggle_host()
+		clerk.game.lobby.toggle_available()
 	elif app!=1:
 		clerk.page=app
 		clerk.action("computer",-1)

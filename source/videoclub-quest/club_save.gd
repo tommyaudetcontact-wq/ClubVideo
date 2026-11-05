@@ -33,7 +33,7 @@ func resume_prompt():
 
 func _process(dt):
 	if save_thread and not save_thread.is_alive():flush_worker()
-	if tools_run or load_failed or get_tree().paused:return
+	if tools_run or load_failed or get_tree().paused or guest_coop():return
 	if not game.clerk.shift.started:return
 	autosave_clock+=dt
 	if autosave_clock>=60:
@@ -128,7 +128,11 @@ func snapshot()->Dictionary:
 func pack_cash(entry:Dictionary,transform:Transform3D)->Dictionary:
 	return {"value":entry.value,"tender":entry.tender,"customer_id":entry.get("customer_id",-1),"transform":transform}
 
+func guest_coop()->bool:
+	return game.touch_profile and game.touch_controls!=null and game.touch_controls.coop_panel!=null and game.touch_controls.coop_panel.connected
+
 func save_game(announce=true)->bool:
+	if guest_coop():return false
 	flush_worker()
 	var committed=store_snapshot(snapshot(),ProjectSettings.globalize_path(save_path))
 	last_status="Partie sauvegardée — jour %d"%game.clerk.shift.day if committed else "Échec : copie précédente conservée."

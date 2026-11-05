@@ -4,8 +4,10 @@ const PeerPose=preload("res://club_peer_pose.gd")
 const Port=39165
 var game
 var socket:StreamPeerTCP
-var address:LineEdit
-var pin:LineEdit
+var players:VBoxContainer
+var grant:=""
+var mirror:Node3D
+var pages:Array=[]
 var info:Label
 var feedback:Label
 var join_button:Button
@@ -23,6 +25,9 @@ var avatar:Node3D
 var saved_customer_physics:=true
 var saved_clerk_physics:=true
 var shown_inventory:Dictionary={}
+var selected_case:=""
+var case_controls:HBoxContainer
+var case_info:Label
 
 func setup(owner_game):
 	game=owner_game
@@ -39,19 +44,18 @@ func setup(owner_game):
 	info.text="Coop Wi-Fi · Poste de caisse"
 	info.add_theme_font_size_override("font_size",23)
 	layout.add_child(info)
-	address=LineEdit.new()
-	address.placeholder_text="Adresse IP de l’hôte"
-	address.custom_minimum_size.y=44
-	layout.add_child(address)
-	pin=LineEdit.new()
-	pin.placeholder_text="Code à six chiffres"
-	pin.max_length=6
-	pin.virtual_keyboard_type=LineEdit.KEYBOARD_TYPE_NUMBER
-	pin.custom_minimum_size.y=44
-	layout.add_child(pin)
-	join_button=button(layout,"Rejoindre",join_or_leave)
+	var discovery:=ScrollContainer.new()
+	discovery.custom_minimum_size.y=142
+	discovery.horizontal_scroll_mode=ScrollContainer.SCROLL_MODE_DISABLED
+	layout.add_child(discovery)
+	players=VBoxContainer.new()
+	players.size_flags_horizontal=Control.SIZE_EXPAND_FILL
+	discovery.add_child(players)
+	join_button=button(layout,"Se rendre visible",join_or_leave)
+	game.lobby.changed.connect(refresh_players)
+	game.lobby.join_granted.connect(connect_host)
 	feedback=Label.new()
-	feedback.text="L’hôte ouvre Coop Wi-Fi sur l’ordinateur du magasin."
+	feedback.text="Active la coop sur les deux appareils, sur le même Wi-Fi."
 	feedback.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
 	layout.add_child(feedback)
 	cash_button=button(layout,"Encaisser le paiement du client",func():send("cash_deposit"))
@@ -62,6 +66,12 @@ func setup(owner_game):
 	layout.add_child(actions)
 	payout_button=button(actions,"Rendre la monnaie",func():send("cash_change"))
 	button(actions,"Effacer la sélection",func():selected.clear();refresh())
+	case_info=Label.new()
+	layout.add_child(case_info)
+	case_controls=HBoxContainer.new()
+	layout.add_child(case_controls)
+	button(case_controls,"Mettre au panier",func():send("case_basket"))
+	button(case_controls,"Ranger en rayon",func():send("case_shelf"))
 	button(layout,"Retour au magasin",hide)
 	refresh()
 	hide()
@@ -75,14 +85,42 @@ func button(parent:Container,caption:String,callback:Callable)->Button:
 	parent.add_child(control)
 	return control
 
+func open_lobby():
+	if not socket:game.lobby.set_available(true)
+	refresh_players()
+	show()
+
+func refresh_players():
+	for child in players.get_children():
+		players.remove_child(child)
+		child.queue_free()
+	if socket:return
+	if not game.lobby.incoming.is_empty():
+		button(players,"Accepter l’invitation",func():game.lobby.reply(true))
+		button(players,"Refuser",func():game.lobby.reply(false))
+	var listing:Array=game.lobby.list_players()
+	for index in range(listing.size()):
+		if not listing[index].hosting:continue
+		var row:=index
+		button(players,"Rejoindre "+listing[index].name,func():game.lobby.request(row,false))
+	if players.get_child_count()==0:
+		var empty:=Label.new()
+		empty.text="Aucune partie visible sur ce Wi-Fi."
+		players.add_child(empty)
+	join_button.text="Se rendre invisible" if game.lobby.available else "Se rendre visible"
+
 func join_or_leave():
 	if socket:
 		reset("Partie quittée.")
 		return
-	var ip:=address.text.strip_edges()
-	if not ip.is_valid_ip_address() or not pin.text.is_valid_int() or pin.text.length()!=6:
-		feedback.text="Entre l’adresse et le code affichés par l’hôte."
+	game.lobby.toggle_available()
+
+func connect_host(ip:String,access:String):
+	if socket:return
+	if game.held or game.touch_controls.basket_carried:
+		feedback.text="Dépose le boîtier et le panier avant de rejoindre."
 		return
+	grant=access
 	socket=StreamPeerTCP.new()
 	if socket.connect_to_host(ip,Port)!=OK:
 		reset("Connexion impossible.")
@@ -92,6 +130,7 @@ func join_or_leave():
 	poll_in=0
 	pose_in=0
 	feedback.text="Connexion à la partie…"
+	refresh_players()
 	join_button.text="Annuler"
 
 func reset(message:String):
@@ -101,7 +140,11 @@ func reset(message:String):
 		game.clerk.set_physics_process(saved_clerk_physics)
 		game.clerk.customers.set_physics_process(saved_customer_physics)
 		game.clerk.customers.show()
+		if is_instance_valid(mirror):mirror.restore_local()
+		mirror=null
 	connected=false
+	pages.clear()
+	selected_case=""
 	if is_instance_valid(avatar):avatar.queue_free()
 	avatar=null
 	buffer.clear()
@@ -109,7 +152,7 @@ func reset(message:String):
 	selected.clear()
 	shown_inventory.clear()
 	feedback.text=message
-	join_button.text="Rejoindre"
+	refresh_players()
 	refresh()
 
 func _process(delta:float):
@@ -130,7 +173,7 @@ func _process(delta:float):
 		pose_in=.075
 	var available:=socket.get_available_bytes()
 	if available<=0:return
-	if available+buffer.size()>65536:
+	if available+buffer.size()>524288:
 		reset("Réponse de la partie trop volumineuse.")
 		return
 	var packet:=socket.get_partial_data(available)
@@ -150,6 +193,9 @@ func receive(reply:Dictionary):
 	if reply.get("v")!=1:return
 	if reply.get("checkout") is Dictionary:
 		if not connected:
+			if not reply.get("world") is String:
+				reset("Cette partie requiert la mise à jour de la coop.")
+				return
 			connected=true
 			join_button.text="Quitter la partie"
 			feedback.text="Connecté au magasin de l’hôte."
@@ -158,6 +204,13 @@ func receive(reply:Dictionary):
 			game.clerk.set_physics_process(false)
 			game.clerk.customers.set_physics_process(false)
 			game.clerk.customers.hide()
+			mirror=preload("res://club_world_sync.gd").new()
+			game.add_child(mirror)
+			mirror.setup(game)
+		if reply.get("world") is String and is_instance_valid(mirror):mirror.apply(reply.world)
+		if reply.get("pages") is Array:
+			pages=reply.pages
+			game.clerk.desktop.refresh()
 		if checkout.get("customer",-2)!=reply.checkout.get("customer",-1) or reply.checkout.get("paid",false):
 			selected.clear()
 		checkout=reply.checkout
@@ -176,9 +229,14 @@ func receive(reply:Dictionary):
 
 func send(action:String):
 	if not socket or socket.get_status()!=StreamPeerTCP.STATUS_CONNECTED:return
-	var message:={"v":1,"pin":pin.text,"features":["checkout"],"action":action,"customer":checkout.get("customer",-1),"coins":selected,"pose":PeerPose.pack(game)}
+	var message:={"case":selected_case,"v":1,"grant":grant,"features":["checkout","world_sync"],"action":action,"customer":checkout.get("customer",-1),"coins":selected,"pose":PeerPose.pack(game)}
 	message.merge(PeerPose.appearance(game))
 	socket.put_data((JSON.stringify(message)+"\n").to_utf8_buffer())
+
+func select_case(id:String):
+	selected_case=id
+	refresh()
+	show()
 
 func choose(value:String):
 	var count:=int(selected.get(value,0))
@@ -187,6 +245,15 @@ func choose(value:String):
 	refresh()
 
 func refresh():
+	case_controls.hide()
+	case_info.hide()
+	if connected and is_instance_valid(mirror):
+		for item in mirror.state.get("cases",[]):
+			if item.id!=selected_case:continue
+			case_info.text=str(game.layout.movies[item.movie].title)
+			case_info.show()
+			case_controls.visible=not item.held
+			break
 	var has_customer:bool=int(checkout.get("customer",-1))>=0
 	var paid:bool=checkout.get("paid",false)
 	cash_button.visible=connected and has_customer
@@ -220,4 +287,9 @@ func refresh():
 		info.text="Paiement réglé · L’hôte peut remettre les boîtiers"
 	else:
 		info.text="Total %.2f $ · Donné %.2f $ · Main %.2f $"%[int(checkout.price)/100.0,int(checkout.tender)/100.0,total/100.0]
+	if connected and is_instance_valid(mirror):
+		var shift:Dictionary=mirror.state.get("shift",{})
+		if not shift.is_empty():
+			var seconds:=int(shift.get("time_left",0))
+			info.text+="\nJour %d · %d:%02d · %d servis"%[int(shift.get("day",1)),seconds/60,seconds%60,int(shift.get("served",0))]
 	payout_button.disabled=total!=int(checkout.get("tender",0))-int(checkout.get("price",0))

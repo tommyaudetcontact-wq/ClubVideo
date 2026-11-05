@@ -217,7 +217,7 @@ func setup(g):
 	)
 	avatar_button.pressed.connect(func():avatar_button.text="Avatar : "+game.clerk_model_name())
 	add_button(menu,"Coop",open_coop)
-	add_button(menu,"Lobby Wi-Fi",open_lobby)
+
 	operations=make_panel()
 	var grid:=GridContainer.new()
 	grid.columns=2
@@ -360,7 +360,7 @@ func open_coop():
 	motion=Vector2.ZERO
 	move_touch=-1
 	look_touch=-1
-	coop_panel.show()
+	coop_panel.open_lobby()
 
 func _physics_process(delta:float):
 	update_stick()
@@ -492,7 +492,21 @@ func pointed_item()->Dictionary:
 	return best
 
 func use_target():
-	if get_tree().paused or action_busy() or coop_panel.connected or coop_panel.visible or basket_panel.get_parent().visible or checkout_panel.get_parent().visible:return
+	if get_tree().paused or action_busy() or coop_panel.visible or basket_panel.get_parent().visible or checkout_panel.get_parent().visible:return
+	if coop_panel.connected:
+		if not tap_aim:sync_hands()
+		if clerk.desktop.project_ray(game.aim_hands[0]).x>=0:
+			open_desktop()
+		elif is_instance_valid(coop_panel.mirror):
+			var best:=INF
+			var choice:=""
+			for item in coop_panel.mirror.state.get("cases",[]):
+				var distance:=aimed(item.transform.origin,.115)
+				if distance<best:
+					best=distance
+					choice=item.id
+			if not choice.is_empty():coop_panel.select_case(choice)
+		return
 	clerk.shift.started=true
 	if not tap_aim:sync_hands()
 	if basket_aimed() and not clerk.inspection.opened:

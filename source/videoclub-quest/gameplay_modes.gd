@@ -5,7 +5,7 @@ var rain_enabled := true
 var trailers_muted := false
 var menu_open := false
 var menu_page=0
-var invite_mode := false
+var invite_mode := true
 var confirm_new=false
 var confirm_load=false
 var panel: Node3D
@@ -63,7 +63,7 @@ func _refresh_labels() -> void:
 		labels[0].text="Retour"
 		labels[1].text="LOBBY WI-FI · Joueurs disponibles"
 		if not game.lobby:return
-		labels[2].text="Action : "+("Inviter" if invite_mode else "Demander à rejoindre")
+		labels[2].text="Sélectionne un joueur pour l’inviter"
 		var players:Array=game.lobby.list_players()
 		for i in range(mini(players.size(),4)):labels[i+3].text=players[i].name
 		if players.is_empty():labels[3].text="Aucun joueur détecté"
@@ -93,7 +93,7 @@ func _refresh_labels() -> void:
 	labels[6].text="Ouvrir Netflix / connexion"
 	labels[7].text="Son des bandes-annonces : "+("COUPÉ" if trailers_muted else "ACTIVÉ")
 	labels[8].text="Partie · sauvegarder / continuer / nouvelle"
-	labels[9].text="Lobby Wi-Fi · nouvelle demande" if game.lobby and not game.lobby.incoming.is_empty() else "Lobby Wi-Fi · test de présence"
+	labels[9].text="Coop Wi-Fi"
 
 func toggle_pause() -> void:
 	confirm_new=false
@@ -135,8 +135,8 @@ func _activate(row: int) -> void:
 	if menu_page==2:
 		match row:
 			0:menu_page=0
-			2:invite_mode=not invite_mode
-			3,4,5,6:game.lobby.request(row-3,invite_mode)
+			2:pass
+			3,4,5,6:game.lobby.request(row-3,true)
 			7:game.lobby.reply(true)
 			8:game.lobby.reply(false)
 			10:game.lobby.toggle_available()
@@ -176,7 +176,7 @@ func _activate(row: int) -> void:
 		10:game.toggle_clerk_model()
 		9:
 			if game.lobby:
-				game.lobby.start()
+				game.lobby.set_available(true)
 				menu_page=2
 		7:
 			trailers_muted=not trailers_muted
