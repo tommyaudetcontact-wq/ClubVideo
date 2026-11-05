@@ -14,6 +14,8 @@ var authenticated := false
 var last_request := 0
 var accept_time := 0
 var remote_avatar:Node3D
+var guest_case:Dictionary={}
+var guest_flipped:=false
 const PeerPose=preload("res://club_peer_pose.gd")
 
 func _ready():
@@ -46,6 +48,7 @@ func permit(ip:String)->String:
 	return token
 
 func disconnect_client():
+	drop_guest_case()
 	if client:client.disconnect_from_host()
 	client=null
 	authenticated=false
@@ -100,6 +103,7 @@ func handle_request(request:Variant):
 			remote_avatar=PeerPose.new()
 			clerk.game.add_child(remote_avatar)
 		remote_avatar.receive(request.pose,request)
+		update_guest_case_pose()
 		if request.get("action")=="pose":
 			send_response({"v":VERSION,"pose":PeerPose.pack(clerk.game),"avatar":PeerPose.appearance(clerk.game)})
 			return
@@ -110,6 +114,15 @@ func handle_request(request:Variant):
 	var receipt:=""
 	var action:=str(request.get("action",""))
 	match action:
+		"case_pick","shelf_pick":
+			receipt=pick_guest_case(action,str(request.get("case","")))
+		"case_drop":
+			drop_guest_case()
+		"held_basket":
+			receipt=store_guest_case()
+		"case_flip":
+			guest_flipped=not guest_flipped
+			update_guest_case_pose()
 		"case_basket","case_shelf":
 			receipt=assist_case(action,str(request.get("case","")))
 		"cash_deposit","cash_change":
@@ -137,6 +150,8 @@ func handle_request(request:Variant):
 			inventory[str(denomination)]=clerk.till[denomination]
 		response["checkout"]={"customer":clerk.active.get("id",-1),"price":clerk.price,"tender":clerk.tender,"received":clerk.tender_received,"paid":clerk.paid,"cash_visible":clerk.tender_note.visible,"till":inventory}
 		response["notice"]=receipt
+		response["guest_case"]=str(guest_case.node.get_instance_id()) if not guest_case.is_empty() else ""
+		response["guest_flipped"]=guest_flipped
 		response["pose"]=PeerPose.pack(clerk.game)
 		response["avatar"]=PeerPose.appearance(clerk.game)
 	if features is Array and "world_sync" in features:
@@ -194,7 +209,7 @@ func assist_case(action:String,id:String)->String:
 	for item in clerk.cases.duplicate():
 		var node:Node3D=item.node
 		if str(node.get_instance_id())!=id:continue
-		if node==clerk.game.held or item==clerk.secondary or node.get_meta("customer_animating",false):
+		if node==clerk.game.held or item==clerk.secondary or node.get_meta("customer_animating",false) or node.get_meta("guest_held",false):
 			return "Ce boîtier est déjà manipulé par l’hôte."
 		if node.global_position.distance_to(guest)>2.0:return "Approche-toi du boîtier."
 		if action=="case_basket":
@@ -224,3 +239,82 @@ func assist_case(action:String,id:String)->String:
 			clerk.refresh_terminal()
 			return "Boîtier remis en rayon."
 	return "Ce boîtier n’est plus disponible."
+
+func pick_guest_case(action:String,id:String)->String:
+	if not guest_case.is_empty():return "Dépose d’abord le boîtier que tu tiens."
+	if not is_instance_valid(remote_avatar) or not remote_avatar.valid_pose:return "Attends la synchronisation de ta position."
+	var guest:Vector3=remote_avatar.targets[0].origin
+	if action=="case_pick":
+		for item in clerk.cases:
+			var node:Node3D=item.node
+			if str(node.get_instance_id())!=id:continue
+			if node==clerk.game.held or item==clerk.secondary or node.get_meta("customer_animating",false):break
+			if guest.distance_to(node.global_position)>2.2:return "Approche-toi du boîtier."
+			guest_case=item
+			break
+	else:
+		for record in clerk.game.dvd_records:
+			if WorldSync.shelf_key(clerk.game,record)!=id:continue
+			if record.get("clerk_reserved",false) or record.get("loose",false) or record==clerk.game.held_record:break
+			if guest.distance_to(record.world.origin)>2.2:return "Approche-toi du rayon."
+			clerk.reserve_exact(record)
+			guest_case=clerk.new_case(record.movie,record.world.origin,"shelve")
+			guest_case.record=record
+			load("res://clerk_inventory.gd").bind(guest_case.node,record)
+			break
+	if guest_case.is_empty():return "Ce boîtier est déjà pris ou indisponible."
+	var node:RigidBody3D=guest_case.node
+	clerk.basket.items.erase(guest_case)
+	clerk.basket.arrange()
+	if node.get_parent()!=clerk:node.reparent(clerk)
+	for key in ["in_basket","in_sort_tray"]:node.set_meta(key,false)
+	node.set_meta("sort_slot",-1)
+	node.set_meta("guest_held",true)
+	node.freeze=true
+	node.collision_layer=0
+	node.collision_mask=0
+	guest_flipped=false
+	clerk.shift.started=true
+	update_guest_case_pose()
+	return ""
+
+static func held_pose(head_pose:Transform3D,flipped:bool)->Transform3D:
+	return head_pose*Transform3D(Basis(Vector3.UP,PI if flipped else 0.0),Vector3(.105,-.105,-.50))
+
+func update_guest_case_pose():
+	if not guest_case.is_empty() and is_instance_valid(guest_case.node) and remote_avatar.valid_pose:
+		guest_case.node.global_transform=held_pose(remote_avatar.targets[0],guest_flipped)
+
+func drop_guest_case():
+	if guest_case.is_empty():return
+	var item:=guest_case
+	guest_case={}
+	guest_flipped=false
+	var node:RigidBody3D=item.node
+	if not is_instance_valid(node):return
+	node.remove_meta("guest_held")
+	var record:Dictionary=item.record
+	if item.kind=="shelve" and not record.is_empty() and node.global_position.distance_to(record.world.origin)<.75:
+		clerk.restore_stock(record)
+		clerk.cases.erase(item)
+		node.queue_free()
+		return
+	node.freeze=false
+	node.collision_layer=8
+	node.collision_mask=1|8
+	node.linear_velocity=Vector3.ZERO
+	node.sleeping=false
+
+func store_guest_case()->String:
+	if guest_case.is_empty():return ""
+	var basket:RigidBody3D=clerk.basket.body
+	if basket.global_position.distance_to(remote_avatar.targets[0].origin)>2.0:return "Approche-toi du panier."
+	if clerk.basket.items.size()>=clerk.basket.CAPACITY:return "Le panier est plein."
+	var item:=guest_case
+	item.node.global_position=basket.to_global(Vector3(0,.16,0))
+	if not clerk.basket.store(item):return "Approche le boîtier du panier."
+	item.node.remove_meta("guest_held")
+	guest_case={}
+	guest_flipped=false
+	clerk.refresh_terminal()
+	return "Boîtier ajouté au panier."

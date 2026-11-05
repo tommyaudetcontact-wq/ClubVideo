@@ -28,7 +28,7 @@ static func capture(game)->String:
 	for item in c.cases:
 		var node:Node3D=item.node
 		if not is_instance_valid(node):continue
-		cases.append({"id":str(node.get_instance_id()),"movie":item.movie,"disc":node.get_meta("disc_movie",item.movie),"dirty":node.get_meta("dirty",false),"locked":node.get_meta("antitheft",false),"transform":node.global_transform,"opened":c.inspection.opened and node==c.inspection.case_node,"held":node==game.held or item==c.secondary,"kind":item.kind,"in_basket":item in c.basket.items,"scanned":item.scanned})
+		cases.append({"id":str(node.get_instance_id()),"movie":item.movie,"disc":node.get_meta("disc_movie",item.movie),"dirty":node.get_meta("dirty",false),"locked":node.get_meta("antitheft",false),"transform":node.global_transform,"opened":c.inspection.opened and node==c.inspection.case_node,"held":node==game.held or item==c.secondary or node.get_meta("guest_held",false),"kind":item.kind,"in_basket":item in c.basket.items,"scanned":item.scanned})
 	for record in game.modes.loose_dvds:
 		var loose:Node3D=record.get("loose_body")
 		if is_instance_valid(loose):

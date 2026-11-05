@@ -42,6 +42,7 @@ var notice_time := 0.0
 var last_notice := ""
 var original_camera_height := 1.65
 var crouching := false
+var crouch_button:Button
 var spare_carried := false
 var disc_back := false
 var desktop_overlay:ColorRect
@@ -135,6 +136,7 @@ func setup(g):
 	case_button=add_button(bar,"Boîtier",case_action)
 	drop_button=add_button(bar,"Déposer",drop)
 	add_button(bar,"Outils",toggle_operations)
+	crouch_button=add_button(bar,"S’accroupir",toggle_crouch)
 	counter_actions=HBoxContainer.new()
 	counter_actions.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
 	counter_actions.offset_left=-475
@@ -231,7 +233,7 @@ func setup(g):
 	add_button(grid,"Déposer les billets en caisse",deposit_payment)
 	add_button(grid,"Préparer la monnaie",open_change)
 	add_button(grid,"Remettre la monnaie",give_change)
-	add_button(grid,"S’accroupir / se relever",func():crouching=not crouching)
+	add_button(grid,"S’accroupir / se relever",toggle_crouch)
 	add_button(operations,"Fermer",toggle_operations)
 	sync_hands()
 	if OS.has_feature("android") and not game.session.tools_run:call_deferred("show_start_menu")
@@ -280,7 +282,7 @@ func make_stick(dimensions:Vector2,color:Color)->Panel:
 	return panel
 
 func stick_center()->Vector2:
-	return Vector2(111,get_viewport().get_visible_rect().size.y-145)
+	return Vector2(145,get_viewport().get_visible_rect().size.y-145)
 
 func update_stick():
 	var center:=stick_center()
@@ -352,6 +354,10 @@ func animate_pick(origin:Vector3):
 	begin_motion()
 	tween_hand(action_motion,hand,rest,.26)
 
+func toggle_crouch():
+	crouching=not crouching
+	crouch_button.text="Se relever" if crouching else "S’accroupir"
+
 func open_coop():
 	if game.modes.menu_open:toggle_menu()
 	operations.get_parent().hide()
@@ -375,10 +381,8 @@ func _physics_process(delta:float):
 		return
 	show_grip(delta)
 	refresh_cash_panel()
-	if coop_panel.connected:
-		cash_panel.hide()
-		primary_button.get_parent().hide()
-	else:primary_button.get_parent().show()
+	if coop_panel.connected:cash_panel.hide()
+	primary_button.get_parent().show()
 	if clerk.active.is_empty():checkout_panel.get_parent().hide()
 	refresh_supply_buttons()
 	counter_actions.visible=can_serve_customer() and not (desktop_overlay and desktop_overlay.visible)
@@ -497,15 +501,13 @@ func use_target():
 		if not tap_aim:sync_hands()
 		if clerk.desktop.project_ray(game.aim_hands[0]).x>=0:
 			open_desktop()
-		elif is_instance_valid(coop_panel.mirror):
-			var best:=INF
-			var choice:=""
-			for item in coop_panel.mirror.state.get("cases",[]):
-				var distance:=aimed(item.transform.origin,.115)
-				if distance<best:
-					best=distance
-					choice=item.id
-			if not choice.is_empty():coop_panel.select_case(choice)
+		elif coop_panel.guest_case_id.is_empty():
+			var target:=coop_case_target()
+			if not target.is_empty():coop_panel.send(target.action,target.id)
+		elif basket_aimed():
+			coop_panel.send("held_basket")
+		else:
+			coop_panel.send("case_flip")
 		return
 	clerk.shift.started=true
 	if not tap_aim:sync_hands()
@@ -714,7 +716,31 @@ func put_in_basket():
 	place_held_case(clerk.basket.body.to_global(Vector3(0,.16,0)))
 	if game.held!=held_case:game._message("Boîtier mis dans le panier.")
 
+func coop_case_target()->Dictionary:
+	if not is_instance_valid(coop_panel.mirror):return {}
+	var best:=INF
+	var result:Dictionary={}
+	for item in coop_panel.mirror.state.get("cases",[]):
+		if item.held:continue
+		var gap:=aimed(item.transform.origin,.115)
+		if gap>=best:continue
+		best=gap
+		result={"id":item.id,"action":"case_pick"}
+	var ray:Node3D=game.aim_hands[CASE_HAND]
+	var record:Dictionary=game.shelf_ray(ray.global_position,-ray.global_basis.z,2.2)
+	if not record.is_empty() and ray.global_position.distance_to(record.world.origin)<best:
+		return {"id":coop_panel.mirror.shelf_key(game,record),"action":"shelf_pick"}
+	return result
+
 func refresh_action(over_desktop:bool):
+	if coop_panel.connected:
+		var holding:bool=not coop_panel.guest_case_id.is_empty()
+		primary_button.text="Ouvrir l’ordi" if over_desktop else (("Mettre au panier" if basket_aimed() else "Retourner") if holding else "Prendre")
+		case_button.text="Voir le dos" if not coop_panel.guest_flipped else "Voir la couverture"
+		case_button.disabled=not holding
+		drop_button.disabled=not holding
+		action_hint.text=""
+		return
 	var inspection=clerk.inspection
 	var label:="Viser un objet"
 	var hint:=""
@@ -748,6 +774,9 @@ func refresh_action(over_desktop:bool):
 	action_hint.text=hint
 
 func case_action():
+	if coop_panel.connected:
+		coop_panel.send("case_flip")
+		return
 	if clerk.inspection.finger>=0:use_disc()
 	else:toggle_case()
 
@@ -897,6 +926,9 @@ func handoff():
 	clerk.action("handoff",game.held_hand)
 
 func drop():
+	if coop_panel.connected:
+		coop_panel.send("case_drop")
+		return
 	if action_busy():return
 	if is_instance_valid(game.candy.held_balls[0]):
 		var body:RigidBody3D=game.candy.held_balls[0]

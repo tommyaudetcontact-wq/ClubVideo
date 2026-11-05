@@ -9,6 +9,8 @@ var invite_mode := true
 var confirm_new=false
 var confirm_load=false
 var panel: Node3D
+var panel_material:StandardMaterial3D
+var panel_title:Label3D
 var labels: Array = []
 var last_triggers := [false,false]
 var loose_dvds: Array = []
@@ -39,6 +41,7 @@ func _build_menu() -> void:
 	material.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.albedo_color=Color("101d30")
 	back.material_override=material
+	panel_material=material
 	panel.add_child(back)
 	var title:=Label3D.new()
 	title.text="VIDÉO CLUB · PAUSE"
@@ -47,6 +50,7 @@ func _build_menu() -> void:
 	title.position=Vector3(0,.57,.012)
 	title.modulate=Color("f2c362")
 	panel.add_child(title)
+	panel_title=title
 	for row in range(11):
 		var label:=Label3D.new()
 		label.font_size=33
@@ -58,14 +62,21 @@ func _build_menu() -> void:
 	_refresh_labels()
 
 func _refresh_labels() -> void:
-	if menu_page==2:
+	var messenger:bool=menu_page==2
+	panel_material.albedo_color=Color("d9edfc") if messenger else Color("101d30")
+	panel_title.text="●  VIDÉO CLUB MESSENGER" if messenger else "VIDÉO CLUB · PAUSE"
+	panel_title.modulate=Color("174c87") if messenger else Color("f2c362")
+	for label in labels:
+		label.modulate=Color("123968") if messenger else Color.WHITE
+		label.outline_size=0 if messenger else 12
+	if messenger:
 		for label in labels:label.text=""
 		labels[0].text="Retour"
 		labels[1].text="LOBBY WI-FI · Joueurs disponibles"
 		if not game.lobby:return
 		labels[2].text="Sélectionne un joueur pour l’inviter" if game.lobby.available else "Active la coop pour ouvrir ta partie."
 		var players:Array=game.lobby.list_players()
-		for i in range(mini(players.size(),4)):labels[i+3].text=players[i].name
+		for i in range(mini(players.size(),4)):labels[i+3].text="●  "+players[i].name+(" · héberge" if players[i].hosting else " · disponible")
 		if players.is_empty():labels[3].text="Recherche de joueurs sur le Wi-Fi…" if game.lobby.available else ""
 		labels[7].text="Lire / accuser réception" if not game.lobby.incoming.is_empty() else ""
 		labels[8].text="Refuser la demande" if not game.lobby.incoming.is_empty() else ""

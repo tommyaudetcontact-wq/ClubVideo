@@ -3,6 +3,9 @@ extends PanelContainer
 const PeerPose=preload("res://club_peer_pose.gd")
 const Port=39165
 var game
+var guest_case_id:=""
+var guest_flipped:=false
+const LAN=preload("res://club_lan.gd")
 var socket:StreamPeerTCP
 var players:VBoxContainer
 var grant:=""
@@ -33,6 +36,14 @@ var case_info:Label
 func setup(owner_game):
 	game=owner_game
 	process_mode=Node.PROCESS_MODE_ALWAYS
+	var frame:=StyleBoxFlat.new()
+	frame.bg_color=Color("d9edfc")
+	frame.border_color=Color("3679bc")
+	frame.set_border_width_all(3)
+	frame.set_corner_radius_all(9)
+	for side in [SIDE_LEFT,SIDE_TOP,SIDE_RIGHT,SIDE_BOTTOM]:
+		frame.set_content_margin(side,14)
+	add_theme_stylebox_override("panel",frame)
 	set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	offset_left=-276
 	offset_right=276
@@ -42,7 +53,8 @@ func setup(owner_game):
 	layout.add_theme_constant_override("separation",7)
 	add_child(layout)
 	info=Label.new()
-	info.text="Coop Wi-Fi · Poste de caisse"
+	info.text="●  Vidéo Club Messenger · Wi-Fi"
+	info.add_theme_color_override("font_color",Color("123968"))
 	info.add_theme_font_size_override("font_size",23)
 	layout.add_child(info)
 	var discovery:=ScrollContainer.new()
@@ -58,6 +70,7 @@ func setup(owner_game):
 	game.lobby.join_granted.connect(connect_host)
 	feedback=Label.new()
 	feedback.text="Active la coop sur les deux appareils, sur le même Wi-Fi."
+	feedback.add_theme_color_override("font_color",Color("123968"))
 	feedback.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
 	layout.add_child(feedback)
 	cash_button=button(layout,"Encaisser le paiement du client",func():send("cash_deposit"))
@@ -69,6 +82,7 @@ func setup(owner_game):
 	payout_button=button(actions,"Rendre la monnaie",func():send("cash_change"))
 	button(actions,"Effacer la sélection",func():selected.clear();refresh())
 	case_info=Label.new()
+	case_info.add_theme_color_override("font_color",Color("123968"))
 	layout.add_child(case_info)
 	case_controls=HBoxContainer.new()
 	layout.add_child(case_controls)
@@ -102,6 +116,7 @@ func refresh_players():
 	join_button.text="Désactiver la coop" if game.lobby.available else "Activer la coop"
 	if not game.lobby.available:
 		var intro:=Label.new()
+		intro.add_theme_color_override("font_color",Color("123968"))
 		intro.text="Active la coop pour rechercher les parties sur le Wi-Fi."
 		players.add_child(intro)
 		return
@@ -118,10 +133,12 @@ func refresh_players():
 			button(players,"Inviter "+player.name,func():game.lobby.request(row,true))
 		else:
 			var peer_label:=Label.new()
-			peer_label.text=player.name+(" · Héberge une partie" if player.hosting else " · Disponible")
+			peer_label.add_theme_color_override("font_color",Color("123968"))
+			peer_label.text="●  "+player.name+(" · Héberge une partie" if player.hosting else " · Disponible")
 			players.add_child(peer_label)
 	if players.get_child_count()==0:
 		var empty:=Label.new()
+		empty.add_theme_color_override("font_color",Color("123968"))
 		empty.text="Partie visible sur le Wi-Fi. Tu peux retourner jouer." if hosting else "Recherche de joueurs sur le Wi-Fi…"
 		players.add_child(empty)
 
@@ -159,6 +176,8 @@ func reset(message:String):
 		if is_instance_valid(mirror):mirror.restore_local()
 		mirror=null
 	connected=false
+	guest_case_id=""
+	guest_flipped=false
 	pages.clear()
 	selected_case=""
 	if is_instance_valid(avatar):avatar.queue_free()
@@ -213,6 +232,7 @@ func receive(reply:Dictionary):
 				reset("Cette partie requiert la mise à jour de la coop.")
 				return
 			connected=true
+			hide()
 			join_button.text="Quitter la partie"
 			feedback.text="Connecté au magasin de l’hôte."
 			saved_clerk_physics=game.clerk.is_physics_processing()
@@ -230,6 +250,8 @@ func receive(reply:Dictionary):
 		if checkout.get("customer",-2)!=reply.checkout.get("customer",-1) or reply.checkout.get("paid",false):
 			selected.clear()
 		checkout=reply.checkout
+		guest_case_id=str(reply.get("guest_case",""))
+		guest_flipped=bool(reply.get("guest_flipped",false))
 		if not str(reply.get("notice","")).is_empty():feedback.text=reply.notice
 		refresh()
 	elif not connected and reply.has("pages"):
@@ -243,9 +265,14 @@ func receive(reply:Dictionary):
 			game.add_child(avatar)
 		avatar.receive(reply.pose,reply.get("avatar",{}))
 
-func send(action:String):
+func _physics_process(_delta:float):
+	if guest_case_id.is_empty() or not is_instance_valid(mirror):return
+	var node:Node3D=mirror.nodes.get("cases"+guest_case_id)
+	if is_instance_valid(node):node.global_transform=LAN.held_pose(game.head.global_transform,guest_flipped)
+
+func send(action:String,id:String=""):
 	if not socket or socket.get_status()!=StreamPeerTCP.STATUS_CONNECTED:return
-	var message:={"case":selected_case,"v":1,"grant":grant,"features":["checkout","world_sync"],"action":action,"customer":checkout.get("customer",-1),"coins":selected,"pose":PeerPose.pack(game)}
+	var message:={"case":selected_case if id.is_empty() else id,"v":1,"grant":grant,"features":["checkout","world_sync"],"action":action,"customer":checkout.get("customer",-1),"coins":selected,"pose":PeerPose.pack(game)}
 	message.merge(PeerPose.appearance(game))
 	socket.put_data((JSON.stringify(message)+"\n").to_utf8_buffer())
 
@@ -296,7 +323,7 @@ func refresh():
 		coin.text="%.2f $ ×%d"%[int(key)/100.0,count]
 		coin.disabled=count>=int(inventory[key])
 	if not connected:
-		info.text="Coop Wi-Fi · Poste de caisse"
+		info.text="●  Vidéo Club Messenger · Wi-Fi"
 	elif not has_customer:
 		info.text="Caisse partagée · En attente d’un client"
 	elif paid:

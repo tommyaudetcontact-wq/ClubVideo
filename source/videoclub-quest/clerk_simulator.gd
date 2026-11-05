@@ -297,14 +297,16 @@ func reserve_stock(id:int)->Dictionary:
 	pool.shuffle()
 	for record in pool:
 		if record.movie!=id or record.get("loose",false) or record.get("clerk_reserved",false) or record==game.held_record:continue
-		record.clerk_reserved=true
-		if locks:locks.update_slot(record)
-		var zero=Transform3D(Basis.IDENTITY.scaled(Vector3.ZERO),Vector3.ZERO)
-		record.group.multimesh.set_instance_transform(record.index,zero)
-		if game.shell and record.shell_index>=0:game.shell.multimesh.set_instance_transform(record.shell_index,zero)
-		game._update_cover_lod(game.head.global_position,true)
+		reserve_exact(record)
 		return record
 	return {}
+func reserve_exact(record:Dictionary):
+	record.clerk_reserved=true
+	if locks:locks.update_slot(record)
+	var zero=Transform3D(Basis.IDENTITY.scaled(Vector3.ZERO),Vector3.ZERO)
+	record.group.multimesh.set_instance_transform(record.index,zero)
+	if game.shell and record.shell_index>=0:game.shell.multimesh.set_instance_transform(record.shell_index,zero)
+	game._update_cover_lod(game.head.global_position,true)
 func restore_stock(record:Dictionary):
 	if record.is_empty():return
 	record.clerk_reserved=false
@@ -566,6 +568,7 @@ func interact(hand:int,grip:bool)->bool:
 			return true
 	return false
 func pick_case(c:Dictionary,hand:int,grip:bool):
+	if c.node.get_meta("guest_held",false):return
 	if locks:locks.update_slot(c.get("record",{}))
 	c.node.set_meta("sort_slot",-1)
 	c.node.set_meta("in_basket",false)
