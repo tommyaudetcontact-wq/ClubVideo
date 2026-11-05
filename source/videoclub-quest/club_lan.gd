@@ -166,7 +166,7 @@ func handle_request(request:Variant):
 	var content:Array[String]=[]
 	for tab in range(4):
 		content.append(clerk.terminal_content(tab))
-	var response={"v":VERSION,"pages":content,"client":not clerk.active.is_empty(),"can_return":clerk.active.get("is_return",false) and clerk.paid and clerk.scanned,"day":clerk.shift.day}
+	var response={"v":VERSION,"action":action,"pages":content,"client":not clerk.active.is_empty(),"can_return":clerk.active.get("is_return",false) and clerk.paid and clerk.scanned,"day":clerk.shift.day}
 	var features:Variant=request.get("features",[])
 	if features is Array and "checkout" in features:
 		var inventory:Dictionary={}
@@ -333,9 +333,12 @@ func update_guest_case_pose():
 		var basket:RigidBody3D=clerk.basket.body
 		basket.global_transform=head_pose*Transform3D(Basis(Vector3.UP,.10),Vector3(-.35,-.43,-.77))
 	for index in range(guest_cash.size()):
-		guest_cash[index].node.global_transform=cash_pose(head_pose,index,guest_cash[index].value)
+		if remote_avatar.tracked_hands:
+			guest_cash[index].node.global_transform=remote_avatar.targets[1]*Transform3D(Basis.IDENTITY,Vector3((index%3-1)*.022,index*.002,-.025))
+		else:guest_cash[index].node.global_transform=cash_pose(head_pose,index,guest_cash[index].value)
 	if not guest_case.is_empty() and is_instance_valid(guest_case.node):
-		guest_case.node.global_transform=held_pose(head_pose,guest_flipped)
+		if remote_avatar.tracked_hands:guest_case.node.global_transform=remote_avatar.targets[2]
+		else:guest_case.node.global_transform=held_pose(head_pose,guest_flipped)
 	if is_instance_valid(guest_inspection) and is_instance_valid(guest_inspection.carried):
 		var disc:MeshInstance3D=guest_inspection.carried
 		disc.global_transform=disc_pose(head_pose,guest_disc_back)

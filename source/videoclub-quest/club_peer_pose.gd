@@ -56,7 +56,7 @@ func attach_local(game):
 
 static func pack(game)->Array:
 	var points:Array=[game.head]
-	if game.xr_active:points.append_array(game.hands)
+	if game.xr_active or game.touch_profile:points.append_array(game.hands)
 	var result:Array=[]
 	for point in points:
 		var position:Vector3=point.global_position

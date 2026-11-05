@@ -338,7 +338,8 @@ func hand_rest(index:int)->Transform3D:
 func sync_hands():
 	for i in range(2):
 		game.aim_hands[i].global_transform=game.head.global_transform
-		if not action_busy():game.hands[i].global_transform=hand_rest(i)
+		if not action_busy():
+			game.hands[i].global_transform=coop_panel.guest_held_pose() if coop_panel.connected and i==CASE_HAND and not coop_panel.guest_case_id.is_empty() else hand_rest(i)
 
 func show_grip(delta:float):
 	for i in range(2):
@@ -372,6 +373,15 @@ func animate_pick(origin:Vector3):
 	game.hands[hand].global_transform=Transform3D(rest.basis,origin)
 	begin_motion()
 	tween_hand(action_motion,hand,rest,.26)
+
+func animate_coop_pickup(origin:Vector3):
+	if action_busy():return
+	var rest:Transform3D=coop_panel.guest_held_pose()
+	begin_motion()
+	coop_panel.moving_case=true
+	coop_panel.case_animation_pose=Transform3D(rest.basis,origin)
+	action_motion.tween_property(coop_panel,"case_animation_pose",rest,.26).set_trans(Tween.TRANS_SINE)
+	action_motion.tween_callback(func():coop_panel.moving_case=false)
 
 func animate_coop_counter_action(target:Dictionary):
 	var rest:Transform3D=coop_panel.guest_held_pose()
@@ -551,6 +561,9 @@ func use_target():
 					if cash_target.action=="money" and cash_target.value==value:
 						take_denomination(value,cash_target.node.global_position)
 						break
+		elif target.action=="cash_pick":
+			coop_panel.send("cash_pick","",target.target)
+			animate_cash_pick(target.pose.origin)
 		elif target.action=="cash_put":deposit_payment()
 		elif target.action=="cash_give":give_change()
 		elif target.action=="select_cash":select_cash(target.node)

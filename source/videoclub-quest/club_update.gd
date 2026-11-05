@@ -1,7 +1,7 @@
 extends Node
 
-const QUEST_VERSION := "0.9.1"
-const ANDROID_VERSION := "0.9.1"
+const QUEST_VERSION := "0.9.2"
+const ANDROID_VERSION := "0.9.2"
 const REPOSITORY := "https://github.com/tommyaudetcontact-wq/ClubVideo"
 const RELEASES := "https://api.github.com/repos/tommyaudetcontact-wq/ClubVideo/releases?per_page=12"
 const STAGING := "user://updates/download.apk"

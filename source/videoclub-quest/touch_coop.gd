@@ -17,6 +17,7 @@ var world_in_flight:=false
 var world_sent_at:=0
 var moving_case:=false
 var case_animation_pose:=Transform3D.IDENTITY
+var pickup_from:=Vector3.INF
 const LAN=preload("res://club_lan.gd")
 var socket:StreamPeerTCP
 var players:VBoxContainer
@@ -276,7 +277,12 @@ func receive(reply:Dictionary):
 			selected.clear()
 		checkout=reply.checkout
 		sync_cash(reply.get("guest_cash",[]))
+		var previous_case:=guest_case_id
 		guest_case_id=str(reply.get("guest_case",""))
+		if previous_case.is_empty() and not guest_case_id.is_empty() and pickup_from.is_finite():
+			game.touch_controls.animate_coop_pickup(pickup_from)
+			pickup_from=Vector3.INF
+		elif reply.get("action","") in ["case_pick","shelf_pick"]:pickup_from=Vector3.INF
 		guest_flipped=bool(reply.get("guest_flipped",false))
 		guest_open=bool(reply.get("guest_open",false))
 		basket_carried=bool(reply.get("guest_basket",false))
@@ -354,6 +360,15 @@ func _physics_process(_delta:float):
 
 func send(action:String,id:String="",target:String=""):
 	if not socket or socket.get_status()!=StreamPeerTCP.STATUS_CONNECTED:return
+	if action in ["case_pick","shelf_pick"] and is_instance_valid(mirror):
+		var key:String=selected_case if id.is_empty() else id
+		if action=="case_pick":
+			var node:Node3D=mirror.nodes.get("cases"+key)
+			if is_instance_valid(node):pickup_from=node.global_position
+		else:
+			var row:Array=mirror.state.get("stock",{}).get(key,[])
+			if row.size()>=5:pickup_from=row[4].origin
+	if game.touch_controls and not game.touch_controls.action_busy():game.touch_controls.sync_hands()
 	if action.is_empty():
 		world_in_flight=true
 		world_sent_at=Time.get_ticks_msec()
