@@ -93,6 +93,7 @@ func place_case(item:Dictionary)->bool:
 	if chosen<0:
 		game._message("Les emplacements de boîtiers sont pleins.")
 		return true
+	if clerk.has_identified_mismatch(item.node,item.movie):clerk.flag_wrong_case(item)
 	item.node.reparent(clerk)
 	item.node.global_position=case_slots[chosen]
 	item.node.rotation=Vector3(-PI/2,0,0)

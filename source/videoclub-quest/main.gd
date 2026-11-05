@@ -731,13 +731,13 @@ func _physics_process(delta: float) -> void:
 			pixel=clerk.desktop.project_ray(aim_hands[hand])
 			if pixel.x>=0:break
 		clerk.desktop.point(pixel)
-	var clerk_chord:bool=clerk.inspection.input_tick(delta) if clerk else false
+	if clerk:clerk.inspection.input_tick(delta)
 	for i in range(2):
 		var trigger := hands[i].get_float(&"trigger") > 0.6
 		var grip := hands[i].get_float(&"grip") > 0.6
 		hand_visuals[i].update_grip(delta,hands[i].get_float(&"trigger"),hands[i].get_float(&"grip"),held_hand==i or (clerk and (clerk.inspection.finger==i or clerk.secondary_hand==i or clerk.basket.hand==i or clerk.lock_hand==i)))
 		pointer_beams[i].visible = held_hand!=i and not (clerk and clerk.secondary_hand==i) and not (i==0 and teleportation.enabled and teleportation.aiming)
-		if trigger and not previous_trigger[i] and not clerk_chord:
+		if trigger and not previous_trigger[i]:
 			_interact(i,false)
 		if grip and not previous_grip[i]:
 			_interact(i,true)
@@ -791,7 +791,7 @@ func _recenter_entry(force := false) -> void:
 	_write_diagnostics()
 
 func _write_diagnostics() -> void:
-	var state := {"xr_active":xr_active,"tracking":xr_interface.get_tracking_status() if xr_interface else -1,"spawn_centered":spawn_centered,"head_local":[head.position.x,head.position.y,head.position.z],"head_world":[head.global_position.x,head.global_position.y,head.global_position.z],"origin":[origin.position.x,origin.position.y,origin.position.z],"viewport_xr":get_viewport().use_xr,"viewport_size":str(get_viewport().get_visible_rect().size),"xr_target_size":str(xr_interface.get_render_target_size()) if xr_interface else "none","msaa":get_viewport().msaa_3d,"camera_current":head.current,"fps":Engine.get_frames_per_second(),"dvd_count":dvd_records.size(),"near_covers":lod_selected.size(),"lod_candidates":lod_last_examined,"build":"PC-0.7.8" if pc_vr else (Updater.ANDROID_VERSION if touch_profile else Updater.QUEST_VERSION),"teleport_mode":teleportation.enabled,"baked_lighting":baked_lighting_active,"active_trailer":active_trailer,"trailer_playing":trailer_player.is_playing(),"video_position":trailer_player.stream_position,"screens":screens.size(),"draw_calls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)}
+	var state := {"xr_active":xr_active,"tracking":xr_interface.get_tracking_status() if xr_interface else -1,"spawn_centered":spawn_centered,"head_local":[head.position.x,head.position.y,head.position.z],"head_world":[head.global_position.x,head.global_position.y,head.global_position.z],"origin":[origin.position.x,origin.position.y,origin.position.z],"viewport_xr":get_viewport().use_xr,"viewport_size":str(get_viewport().get_visible_rect().size),"xr_target_size":str(xr_interface.get_render_target_size()) if xr_interface else "none","msaa":get_viewport().msaa_3d,"camera_current":head.current,"fps":Engine.get_frames_per_second(),"dvd_count":dvd_records.size(),"near_covers":lod_selected.size(),"lod_candidates":lod_last_examined,"build":"PC-0.8.6" if pc_vr else (Updater.ANDROID_VERSION if touch_profile else Updater.QUEST_VERSION),"teleport_mode":teleportation.enabled,"baked_lighting":baked_lighting_active,"active_trailer":active_trailer,"trailer_playing":trailer_player.is_playing(),"video_position":trailer_player.stream_position,"screens":screens.size(),"draw_calls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)}
 	state["texture_mip_bias"]=ProjectSettings.get_setting("rendering/textures/default_filters/texture_mipmap_bias",0.0)
 	state["foveation_level"]=xr_interface.call("get_foveation_level") if xr_interface and xr_interface.has_method("get_foveation_level") else -1
 	if Engine.has_singleton("OpenXRFbCompositionLayerSettingsExtension"):

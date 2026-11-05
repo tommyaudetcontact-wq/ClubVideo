@@ -28,7 +28,7 @@ var carried_data:Dictionary={}
 var loose_discs:Array=[]
 var source_case:Node3D
 func setup(g):game=g
-func input_tick(dt:float)->bool:
+func input_tick(dt:float):
 	if opened and opening_amount>.45:label_seen=true
 	if lid_hand>=0:
 		if game.hands[lid_hand].get_float("grip")<.6:
@@ -41,7 +41,6 @@ func input_tick(dt:float)->bool:
 		if flip_delay<=0:
 			pending_flip=-1
 			if not opened:game._flip_held()
-	return lid_hand>=0
 func grab_lid(hand:int)->bool:
 	if not game.held or hand==game.held_hand or hand==game.clerk.secondary_hand or hand==game.clerk.basket.hand or hand==finger:return false
 	if not opened and game.held.get_meta("antitheft",false):return false
@@ -158,6 +157,14 @@ func finger_transform(hand:int)->Transform3D:
 		var up=Vector3.UP if absf(normal.dot(Vector3.UP))<.95 else Vector3.RIGHT
 		return Transform3D(Basis.looking_at(normal,up),p-normal*.012)
 	return game.hands[hand].global_transform*Transform3D(Basis.IDENTITY,Vector3(0,0,-.10))
+func try_take_open_disc(hand:int)->bool:
+	if hand==game.held_hand or hand==game.clerk.secondary_hand or hand==game.clerk.basket.hand or finger>=0:return false
+	if not opened or opening_amount<.30 or not is_instance_valid(disc) or not disc.visible:return false
+	if finger_transform(hand).origin.distance_to(disc.global_position)>.16:return false
+	if lid_hand>=0:finish_lid(true)
+	take_open_disc(hand)
+	return true
+
 func interact(hand:int,grip:bool=false)->bool:
 	if grip:
 		if hand==finger:return true
@@ -203,8 +210,6 @@ func interact(hand:int,grip:bool=false)->bool:
 	if not opened:return false
 	if opening_amount<.30:return false
 	if hand==game.held_hand:return true
-	if finger<0 and is_instance_valid(disc) and disc.visible and fingertip.distance_to(disc.global_position)<.13:
-		take_open_disc(hand)
 	return true
 
 func take_loose_disc(item:Dictionary,hand:int):
@@ -220,6 +225,7 @@ func take_open_disc(hand:int):
 	carried=disc
 	carried_data={"movie":int(case_node.get_meta("disc_movie",case_node.get_meta("movie",game.movie_id))),"uid":int(case_node.get_meta("disc_uid",-1)),"dirty":case_node.get_meta("dirty",false),"inspected":false}
 	source_case=case_node
+	label_seen=true
 	load("res://clerk_inventory.gd").put(case_node,-1,-1)
 	carried.reparent(self)
 	disc=null
@@ -251,10 +257,12 @@ func close_case():
 	lid_hand=-1
 	case_node=null
 	disc=null
-	if label_seen and game.held and game.held.get_meta("disc_movie",-1)!=game.movie_id:
-		game._message("Mauvais disque. Tu peux mettre le boîtier dans À DÉMÊLER ou poursuivre la location.")
-		return
-	if game.clerk and game.clerk.accept_replacement():return
+	if (label_seen or opening_amount>.45) and game.held:
+		var mismatch:bool=int(game.held.get_meta("disc_movie",-1))!=game.movie_id
+		game.held.set_meta("disc_mismatch_seen",mismatch)
+		if mismatch:
+			game._message("Disque incorrect ou absent. Dépose le boîtier dans À DÉMÊLER pour chercher un remplacement.")
+			return
 	if game.clerk and not game.clerk.held_service.is_empty() and game.held and game.held.get_meta("inspected",false):
 		game._message("Inspection terminée : passe le dos du boîtier dans le faisceau rouge du scanner.")
 

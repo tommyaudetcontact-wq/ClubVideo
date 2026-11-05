@@ -217,7 +217,7 @@ func setup(g):
 	)
 	avatar_button.pressed.connect(func():avatar_button.text="Avatar : "+game.clerk_model_name())
 	add_button(menu,"Coop",open_coop)
-
+	
 	operations=make_panel()
 	var grid:=GridContainer.new()
 	grid.columns=2
@@ -937,7 +937,7 @@ func on_checkout_surface(point:Vector3)->bool:
 	return point.x>-.36 and point.x<.52 and point.z>-6.53 and point.z<-6.06 and point.y>=1.17 and point.y<=1.21
 
 func place_held_case(destination:Vector3):
-	if clerk.inspection.opened:
+	if clerk.inspection.opened and not (clerk.in_sort_tray(destination) or clerk.repairs.is_case_surface(destination)):
 		game._message("Referme le boîtier avant de le déposer.")
 		return
 	if on_checkout_surface(destination) and not clerk.held_service.is_empty():
@@ -950,8 +950,6 @@ func place_held_case(destination:Vector3):
 		sync_hands()
 		return
 	game.held.global_position=destination
-	if clerk.repairs.is_case_surface(destination) and not clerk.held_service.is_empty():
-		if clerk.repairs.place_case(clerk.held_service):return
 	game._release()
 	sync_hands()
 

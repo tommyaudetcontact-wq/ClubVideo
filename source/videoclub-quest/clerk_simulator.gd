@@ -482,6 +482,8 @@ func terminal_content(tab:int)->String:
 	return title
 func interact(hand:int,grip:bool)->bool:
 	if shift:shift.started=true
+	if not grip and not wallet.occupied(hand) and inspection.try_take_open_disc(hand):return true
+	if not grip and inspection.lid_hand>=0:return true
 	if not grip and hand!=game.held_hand and hand!=secondary_hand and not wallet.occupied(hand) and desktop.point(desktop.project_ray(game.aim_hands[hand]),true):return true
 	if hand==secondary_hand:
 		if not grip:secondary.node.rotate_y(PI)
@@ -688,13 +690,16 @@ func handoff_rental():
 
 func release()->bool:
 	if inspection.opened:
-		game._message("Replace le disque et ferme le boîtier avant de le déposer.")
-		return true
+		if game.held and (in_sort_tray(game.held.global_position) or repairs.is_case_surface(game.held.global_position)):
+			inspection.close_case()
+		else:
+			game._message("Referme le boîtier avant de le déposer.")
+			return true
 	if held_service.is_empty() and game.held and (repairs.is_case_surface(game.held.global_position) or basket.contains(game.held.global_position) or in_sort_tray(game.held.global_position)):adopt_held_case()
 	if held_service.is_empty():return false
 	if basket.store(held_service):return true
 	if in_sort_tray(game.held.global_position):
-		if game.held.get_meta("inspected",false) and game.held.get_meta("disc_movie",-1)!=held_service.movie:
+		if has_identified_mismatch(game.held,held_service.movie):
 			flag_wrong_case(held_service)
 		store_sort_tray(held_service)
 		return true
@@ -969,23 +974,25 @@ func refresh_basket():
 		unlocked=unlocked and not item.node.get_meta("antitheft",false)
 func flag_wrong_case(item:Dictionary):
 	if item.kind=="sorting":return
-	if item.kind!="rental" and not active.is_empty() and active.get("missing",[]).has(item.movie):
-		active.patience_bonus=float(active.get("patience_bonus",0))+30.0
 	if active.get("is_return",false) and item in active.items:
 		item.scanned=true
-	if item.kind=="rental" and not active.is_empty():
+	var needs_replacement:bool=item.movie in active.get("missing",[])
+	if item.kind=="rental" and item in active.get("items",[]):
 		active.items.erase(item)
-		if not active.missing.has(item.movie):active.missing.append(item.movie)
+		if not needs_replacement:active.missing.append(item.movie)
+		needs_replacement=true
+	if needs_replacement:
 		active.patience_bonus=float(active.get("patience_bonus",0))+30.0
-		var available=false
-		for r in game.dvd_records:
-			if r.movie==item.movie and not r.get("clerk_reserved",false) and not r.get("loose",false):available=true
-		if not available:customers.choose_alternative(active,item.movie)
+		var available:bool=game.dvd_records.any(func(record):return record.movie==item.movie and not record.get("clerk_reserved",false) and not record.get("loose",false))
+		if not available and not (active.get("state","") in ["replacement_browse","replacement_return"] and active.get("replace_title",-1)==item.movie):
+			customers.choose_alternative(active,item.movie)
 	item.kind="sorting"
 	if item.has("task"):tasks.erase(item.task)
 	item.task="À démêler : "+str(game.layout.movies[item.movie].title)
 	if not tasks.has(item.task):tasks.append(item.task)
-	game._message("Mauvais disque : dépose-le dans À DÉMÊLER et prends un autre exemplaire. +30 s de patience.")
+	refresh_invoice()
+	refresh_terminal()
+	game._message("Boîtier mis de côté. Cherche un autre exemplaire pour le client." if needs_replacement else "Boîtier mis de côté pour le tri.")
 func adopt_held_case()->Dictionary:
 	if not held_service.is_empty():return held_service
 	if not game.held or game.held_record.is_empty():return {}
@@ -994,7 +1001,7 @@ func adopt_held_case()->Dictionary:
 	var hand=game.held_hand
 	var grip=game.held_by_grip
 	var meta={}
-	for key in ["disc_movie","disc_uid","dirty","inspected","antitheft","barcode_scanned"]:meta[key]=original.get_meta(key)
+	for key in ["disc_movie","disc_uid","dirty","inspected","antitheft","barcode_scanned","disc_mismatch_seen"]:meta[key]=original.get_meta(key,false)
 	var item=new_case(record.movie,original.global_position,"shelve")
 	item.record=record
 	record.clerk_reserved=true
@@ -1011,36 +1018,24 @@ func adopt_held_case()->Dictionary:
 	pick_case(item,hand,grip)
 	return item
 
+func has_identified_mismatch(node:Node3D,title:int)->bool:
+	return int(node.get_meta("disc_movie",-1))!=title and (node.get_meta("disc_mismatch_seen",false) or node.get_meta("inspected",false))
+
 func accept_replacement()->bool:
 	if active.is_empty() or not game.held or active.get("is_return",false):return false
 	var record:Dictionary=game.held_record if held_service.is_empty() else held_service.record
 	if record.is_empty() or not active.missing.has(record.movie) or held_service.get("kind","")=="return":return false
-	if inspection.opened:
-		game._message("Replace le disque et ferme le boîtier de remplacement.")
-		return true
-	if not game.held.get_meta("inspected",false):
-		game._message("Vérifie le disque de cet exemplaire avant de le présenter au scanner.")
-		return true
 	var item=adopt_held_case()
 	if item.is_empty():return false
-	if game.held.get_meta("disc_movie",-1)!=item.movie:
-		flag_wrong_case(item)
-		var available=false
-		for candidate in game.dvd_records:
-			if candidate.movie==item.movie and not candidate.get("clerk_reserved",false) and not candidate.get("loose",false):available=true
-		if not available and not (active.get("state","") in ["replacement_browse","replacement_return"] and active.get("replace_title",-1)==item.movie):
-			customers.choose_alternative(active,item.movie)
-		game._message("Cet exemplaire contient aussi un mauvais disque. Prends-en un autre : le client attend toujours ce titre.")
-		return true
 	active.missing.erase(item.movie)
 	item.kind="rental"
 	if item.has("task"):
 		tasks.erase(item.task)
 		item.erase("task")
-	item.scanned=game.held.get_meta("barcode_scanned",false) and not game.held.get_meta("dirty",false)
+	item.scanned=true
 	if not active.items.has(item):active.items.append(item)
 	refresh_terminal()
-	game._message("Remplacement ajouté au panier. L'inspection est conservée. Passe-le au scanner après inspection pour ajouter sa location.")
+	game._message("Exemplaire de remplacement scanné et ajouté au panier.")
 	return true
 
 func in_sort_tray(p:Vector3)->bool:
@@ -1065,11 +1060,15 @@ func store_sort_tray(item:Dictionary):
 	clear_hand()
 
 func scan_held()->bool:
-	if held_service.is_empty() or not game.held:
+	if not game.held:
 		game._message("Présente un boîtier au scanner.")
 		return false
 	if inspection.opened:
 		game._message("Referme le boîtier, puis passe son dos au scanner.")
+		return false
+	if held_service.is_empty() and adopt_held_case().is_empty():return false
+	if active.get("missing",[]).has(held_service.movie) and has_identified_mismatch(game.held,held_service.movie):
+		game._message("Dépose cet exemplaire dans À DÉMÊLER et essaie un autre boîtier.")
 		return false
 	if game.held.get_meta("needs_relock",false) and not game.held.get_meta("return_checked",false):
 		var fee=accounts.scan_return(game.held)
@@ -1079,7 +1078,7 @@ func scan_held()->bool:
 		return false
 	game.held.set_meta("barcode_scanned",true)
 	held_service.scanned=true
-	if accept_replacement():pass
+	accept_replacement()
 	refresh_basket()
 	refresh_invoice()
 	refresh_terminal()

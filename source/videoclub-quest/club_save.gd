@@ -1,6 +1,6 @@
 extends Node
 const VERSION=2
-const CASE_META=["disc_movie","disc_uid","dirty","inspected","antitheft","sort_slot","in_basket","in_sort_tray","barcode_scanned","needs_relock","return_account","return_cycle","return_checked","returned_damage"]
+const CASE_META=["disc_movie","disc_uid","disc_mismatch_seen","dirty","inspected","antitheft","sort_slot","in_basket","in_sort_tray","barcode_scanned","needs_relock","return_account","return_cycle","return_checked","returned_damage"]
 const SHIFT_FIELDS=["day","duration","time_left","closing","summary","started","served","abandoned","lost_sales","missed_scans","revenue","refunds","returned","restocked","damaged","initial_cash","wave","break_left","report","business_balance"]
 const COUNTER_FIELDS=["price","tender","tender_parts","tender_received","tender_deposited","paid","change","drawer_open","page","rentals","elapsed","customer_delay","chute_serial","tasks","reminders"]
 const CLIENT_FIELDS=["id","state","cursor","wait","messy","movie","patience","patience_bonus","missing","handed","is_return","replace_title","replacement_movie","replacement_queue","family","companions","children_played","handoff_wait","return_and_rent","browse_index","price_titles","discount","cash_started","next_mess","mess_done","account_id","visit_balance","account_due","offer_ready","subtotal","gst","qst","billed_titles"]
@@ -70,7 +70,7 @@ func unpack_job(job:Dictionary)->Dictionary:
 
 func pack_case(item:Dictionary,node:Node3D)->Dictionary:
 	var result={"movie":item.movie,"kind":item.kind,"scanned":item.get("scanned",false),"task":item.get("task",""),"record":record_id(item.get("record",{})),"transform":node.global_transform,"meta":{}}
-	for key in CASE_META:result.meta[key]=node.get_meta(key,false if key in ["dirty","inspected","antitheft","in_basket","in_sort_tray","barcode_scanned","needs_relock","return_checked","returned_damage"] else -1)
+	for key in CASE_META:result.meta[key]=node.get_meta(key,false if key in ["disc_mismatch_seen","dirty","inspected","antitheft","in_basket","in_sort_tray","barcode_scanned","needs_relock","return_checked","returned_damage"] else -1)
 	if node==game.held or (not game.clerk.secondary.is_empty() and node==game.clerk.secondary.node):
 		result.transform=Transform3D(Basis(Vector3.RIGHT,-PI/2),Vector3(1.45,1.16+.022*(game.clerk.cases.find(item)+1),-6.53))
 	return result
