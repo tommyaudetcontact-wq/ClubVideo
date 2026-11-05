@@ -159,7 +159,7 @@ func _ready() -> void:
 		add_child(presentation)
 		presentation.setup(self)
 	print("VIDEOCLUB_READY xr=", xr_active, " dvds=", dvd_records.size(), " screens=", screens.size())
-	call_deferred("_play_ambient_trailer")
+	if not touch_profile:call_deferred("_play_ambient_trailer")
 	if xr_active:
 		call_deferred("_recenter_entry")
 		call_deferred("_diagnostic_capture")
@@ -495,7 +495,7 @@ func _prepare_held_pool() -> void:
 		add_child(item)
 		item.visible = false
 		held_pool[id] = item
-		poster_cache[id] = load(("res://assets/covers/%02d-front.jpg" if id>=24 else "res://assets/posters/%02d.png") % id)
+
 
 func _prepare_cover_lod() -> void:
 	for id in dvd_groups:
@@ -771,7 +771,7 @@ func _recenter_entry(force := false) -> void:
 	_write_diagnostics()
 
 func _write_diagnostics() -> void:
-	var state := {"xr_active":xr_active,"tracking":xr_interface.get_tracking_status() if xr_interface else -1,"spawn_centered":spawn_centered,"head_local":[head.position.x,head.position.y,head.position.z],"head_world":[head.global_position.x,head.global_position.y,head.global_position.z],"origin":[origin.position.x,origin.position.y,origin.position.z],"viewport_xr":get_viewport().use_xr,"viewport_size":str(get_viewport().get_visible_rect().size),"xr_target_size":str(xr_interface.get_render_target_size()) if xr_interface else "none","msaa":get_viewport().msaa_3d,"camera_current":head.current,"fps":Engine.get_frames_per_second(),"dvd_count":dvd_records.size(),"near_covers":lod_selected.size(),"lod_candidates":lod_last_examined,"build":"PC-0.7.8" if pc_vr else ("0.7.8" if touch_profile else "0.7.8"),"teleport_mode":teleportation.enabled,"baked_lighting":baked_lighting_active,"active_trailer":active_trailer,"trailer_playing":trailer_player.is_playing(),"video_position":trailer_player.stream_position,"screens":screens.size(),"draw_calls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)}
+	var state := {"xr_active":xr_active,"tracking":xr_interface.get_tracking_status() if xr_interface else -1,"spawn_centered":spawn_centered,"head_local":[head.position.x,head.position.y,head.position.z],"head_world":[head.global_position.x,head.global_position.y,head.global_position.z],"origin":[origin.position.x,origin.position.y,origin.position.z],"viewport_xr":get_viewport().use_xr,"viewport_size":str(get_viewport().get_visible_rect().size),"xr_target_size":str(xr_interface.get_render_target_size()) if xr_interface else "none","msaa":get_viewport().msaa_3d,"camera_current":head.current,"fps":Engine.get_frames_per_second(),"dvd_count":dvd_records.size(),"near_covers":lod_selected.size(),"lod_candidates":lod_last_examined,"build":"PC-0.7.8" if pc_vr else ("0.7.9" if touch_profile else "0.7.8"),"teleport_mode":teleportation.enabled,"baked_lighting":baked_lighting_active,"active_trailer":active_trailer,"trailer_playing":trailer_player.is_playing(),"video_position":trailer_player.stream_position,"screens":screens.size(),"draw_calls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)}
 	state["texture_mip_bias"]=ProjectSettings.get_setting("rendering/textures/default_filters/texture_mipmap_bias",0.0)
 	state["foveation_level"]=xr_interface.call("get_foveation_level") if xr_interface and xr_interface.has_method("get_foveation_level") else -1
 	if Engine.has_singleton("OpenXRFbCompositionLayerSettingsExtension"):
@@ -917,6 +917,9 @@ func _take(record: Dictionary, hand_index: int, by_grip: bool) -> void:
 	load("res://clerk_inventory.gd").bind(held,record)
 	_update_cover_lod(head.global_position,true)
 	screen_title.text = layout.movies[movie_id].title
+	if not poster_cache.has(movie_id):
+		var poster_path := ("res://assets/covers/%02d-front.jpg" if movie_id>=24 else "res://assets/posters/%02d.png") % movie_id
+		poster_cache[movie_id]=load(poster_path)
 	screen_picture.texture = poster_cache[movie_id]
 	_play_trailer(movie_id)
 	screen_view.render_target_update_mode = SubViewport.UPDATE_ONCE

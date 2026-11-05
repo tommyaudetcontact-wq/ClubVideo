@@ -62,7 +62,7 @@ func setup(g):
 	process_mode=Node.PROCESS_MODE_ALWAYS
 	game.hud.hide()
 	game.head.fov=58
-	game.get_viewport().msaa_3d=Viewport.MSAA_2X
+	game.get_viewport().msaa_3d=Viewport.MSAA_DISABLED if OS.has_feature("android") else Viewport.MSAA_2X
 	game.get_viewport().scaling_3d_scale=.87
 	for i in range(2):
 		game.dvd_grip_anchors[i].transform=Transform3D.IDENTITY
@@ -212,7 +212,7 @@ func setup(g):
 	continue_button.disabled=not FileAccess.file_exists(game.session.save_path) and not FileAccess.file_exists(game.session.save_path+".bak")
 	add_button(menu,"Nouvelle partie",confirm_new_game)
 	add_button(menu,"Son des bandes-annonces",func():game.modes._activate(7))
-	add_button(menu,"Coop avec un Quest",open_coop)
+	add_button(menu,"Coop",open_coop)
 	add_button(menu,"Lobby Wi-Fi",open_lobby)
 	operations=make_panel()
 	var grid:=GridContainer.new()
@@ -241,6 +241,7 @@ func show_start_menu():
 func play_solo():
 	if game.modes.menu_open:toggle_menu()
 	game.clerk.shift.started=true
+	if not game.trailer_player.is_playing():game._play_ambient_trailer()
 	game._message("Partie solo démarrée. Le club est ouvert.")
 
 func continue_solo():

@@ -40,6 +40,7 @@ common/physics_ticks_per_second=72
 [rendering]
 
 renderer/rendering_method="mobile"
+renderer/rendering_method.touchgame="gl_compatibility"
 renderer/rendering_method.pcvr="forward_plus"
 textures/vram_compression/import_etc2_astc=true
 textures/default_filters/anisotropic_filtering_level=4

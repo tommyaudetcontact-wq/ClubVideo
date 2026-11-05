@@ -40,7 +40,7 @@ func setup(owner_game):
 	info.add_theme_font_size_override("font_size",23)
 	layout.add_child(info)
 	address=LineEdit.new()
-	address.placeholder_text="Adresse IP du Quest"
+	address.placeholder_text="Adresse IP de l’hôte"
 	address.custom_minimum_size.y=44
 	layout.add_child(address)
 	pin=LineEdit.new()
@@ -51,7 +51,7 @@ func setup(owner_game):
 	layout.add_child(pin)
 	join_button=button(layout,"Rejoindre",join_or_leave)
 	feedback=Label.new()
-	feedback.text="Sur le Quest, ouvre l’onglet Coop Wi-Fi de l’ordinateur."
+	feedback.text="L’hôte ouvre Coop Wi-Fi sur l’ordinateur du magasin."
 	feedback.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
 	layout.add_child(feedback)
 	cash_button=button(layout,"Encaisser le paiement du client",func():send("cash_deposit"))
@@ -81,7 +81,7 @@ func join_or_leave():
 		return
 	var ip:=address.text.strip_edges()
 	if not ip.is_valid_ip_address() or not pin.text.is_valid_int() or pin.text.length()!=6:
-		feedback.text="Entre l’adresse et le code affichés sur le Quest."
+		feedback.text="Entre l’adresse et le code affichés par l’hôte."
 		return
 	socket=StreamPeerTCP.new()
 	if socket.connect_to_host(ip,Port)!=OK:
@@ -91,7 +91,7 @@ func join_or_leave():
 	timeout=8
 	poll_in=0
 	pose_in=0
-	feedback.text="Connexion au Quest…"
+	feedback.text="Connexion à la partie…"
 	join_button.text="Annuler"
 
 func reset(message:String):
@@ -117,7 +117,7 @@ func _process(delta:float):
 	socket.poll()
 	timeout-=delta
 	if socket.get_status() in [StreamPeerTCP.STATUS_NONE,StreamPeerTCP.STATUS_ERROR] or timeout<=0:
-		reset("Partie inaccessible. Vérifie le Wi-Fi et la version du Quest.")
+		reset("Partie inaccessible. Vérifie le Wi-Fi et la version du jeu chez l’hôte.")
 		return
 	if socket.get_status()!=StreamPeerTCP.STATUS_CONNECTED:return
 	poll_in-=delta
@@ -152,7 +152,7 @@ func receive(reply:Dictionary):
 		if not connected:
 			connected=true
 			join_button.text="Quitter la partie"
-			feedback.text="Connecté au magasin du Quest."
+			feedback.text="Connecté au magasin de l’hôte."
 			saved_clerk_physics=game.clerk.is_physics_processing()
 			saved_customer_physics=game.clerk.customers.is_physics_processing()
 			game.clerk.set_physics_process(false)
@@ -164,7 +164,7 @@ func receive(reply:Dictionary):
 		if not str(reply.get("notice","")).is_empty():feedback.text=reply.notice
 		refresh()
 	elif not connected and reply.has("pages"):
-		reset("Ce Quest doit recevoir la mise à jour coop pour le poste Android.")
+		reset("L’hôte doit recevoir la mise à jour coop pour le poste Android.")
 		return
 	if not connected:return
 	timeout=6
@@ -214,9 +214,9 @@ func refresh():
 	if not connected:
 		info.text="Coop Wi-Fi · Poste de caisse"
 	elif not has_customer:
-		info.text="Caisse du Quest · En attente d’un client"
+		info.text="Caisse partagée · En attente d’un client"
 	elif paid:
-		info.text="Paiement réglé · Le Quest peut remettre les boîtiers"
+		info.text="Paiement réglé · L’hôte peut remettre les boîtiers"
 	else:
 		info.text="Total %.2f $ · Donné %.2f $ · Main %.2f $"%[int(checkout.price)/100.0,int(checkout.tender)/100.0,total/100.0]
 	payout_button.disabled=total!=int(checkout.get("tender",0))-int(checkout.get("price",0))
