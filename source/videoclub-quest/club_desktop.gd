@@ -90,7 +90,7 @@ func refresh():
 	if app<4 and touch and touch.coop_panel and touch.coop_panel.connected and app<touch.coop_panel.pages.size():
 		details.text=str(touch.coop_panel.pages[app])
 	else:details.text=clerk.terminal_content(app) if app<4 else clerk.lan.host_status()
-	targets[8].text=["Ouvrir le tiroir","Actualiser","Terminer le retour","Clôturer / continuer","Ouvrir / fermer la partie"][app]
+	targets[8].text=["Ouvrir le tiroir","Actualiser","Terminer le retour","Clôturer / continuer",("Désactiver la coop" if clerk.game.lobby and clerk.game.lobby.available else "Activer la coop")][app]
 	get_viewport().render_target_update_mode=SubViewport.UPDATE_ONCE
 
 func run_action():

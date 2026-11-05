@@ -75,6 +75,35 @@ public final class ClubUpdatePlugin extends GodotPlugin {
     }
 
     @UsedByGodot
+    public String[] discoveryProbeHosts() {
+        ArrayList<String> hosts = new ArrayList<>();
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces != null && interfaces.hasMoreElements()) {
+                NetworkInterface network = interfaces.nextElement();
+                if (!network.isUp() || network.isLoopback() || network.isPointToPoint()) continue;
+                for (InterfaceAddress entry : network.getInterfaceAddresses()) {
+                    byte[] bytes = entry.getAddress().getAddress();
+                    if (bytes.length != 4 || entry.getBroadcast() == null || !entry.getAddress().isSiteLocalAddress()) continue;
+                    int prefix = Math.max(24, entry.getNetworkPrefixLength());
+                    if (prefix >= 31) continue;
+                    int suffix = bytes[3] & 255;
+                    int block = 1 << (32 - prefix);
+                    int networkStart = suffix & ~(block - 1);
+                    String base = (bytes[0] & 255) + "." + (bytes[1] & 255) + "." + (bytes[2] & 255) + ".";
+                    for (int host = networkStart + 1; host < networkStart + block - 1; host++) {
+                        if (host != suffix) hosts.add(base + host);
+                        if (hosts.size() >= 508) return hosts.toArray(new String[0]);
+                    }
+                }
+            }
+        } catch (java.net.SocketException exception) {
+            android.util.Log.w("ClubVideo", "Cannot find local peers", exception);
+        }
+        return hosts.toArray(new String[0]);
+    }
+
+    @UsedByGodot
     public boolean canInstall() {
         Activity activity = getActivity();
         return activity != null && activity.getPackageManager().canRequestPackageInstalls();

@@ -18,6 +18,10 @@ var available:=false
 var bridge
 var broadcast_targets:PackedStringArray=[]
 var multicast_interfaces:PackedStringArray=[]
+var probe_hosts:PackedStringArray=[]
+var probe_index:=0
+var probe_in:=0.0
+var discovery_cycle:=0
 var last_playing:=false
 var status:="Recherche sur le Wi-Fi…"
 signal changed
@@ -59,11 +63,20 @@ func announce(ip:String,replying:bool=false):
 
 func set_available(value:bool):
 	start()
+	if available==value:return
 	available=value
 	if not game.touch_profile and game.clerk and (game.clerk.lan.server!=null)!=value:
 		game.clerk.lan.toggle_host()
 	if bridge and bridge.has_method("setDiscoveryEnabled"):bridge.setDiscoveryEnabled(available)
-	if available:refresh_network_routes()
+	if available:
+		refresh_network_routes()
+		probe_index=0
+		probe_in=0
+		announce_in=0
+	else:
+		peers.clear()
+		incoming.clear()
+		outgoing.clear()
 	if socket:announce_network()
 	status="Visible sur le Wi-Fi." if available and socket else ("Wi-Fi indisponible." if available else "Invisible sur le Wi-Fi.")
 	changed.emit()
@@ -73,6 +86,9 @@ func refresh_network_routes():
 	if bridge and bridge.has_method("discoveryBroadcasts"):
 		for address in bridge.discoveryBroadcasts():
 			if not address in broadcast_targets:broadcast_targets.append(address)
+	probe_hosts.clear()
+	if bridge and bridge.has_method("discoveryProbeHosts"):
+		probe_hosts=bridge.discoveryProbeHosts()
 	if not socket:return
 	for interface in IP.get_local_interfaces():
 		var has_lan:=false
@@ -88,6 +104,21 @@ func refresh_network_routes():
 func announce_network():
 	for address in broadcast_targets:announce(address)
 	if not multicast_interfaces.is_empty():announce(MULTICAST)
+	for peer in peers.values():
+		if peer.ready:announce(peer.ip,true)
+
+func probe_subnet(delta:float):
+	if not available or probe_hosts.is_empty() or not list_players().is_empty():return
+	probe_in-=delta
+	if probe_in>0:return
+	if probe_index>=probe_hosts.size():
+		probe_index=0
+		probe_in=4.0
+		return
+	var finish:=mini(probe_index+12,probe_hosts.size())
+	for index in range(probe_index,finish):announce(probe_hosts[index])
+	probe_index=finish
+	probe_in=.085
 
 func _notification(what:int):
 	if what==NOTIFICATION_APPLICATION_RESUMED and available:
@@ -103,13 +134,18 @@ func toggle_available():
 
 func _process(delta:float):
 	if not socket:return
+	probe_subnet(delta)
 	announce_in-=delta
 	var now:=Time.get_ticks_msec()
 	var playing:=is_playing()
 	if announce_in<=0 or playing!=last_playing:
 		last_playing=playing
 		announce_in=INTERVAL
-		if available:announce_network()
+		if available:
+			discovery_cycle+=1
+			if discovery_cycle%8==0 and list_players().is_empty():
+				refresh_network_routes()
+			announce_network()
 		for id in peers.keys():
 			if now-int(peers[id].seen)>LIFETIME:
 				peers.erase(id)
@@ -134,6 +170,7 @@ func receive(packet:Variant,ip:String,now:int):
 	if packet.get("type")=="presence":
 		var old:Dictionary=peers.get(sender,{})
 		var ready:bool=packet.get("available",false)==true
+		if not available:return
 		var hosting:bool=packet.get("hosting",false)==true
 		var peer_name:=str(packet.get("name","Joueur")).strip_edges().left(20)
 		peers[sender]={"id":sender,"name":peer_name,"ip":ip,"seen":now,"ready":ready,"hosting":hosting}

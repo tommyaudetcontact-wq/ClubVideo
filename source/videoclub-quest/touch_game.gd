@@ -388,7 +388,7 @@ func _physics_process(delta:float):
 	var f:Vector3=-game.head.global_basis.z
 	f.y=0
 	f=f.normalized()
-	game._move_player((f*-motion.y+f.cross(Vector3.UP)*motion.x)*delta*1.90)
+	game._move_player((f*-motion.y+f.cross(Vector3.UP)*motion.x)*delta*2.40)
 	game.head.position.y=move_toward(game.head.position.y,.98 if crouching else original_camera_height,delta*3.0)
 	sync_hands()
 	var point:Vector2=clerk.desktop.project_ray(game.aim_hands[0])

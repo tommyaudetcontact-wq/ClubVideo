@@ -21,7 +21,7 @@ func _ready():
 
 func host_status()->String:
 	if not server:return "Active la coop pour apparaître dans la liste des joueurs."
-	return "Partie visible sur le Wi-Fi\n\n%s"%("Coéquipier connecté." if authenticated else "En attente d’un joueur.")
+	return "Partie visible sur le Wi-Fi. Tu peux fermer cet écran et jouer.\n\n%s"%("Coéquipier connecté." if authenticated else "En attente d’un joueur.")
 
 func toggle_host():
 	if server:

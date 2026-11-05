@@ -86,7 +86,6 @@ func button(parent:Container,caption:String,callback:Callable)->Button:
 	return control
 
 func open_lobby():
-	if not socket:game.lobby.set_available(true)
 	refresh_players()
 	show()
 
@@ -95,6 +94,12 @@ func refresh_players():
 		players.remove_child(child)
 		child.queue_free()
 	if socket:return
+	join_button.text="Désactiver la coop" if game.lobby.available else "Activer la coop"
+	if not game.lobby.available:
+		var intro:=Label.new()
+		intro.text="Active la coop pour rechercher les parties sur le Wi-Fi."
+		players.add_child(intro)
+		return
 	if not game.lobby.incoming.is_empty():
 		button(players,"Accepter l’invitation",func():game.lobby.reply(true))
 		button(players,"Refuser",func():game.lobby.reply(false))
@@ -105,9 +110,8 @@ func refresh_players():
 		button(players,"Rejoindre "+listing[index].name,func():game.lobby.request(row,false))
 	if players.get_child_count()==0:
 		var empty:=Label.new()
-		empty.text="Aucune partie visible sur ce Wi-Fi."
+		empty.text="Recherche de parties sur le Wi-Fi…"
 		players.add_child(empty)
-	join_button.text="Se rendre invisible" if game.lobby.available else "Se rendre visible"
 
 func join_or_leave():
 	if socket:

@@ -63,14 +63,14 @@ func _refresh_labels() -> void:
 		labels[0].text="Retour"
 		labels[1].text="LOBBY WI-FI · Joueurs disponibles"
 		if not game.lobby:return
-		labels[2].text="Sélectionne un joueur pour l’inviter"
+		labels[2].text="Sélectionne un joueur pour l’inviter" if game.lobby.available else "Active la coop pour ouvrir ta partie."
 		var players:Array=game.lobby.list_players()
 		for i in range(mini(players.size(),4)):labels[i+3].text=players[i].name
-		if players.is_empty():labels[3].text="Aucun joueur détecté"
+		if players.is_empty():labels[3].text="Recherche de joueurs sur le Wi-Fi…" if game.lobby.available else ""
 		labels[7].text="Lire / accuser réception" if not game.lobby.incoming.is_empty() else ""
 		labels[8].text="Refuser la demande" if not game.lobby.incoming.is_empty() else ""
 		labels[9].text=game.lobby.status.left(46)
-		labels[10].text="Disponible : "+("OUI" if game.lobby.available else "NON")
+		labels[10].text="Désactiver la coop" if game.lobby.available else "Activer la coop"
 		return
 	if menu_page==1:
 		for label in labels:label.text=""
@@ -176,7 +176,6 @@ func _activate(row: int) -> void:
 		10:game.toggle_clerk_model()
 		9:
 			if game.lobby:
-				game.lobby.set_available(true)
 				menu_page=2
 		7:
 			trailers_muted=not trailers_muted
@@ -205,7 +204,7 @@ func _physics_process(delta: float) -> void:
 		var f:Vector3=-game.head.global_basis.z
 		f.y=0
 		f=f.normalized()
-		game._move_player((f*v.y+f.cross(Vector3.UP)*v.x)*delta*1.5)
+		game._move_player((f*v.y+f.cross(Vector3.UP)*v.x)*delta*1.9)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode in [KEY_ESCAPE,KEY_TAB]:
