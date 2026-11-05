@@ -16,6 +16,9 @@ var accept_time := 0
 var remote_avatar:Node3D
 const PeerPose=preload("res://club_peer_pose.gd")
 
+func _ready():
+	process_mode=Node.PROCESS_MODE_ALWAYS
+
 func host_status()->String:
 	if not server:return "Active la coop pour apparaître dans la liste des joueurs."
 	return "Partie visible sur le Wi-Fi\n\n%s"%("Coéquipier connecté." if authenticated else "En attente d’un joueur.")
