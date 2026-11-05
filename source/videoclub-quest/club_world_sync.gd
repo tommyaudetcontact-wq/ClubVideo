@@ -15,17 +15,19 @@ var shelf_index:Dictionary={}
 var drawer_pose:Transform3D
 var drawer_target:Transform3D
 var drawer_motion:Tween
+var motion_targets:Dictionary={}
 
 static func shelf_key(game,record:Dictionary)->String:
 	return "%s|%d|%d"%[game._position_key(record.world.origin),record.movie,record.index]
 
-static func capture(game)->String:
+static func capture(game,include_stock:bool=true)->String:
 	var c=game.clerk
 	var stock:Dictionary={}
-	for record in game.dvd_records:
-		var flags:int=int(record.get("dirty",false))|int(record.get("locked",true))<<1
-		if record.get("clerk_reserved",false) or record.get("loose",false):flags|=4
-		stock[shelf_key(game,record)]=[record.movie,record.disc_movie,record.disc_uid,flags,record.world]
+	if include_stock:
+		for record in game.dvd_records:
+			var flags:int=int(record.get("dirty",false))|int(record.get("locked",true))<<1
+			if record.get("clerk_reserved",false) or record.get("loose",false):flags|=4
+			stock[shelf_key(game,record)]=[record.movie,record.disc_movie,record.disc_uid,flags,record.world]
 	var cases:Array=[]
 	for item in c.cases:
 		var node:Node3D=item.node
@@ -40,7 +42,12 @@ static func capture(game)->String:
 	var clients:Array=[]
 	for customer in c.customers.customers:
 		var n:Node3D=customer.node
-		clients.append({"id":str(customer.id),"transform":n.global_transform,"moving":customer.cursor<customer.path.size(),"companions":customer.get("companions",[]),"carry":customer.get("movie",-1) if is_instance_valid(customer.get("carry")) and customer.carry.visible else -1})
+		var followers:Array=[]
+		for index in range(customer.get("companions",[]).size()):
+			var follower:Node3D=n.get_node_or_null("Companion%d"%index)
+			if follower:
+				followers.append({"index":index,"transform":follower.global_transform,"clip":actor_clip(follower)})
+		clients.append({"id":str(customer.id),"transform":n.global_transform,"moving":customer.cursor<customer.path.size(),"companions":customer.get("companions",[]),"followers":followers,"clip":actor_clip(n),"carry":customer.get("movie",-1) if is_instance_valid(customer.get("carry")) and customer.carry.visible else -1})
 	var discs:Array=[]
 	if c.inspection.opened and is_instance_valid(c.inspection.disc) and c.inspection.disc.visible:
 		var id:int=c.inspection.case_node.get_meta("disc_movie",-1)
@@ -62,6 +69,8 @@ static func capture(game)->String:
 	if c.tender_note.visible:
 		for i in range(c.tender_parts.size()):
 			cash.append({"id":"tender"+str(i),"value":c.tender_parts[i],"transform":c.tender_note.get_child(i).global_transform})
+	for entry in c.lan.guest_cash:
+		cash.append({"id":str(entry.node.get_instance_id()),"owner":"guest","value":entry.value,"transform":entry.node.global_transform})
 	var bars:Array=[]
 	for bar in c.locks.bars:
 		if is_instance_valid(bar):
@@ -69,8 +78,13 @@ static func capture(game)->String:
 	var day:Dictionary={}
 	for key in Save.SHIFT_FIELDS:day[key]=c.shift.get(key)
 	var payload={"stock":stock,"cases":cases,"clients":clients,"discs":discs,"cash":cash,"bars":bars,"basket":c.basket.body.global_transform,"drawer":c.drawer.global_transform,"shift":day,"audio":{"scan":c.scan_serial,"ring":c.ring_serial,"ringing":c.ringing,"trailer":game.active_trailer}}
+	if not include_stock:payload.erase("stock")
 	var raw:=var_to_bytes(payload)
 	return Marshalls.raw_to_base64(raw.compress(FileAccess.COMPRESSION_DEFLATE))
+
+static func actor_clip(node:Node3D)->String:
+	var visual:=node.get_node_or_null("ActorVisual")
+	return str(visual.get_meta("clip","Idle")) if visual else "Idle"
 
 static func shelf_case_state(record:Dictionary,node:Node3D,held:bool)->Dictionary:
 	return {"id":str(node.get_instance_id()),"movie":record.movie,"disc":record.disc_movie,"dirty":record.get("dirty",false),"locked":record.get("locked",true),"transform":node.global_transform,"opened":false,"held":held,"kind":"shelve","in_basket":false,"scanned":false}
@@ -80,6 +94,7 @@ static func disc_state(node:Node3D,movie:int,dirty:bool)->Dictionary:
 
 func setup(owner_game):
 	game=owner_game
+	process_mode=Node.PROCESS_MODE_ALWAYS
 	basket_pose=game.clerk.basket.body.global_transform
 	drawer_pose=game.clerk.drawer.global_transform
 	drawer_target=drawer_pose
@@ -105,7 +120,11 @@ func apply(encoded:String):
 	var raw:=Marshalls.base64_to_raw(encoded).decompress_dynamic(1048576,FileAccess.COMPRESSION_DEFLATE)
 	if raw.is_empty():return
 	var value:Variant=bytes_to_var(raw)
-	if not value is Dictionary or not value.get("stock") is Dictionary:return
+	if not value is Dictionary:return
+	if not value.has("stock"):
+		if not state.get("stock") is Dictionary:return
+		value.stock=state.stock
+	if not value.stock is Dictionary:return
 	var stock:Dictionary=value.stock
 	if stock.size()>3500:return
 	sync_audio(value.get("audio",{}),state.get("audio",{}))
@@ -149,6 +168,7 @@ func apply(encoded:String):
 			if int(row[3])&2:game.clerk.add_lock(extra)
 	for category in ["cases","clients","discs","cash","bars"]:
 		for entry in value.get(category,[]):
+			if category=="cash" and entry.get("owner","")=="guest":continue
 			var key:String=category+entry.id
 			seen[key]=true
 			var node:Node3D=nodes.get(key)
@@ -156,10 +176,20 @@ func apply(encoded:String):
 				node=make_visual(category,entry)
 				if not node:continue
 				nodes[key]=node
-			node.global_transform=entry.transform
+			if category in ["clients","cases","discs","cash","bars"] and seen.has(key):
+				if not motion_targets.has(key):node.global_transform=entry.transform
+				motion_targets[key]=entry.transform
 			if category=="clients":
-				Actor.animate(node,"Walk" if entry.moving else "Idle")
+				Actor.animate(node,str(entry.get("clip","Walk" if entry.moving else "Idle")))
 				update_carry(node,int(entry.carry))
+				for follower in entry.get("followers",[]):
+					var child:Node3D=node.get_node_or_null("Companion%d"%int(follower.index))
+					if not child:continue
+					var follower_key:String="follower"+entry.id+"|"+str(follower.index)
+					seen[follower_key]=true
+					nodes[follower_key]=child
+					motion_targets[follower_key]=follower.transform
+					Actor.animate(child,str(follower.clip))
 			elif category=="cases":
 				set_case_open(node,entry.opened)
 				var lock:=node.get_node_or_null("Antitheft")
@@ -171,6 +201,17 @@ func apply(encoded:String):
 		if not seen.has(key):
 			nodes[key].queue_free()
 			nodes.erase(key)
+			motion_targets.erase(key)
+
+func _process(delta:float):
+	var weight:=1.0-exp(-delta*12.0)
+	for key in motion_targets:
+		var coop=game.touch_controls.coop_panel if game.touch_controls else null
+		if coop and (key=="cases"+coop.guest_case_id or key=="discs"+coop.guest_disc):continue
+		var node:Node3D=nodes.get(key)
+		if not is_instance_valid(node):continue
+		var target:Transform3D=motion_targets[key]
+		node.global_transform=target if node.global_position.distance_to(target.origin)>2.0 else node.global_transform.interpolate_with(target,weight)
 
 func sync_audio(audio:Dictionary,previous:Dictionary):
 	if audio.is_empty():return

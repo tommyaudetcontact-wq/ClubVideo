@@ -18,6 +18,9 @@ var guest_case:Dictionary={}
 var guest_flipped:=false
 var guest_inspection:Node3D
 var guest_disc_back:=false
+var guest_cash:Array=[]
+var guest_basket:=false
+var stock_sent_at:=0
 const PeerPose=preload("res://club_peer_pose.gd")
 
 func _ready():
@@ -50,6 +53,11 @@ func permit(ip:String)->String:
 	return token
 
 func disconnect_client():
+	if guest_basket:release_guest_basket()
+	for entry in guest_cash:
+		clerk.wallet.deposit_entry(entry)
+		entry.node.queue_free()
+	guest_cash.clear()
 	if is_instance_valid(guest_inspection) and is_instance_valid(guest_inspection.carried):
 		var drop:=Vector3(1.6,.93,-8.7)
 		clerk.repairs.place_disc(guest_inspection,drop)
@@ -103,6 +111,7 @@ func handle_request(request:Variant):
 		permits.erase(token)
 		ensure_guest_inspection()
 		authenticated=true
+		stock_sent_at=0
 		last_request=0
 	if request.has("pose"):
 		if not is_instance_valid(remote_avatar):
@@ -114,9 +123,9 @@ func handle_request(request:Variant):
 			send_response({"v":VERSION,"pose":PeerPose.pack(clerk.game),"avatar":PeerPose.appearance(clerk.game)})
 			return
 	var now:=Time.get_ticks_msec()
-	if now-last_request<90 and request.get("action","").is_empty():return
 	last_request=now
 	var old_page:int=clerk.page
+	var old_notice:String=clerk.game.hud.text
 	var receipt:=""
 	var action:=str(request.get("action",""))
 	match action:
@@ -126,6 +135,8 @@ func handle_request(request:Variant):
 			drop_guest_case()
 		"held_basket":
 			receipt=store_guest_case()
+		"basket_carry":
+			receipt=toggle_guest_basket()
 		"case_flip":
 			if not guest_case.is_empty() and not guest_inspection.opened:
 				guest_flipped=not guest_flipped
@@ -134,6 +145,8 @@ func handle_request(request:Variant):
 			receipt=guest_action(action,request)
 		"case_basket","case_shelf":
 			receipt=assist_case(action,str(request.get("case","")))
+		"cash_take","cash_put","cash_give","cash_pick":
+			receipt=guest_money(action,request)
 		"cash_deposit","cash_change":
 			if clerk.active.is_empty() or int(request.get("customer",-2))!=int(clerk.active.get("id",-1)):
 				receipt="Le client a changé. Vérifie la caisse."
@@ -148,6 +161,7 @@ func handle_request(request:Variant):
 			if clerk.active.get("is_return",false) and clerk.paid and clerk.scanned:
 				clerk.page=2
 				clerk.action("computer",-1)
+	if receipt.is_empty() and clerk.game.hud.text!=old_notice:receipt=clerk.game.hud.text
 	clerk.page=old_page
 	var content:Array[String]=[]
 	for tab in range(4):
@@ -165,6 +179,8 @@ func handle_request(request:Variant):
 			var slot:Vector3=guest_case.record.world.origin
 			response["guest_shelf"]=[slot.x,slot.y,slot.z]
 			response["guest_shelf_key"]=WorldSync.shelf_key(clerk.game,guest_case.record)
+		response["guest_basket"]=guest_basket
+		response["guest_cash"]=guest_cash.map(func(entry):return {"id":str(entry.node.get_instance_id()),"value":entry.value,"tender":entry.tender,"customer_id":entry.customer_id})
 		response["guest_flipped"]=guest_flipped
 		response["guest_open"]=is_instance_valid(guest_inspection) and guest_inspection.opened
 		response["guest_disc"]=str(guest_inspection.carried.get_instance_id()) if is_instance_valid(guest_inspection) and is_instance_valid(guest_inspection.carried) else ""
@@ -175,7 +191,9 @@ func handle_request(request:Variant):
 		response["pose"]=PeerPose.pack(clerk.game)
 		response["avatar"]=PeerPose.appearance(clerk.game)
 	if features is Array and "world_sync" in features:
-		response["world"]=WorldSync.capture(clerk.game)
+		var include_stock:bool=not ("world_delta" in features) or stock_sent_at==0 or now-stock_sent_at>=1000 or not action.is_empty()
+		response["world"]=WorldSync.capture(clerk.game,include_stock)
+		if include_stock:stock_sent_at=now
 	send_response(response)
 
 func send_response(response:Dictionary):
@@ -311,6 +329,11 @@ static func held_pose(head_pose:Transform3D,flipped:bool)->Transform3D:
 func update_guest_case_pose():
 	if not is_instance_valid(remote_avatar) or not remote_avatar.valid_pose:return
 	var head_pose:Transform3D=remote_avatar.targets[0]
+	if guest_basket:
+		var basket:RigidBody3D=clerk.basket.body
+		basket.global_transform=head_pose*Transform3D(Basis(Vector3.UP,.10),Vector3(-.35,-.43,-.77))
+	for index in range(guest_cash.size()):
+		guest_cash[index].node.global_transform=cash_pose(head_pose,index,guest_cash[index].value)
 	if not guest_case.is_empty() and is_instance_valid(guest_case.node):
 		guest_case.node.global_transform=held_pose(head_pose,guest_flipped)
 	if is_instance_valid(guest_inspection) and is_instance_valid(guest_inspection.carried):
@@ -467,3 +490,93 @@ func use_guest_disc(p:Vector3,target:String)->String:
 	guest_disc_back=false
 	update_guest_case_pose()
 	return ""
+
+static func cash_pose(head:Transform3D,index:int,value:int)->Transform3D:
+	var offset:=Vector3(-.19,-.14,-.43)
+	offset+=Vector3((index%3-1)*.022,index*.002,-(index/3)*.015) if value<500 else Vector3(index*.008,index*.002,0)
+	return head*Transform3D(Basis(Vector3.RIGHT,.32),offset)
+
+func guest_money(action:String,request:Dictionary)->String:
+	if not is_instance_valid(remote_avatar) or not remote_avatar.valid_pose:return ""
+	var p:Vector3=remote_avatar.targets[0].origin
+	var id:=str(request.get("target",""))
+	if action=="cash_take":
+		if guest_cash.size()>=32 or (is_instance_valid(guest_inspection) and is_instance_valid(guest_inspection.carried)):return "Libère ta main gauche."
+		if id=="tender":
+			if clerk.active.is_empty() or not clerk.tender_note.visible:return "Le paiement n’est plus sur le comptoir."
+			if p.distance_to(clerk.tender_note.global_position)>1.8:return "Approche-toi du paiement."
+			if int(request.get("customer",-2))!=int(clerk.active.get("id",-1)):return "Le client a changé."
+			while not clerk.tender_parts.is_empty() and guest_cash.size()<32:
+				add_guest_money(int(clerk.tender_parts.pop_front()),true,clerk.active.get("id",-1))
+			if not guest_cash.is_empty():clerk.active.cash_started=true
+			clerk.refresh_tender_visual()
+		elif id.is_valid_int():
+			var value:=int(id)
+			if not clerk.drawer_open or not clerk.tender_received or p.distance_to(clerk.drawer.global_position)>1.8:return "Ouvre le tiroir et encaisse le paiement."
+			if not clerk.till.has(value) or int(clerk.till[value])<=0:return "Cette pièce ou ce billet n’est plus disponible."
+			clerk.till[value]-=1
+			add_guest_money(value,false,clerk.active.get("id",-1))
+	elif action=="cash_pick":
+		if guest_cash.size()>=32:return "Main pleine."
+		for entry in clerk.wallet.loose:
+			if str(entry.node.get_instance_id())!=id or p.distance_to(entry.node.global_position)>1.8:continue
+			add_guest_money(entry.value,entry.tender,entry.get("customer_id",-1))
+			clerk.wallet.loose.erase(entry)
+			entry.body.queue_free()
+			break
+	elif action=="cash_put":
+		if id=="open_tender" and p.distance_to(clerk.drawer.global_position)<=1.8:
+			clerk.set_drawer_open(true)
+			id="tender"
+		if not clerk.drawer_open or p.distance_to(clerk.drawer.global_position)>1.8:return "Approche-toi du tiroir ouvert."
+		for entry in guest_cash.duplicate():
+			if id!="all" and id!=str(entry.node.get_instance_id()) and not (id=="tender" and entry.tender):continue
+			clerk.wallet.deposit_entry(entry)
+			guest_cash.erase(entry)
+			entry.node.queue_free()
+	elif action=="cash_give":
+		if clerk.active.is_empty() or int(request.get("customer",-2))!=int(clerk.active.get("id",-1)):return "Le client a changé."
+		if p.distance_to(clerk.customer_hand())>1.8 or not clerk.tender_received:return "Encaisse d’abord le paiement."
+		if guest_cash.is_empty():return "Prends la monnaie à remettre."
+		if guest_cash.any(func(entry):return entry.tender):return "Dépose d’abord le paiement dans le tiroir."
+		var amount:=0
+		for entry in guest_cash:
+			amount+=int(entry.value)
+			entry.node.queue_free()
+		guest_cash.clear()
+		clerk.wallet.record_change(amount)
+	clerk.refresh_terminal()
+	update_guest_case_pose()
+	return ""
+
+func add_guest_money(value:int,tender:bool,customer:int):
+	var node:Node3D=clerk.make_money(value)
+	add_child(node)
+	guest_cash.append({"node":node,"value":value,"tender":tender,"customer_id":customer})
+
+func toggle_guest_basket()->String:
+	if guest_basket:
+		release_guest_basket()
+		return "Panier posé."
+	if not is_instance_valid(remote_avatar) or not remote_avatar.valid_pose:return ""
+	var basket:RigidBody3D=clerk.basket.body
+	var touch=clerk.game.touch_controls
+	if clerk.basket.hand>=0 or (touch and touch.basket_carried):return "Le panier est déjà pris."
+	if basket.global_position.distance_to(remote_avatar.targets[0].origin)>2.0:return "Approche-toi du panier."
+	guest_basket=true
+	basket.set_meta("guest_held",true)
+	basket.freeze=true
+	basket.collision_layer=0
+	basket.collision_mask=0
+	update_guest_case_pose()
+	return "Panier en main."
+
+func release_guest_basket():
+	guest_basket=false
+	var basket:RigidBody3D=clerk.basket.body
+	basket.remove_meta("guest_held")
+	basket.collision_layer=8
+	basket.collision_mask=1|8
+	basket.freeze=false
+	basket.sleeping=false
+	basket.linear_velocity=Vector3.ZERO

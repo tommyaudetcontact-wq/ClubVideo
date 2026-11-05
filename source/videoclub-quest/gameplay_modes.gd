@@ -63,12 +63,12 @@ func _build_menu() -> void:
 
 func _refresh_labels() -> void:
 	var messenger:bool=menu_page==2
-	panel_material.albedo_color=Color("d9edfc") if messenger else Color("101d30")
-	panel_title.text="●  VIDÉO CLUB MESSENGER" if messenger else "VIDÉO CLUB · PAUSE"
-	panel_title.modulate=Color("174c87") if messenger else Color("f2c362")
+	panel_material.albedo_color=Color("d9edfc")
+	panel_title.text="●  VIDÉO CLUB MESSENGER"
+	panel_title.modulate=Color("174c87")
 	for label in labels:
-		label.modulate=Color("123968") if messenger else Color.WHITE
-		label.outline_size=0 if messenger else 12
+		label.modulate=Color("123968")
+		label.outline_size=0
 	if messenger:
 		for label in labels:label.text=""
 		labels[0].text="Retour"

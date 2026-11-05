@@ -107,6 +107,7 @@ func update_targets():
 				highlighted.append(mesh)
 
 func interact(h:int,grip:bool)->bool:
+	if body.get_meta("guest_held",false):return false
 	if h==hand:return true
 	if not grip or h==game.held_hand or h==clerk.secondary_hand or h==clerk.inspection.finger or clerk.wallet.occupied(h) or h==clerk.lock_hand:return false
 	var p:Vector3=game.hands[h].global_position

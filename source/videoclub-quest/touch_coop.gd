@@ -6,11 +6,15 @@ var game
 var guest_case_id:=""
 var guest_flipped:=false
 var guest_open:=false
+var basket_carried:=false
 var guest_disc:=""
 var guest_disc_back:=false
 var customer_pos:=Vector3.INF
 var guest_shelf:=Vector3.INF
 var guest_shelf_key:=""
+var cash_ids:Array=[]
+var world_in_flight:=false
+var world_sent_at:=0
 var moving_case:=false
 var case_animation_pose:=Transform3D.IDENTITY
 const LAN=preload("res://club_lan.gd")
@@ -43,6 +47,7 @@ var case_info:Label
 
 func setup(owner_game):
 	game=owner_game
+	theme=preload("res://club_messenger_theme.gd").build()
 	process_mode=Node.PROCESS_MODE_ALWAYS
 	var frame:=StyleBoxFlat.new()
 	frame.bg_color=Color("d9edfc")
@@ -158,7 +163,7 @@ func join_or_leave():
 
 func connect_host(ip:String,access:String):
 	if socket or game.clerk.lan.server:return
-	if game.held or game.touch_controls.basket_carried:
+	if game.held or game.touch_controls.basket_carried or game.clerk.wallet.occupied(0) or game.clerk.wallet.occupied(1):
 		feedback.text="Dépose le boîtier et le panier avant de rejoindre."
 		return
 	grant=access
@@ -183,10 +188,13 @@ func reset(message:String):
 		game.clerk.customers.show()
 		if is_instance_valid(mirror):mirror.restore_local()
 		mirror=null
+	if connected:clear_cash_visuals()
 	connected=false
+	world_in_flight=false
 	guest_case_id=""
 	guest_flipped=false
 	guest_open=false
+	basket_carried=false
 	guest_disc=""
 	customer_pos=Vector3.INF
 	guest_shelf=Vector3.INF
@@ -216,12 +224,12 @@ func _process(delta:float):
 	if socket.get_status()!=StreamPeerTCP.STATUS_CONNECTED:return
 	poll_in-=delta
 	pose_in-=delta
-	if poll_in<=0:
+	if poll_in<=0 and (not world_in_flight or Time.get_ticks_msec()-world_sent_at>1000):
 		send("")
-		poll_in=.45
+		poll_in=.10
 	if connected and pose_in<=0:
 		send("pose")
-		pose_in=.075
+		pose_in=.05
 	var available:=socket.get_available_bytes()
 	if available<=0:return
 	if available+buffer.size()>524288:
@@ -243,6 +251,7 @@ func receive(reply:Dictionary):
 		return
 	if reply.get("v")!=1:return
 	if reply.get("checkout") is Dictionary:
+		world_in_flight=false
 		if not connected:
 			if not reply.get("world") is String:
 				reset("Cette partie requiert la mise à jour de la coop.")
@@ -266,9 +275,11 @@ func receive(reply:Dictionary):
 		if checkout.get("customer",-2)!=reply.checkout.get("customer",-1) or reply.checkout.get("paid",false):
 			selected.clear()
 		checkout=reply.checkout
+		sync_cash(reply.get("guest_cash",[]))
 		guest_case_id=str(reply.get("guest_case",""))
 		guest_flipped=bool(reply.get("guest_flipped",false))
 		guest_open=bool(reply.get("guest_open",false))
+		basket_carried=bool(reply.get("guest_basket",false))
 		guest_disc=str(reply.get("guest_disc",""))
 		guest_disc_back=bool(reply.get("guest_disc_back",false))
 		customer_pos=decode_position(reply.get("customer_pos"))
@@ -288,6 +299,24 @@ func receive(reply:Dictionary):
 			avatar=PeerPose.new()
 			game.add_child(avatar)
 		avatar.receive(reply.pose,reply.get("avatar",{}))
+
+func clear_cash_visuals():
+	for entry in game.clerk.wallet.palms[0]:entry.node.queue_free()
+	game.clerk.wallet.palms[0].clear()
+	game.clerk.wallet.arrange(0)
+	cash_ids.clear()
+
+func sync_cash(entries:Array):
+	var ids:Array=entries.map(func(entry):return str(entry.id))
+	if ids==cash_ids:return
+	clear_cash_visuals()
+	for entry in entries:
+		var node:Node3D=game.clerk.make_money(int(entry.value))
+		node.set_meta("remote_cash_id",str(entry.id))
+		game.clerk.wallet.roots[0].add_child(node)
+		game.clerk.wallet.palms[0].append({"node":node,"value":int(entry.value),"tender":bool(entry.tender),"customer_id":int(entry.customer_id)})
+	cash_ids=ids
+	game.clerk.wallet.arrange(0)
 
 func update_shelf_marker(enabled:bool):
 	var marker:MeshInstance3D=game.clerk.repairs.marker
@@ -315,6 +344,7 @@ func guest_held_pose()->Transform3D:
 
 func _physics_process(_delta:float):
 	if not is_instance_valid(mirror):return
+	if basket_carried:game.clerk.basket.body.global_transform=game.head.global_transform*Transform3D(Basis(Vector3.UP,.10),Vector3(-.35,-.43,-.77))
 	var node:Node3D=mirror.nodes.get("cases"+guest_case_id)
 	if is_instance_valid(node):
 		node.global_transform=case_animation_pose if moving_case else guest_held_pose()
@@ -324,7 +354,10 @@ func _physics_process(_delta:float):
 
 func send(action:String,id:String="",target:String=""):
 	if not socket or socket.get_status()!=StreamPeerTCP.STATUS_CONNECTED:return
-	var message:={"case":selected_case if id.is_empty() else id,"v":1,"grant":grant,"features":["checkout","world_sync"],"action":action,"target":target,"customer":checkout.get("customer",-1),"coins":selected,"pose":PeerPose.pack(game)}
+	if action.is_empty():
+		world_in_flight=true
+		world_sent_at=Time.get_ticks_msec()
+	var message:={"case":selected_case if id.is_empty() else id,"v":1,"grant":grant,"features":["checkout","world_sync","world_delta"],"action":action,"target":target,"customer":checkout.get("customer",-1),"coins":selected,"pose":PeerPose.pack(game)}
 	message.merge(PeerPose.appearance(game))
 	socket.put_data((JSON.stringify(message)+"\n").to_utf8_buffer())
 
@@ -342,49 +375,13 @@ func choose(value:String):
 func refresh():
 	case_controls.hide()
 	case_info.hide()
-	if connected and is_instance_valid(mirror):
-		for item in mirror.state.get("cases",[]):
-			if item.id!=selected_case:continue
-			case_info.text=str(game.layout.movies[item.movie].title)
-			case_info.show()
-			case_controls.visible=not item.held
-			break
-	var has_customer:bool=int(checkout.get("customer",-1))>=0
-	var paid:bool=checkout.get("paid",false)
-	cash_button.visible=connected and has_customer
-	cash_button.disabled=not checkout.get("cash_visible",false) or checkout.get("received",false)
-	denominations.visible=connected and has_customer and checkout.get("received",false) and not paid
-	payout_button.visible=denominations.visible
-	var inventory:Dictionary=checkout.get("till",{})
-	if inventory!=shown_inventory:
-		shown_inventory=inventory.duplicate()
-		for child in denominations.get_children():
-			denominations.remove_child(child)
-			child.queue_free()
-		var values:=inventory.keys()
-		values.sort_custom(func(a,b):return int(a)<int(b))
-		for value in values:button(denominations,"",choose.bind(str(value)))
-	var values:=inventory.keys()
-	values.sort_custom(func(a,b):return int(a)<int(b))
-	var total:=0
-	for index in range(values.size()):
-		var key:String=values[index]
-		var count:=int(selected.get(key,0))
-		total+=int(key)*count
-		var coin:Button=denominations.get_child(index)
-		coin.text="%.2f $ ×%d"%[int(key)/100.0,count]
-		coin.disabled=count>=int(inventory[key])
-	if not connected:
-		info.text="●  Vidéo Club Messenger · Wi-Fi"
-	elif not has_customer:
-		info.text="Caisse partagée · En attente d’un client"
-	elif paid:
-		info.text="Paiement réglé · L’hôte peut remettre les boîtiers"
-	else:
-		info.text="Total %.2f $ · Donné %.2f $ · Main %.2f $"%[int(checkout.price)/100.0,int(checkout.tender)/100.0,total/100.0]
+	cash_button.hide()
+	denominations.hide()
+	payout_button.hide()
+	payout_button.get_parent().hide()
+	info.text="●  Vidéo Club Messenger · Wi-Fi"
 	if connected and is_instance_valid(mirror):
 		var shift:Dictionary=mirror.state.get("shift",{})
-		if not shift.is_empty():
-			var seconds:=int(shift.get("time_left",0))
-			info.text+="\nJour %d · %d:%02d · %d servis"%[int(shift.get("day",1)),seconds/60,seconds%60,int(shift.get("served",0))]
-	payout_button.disabled=total<=0
+		var seconds:=int(shift.get("time_left",0))
+		info.text+="
+Jour %d · %d:%02d"%[int(shift.get("day",1)),seconds/60,seconds%60]

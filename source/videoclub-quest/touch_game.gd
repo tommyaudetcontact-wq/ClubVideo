@@ -69,6 +69,7 @@ func setup(g):
 		game.dvd_grip_anchors[i].transform=Transform3D.IDENTITY
 		game.hand_visuals[i].hide()
 	buttons=Control.new()
+	buttons.theme=preload("res://club_messenger_theme.gd").build()
 	buttons.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	buttons.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	add_child(buttons)
@@ -124,7 +125,7 @@ func setup(g):
 	stick_thumb=make_stick(Vector2(62,62),Color(.71,.83,1.0,.66))
 	var bar:=HBoxContainer.new()
 	bar.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-	bar.offset_left=-595
+	bar.offset_left=-790
 	bar.offset_right=-18
 	bar.offset_top=-86
 	bar.offset_bottom=-16
@@ -132,7 +133,7 @@ func setup(g):
 	buttons.add_child(bar)
 	primary_button=add_button(bar,"Utiliser",use_target)
 	primary_button.custom_minimum_size.x=178
-	primary_button.add_theme_stylebox_override("normal",button_skin(Color("245892")))
+	primary_button.add_theme_stylebox_override("normal",preload("res://club_messenger_theme.gd").button("d1e9ff"))
 	case_button=add_button(bar,"Boîtier",case_action)
 	drop_button=add_button(bar,"Déposer",drop)
 	add_button(bar,"Outils",toggle_operations)
@@ -187,10 +188,10 @@ func setup(g):
 	buttons.add_child(coop_panel)
 	coop_panel.setup(game)
 	coop_button=Button.new()
-	coop_button.text="Caisse coop"
+	coop_button.text="Contacts"
 	coop_button.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	coop_button.offset_left=-272
-	coop_button.offset_right=-136
+	coop_button.offset_left=-410
+	coop_button.offset_right=-275
 	coop_button.offset_top=16
 	coop_button.offset_bottom=67
 	coop_button.pressed.connect(open_coop)
@@ -302,6 +303,24 @@ func make_panel()->VBoxContainer:
 	var box:=VBoxContainer.new()
 	box.add_theme_constant_override("separation",4)
 	panel.add_child(box)
+	var title:=PanelContainer.new()
+	title.name="MessengerTitle"
+	var title_skin:=preload("res://club_messenger_theme.gd").button("397dc5")
+	title.add_theme_stylebox_override("panel",title_skin)
+	box.add_child(title)
+	var header:=HBoxContainer.new()
+	title.add_child(header)
+	var caption:=Label.new()
+	caption.text="●  Vidéo Club Messenger"
+	caption.size_flags_horizontal=Control.SIZE_EXPAND_FILL
+	caption.add_theme_font_size_override("font_size",18)
+	caption.add_theme_color_override("font_color",Color.WHITE)
+	header.add_child(caption)
+	var close:=Button.new()
+	close.text="×"
+	close.custom_minimum_size=Vector2(32,30)
+	close.pressed.connect(panel.hide)
+	header.add_child(close)
 	panel.hide()
 	return box
 
@@ -397,9 +416,8 @@ func _physics_process(delta:float):
 		return
 	show_grip(delta)
 	refresh_cash_panel()
-	if coop_panel.connected:cash_panel.hide()
 	primary_button.get_parent().show()
-	if clerk.active.is_empty():checkout_panel.get_parent().hide()
+	if (not coop_panel.connected and clerk.active.is_empty()) or (coop_panel.connected and int(coop_panel.checkout.get("customer",-1))<0):checkout_panel.get_parent().hide()
 	refresh_supply_buttons()
 	counter_actions.visible=can_serve_customer() and not (desktop_overlay and desktop_overlay.visible)
 	change_button.disabled=action_busy()
@@ -524,6 +542,18 @@ func use_target():
 		if not tap_aim:sync_hands()
 		var target:=coop_interaction()
 		if target.action=="computer":open_desktop()
+		elif target.action=="basket_menu":open_basket()
+		elif target.action=="cash_take":
+			if target.target=="tender":take_payment()
+			else:
+				var value:=int(target.target)
+				for cash_target in clerk.targets:
+					if cash_target.action=="money" and cash_target.value==value:
+						take_denomination(value,cash_target.node.global_position)
+						break
+		elif target.action=="cash_put":deposit_payment()
+		elif target.action=="cash_give":give_change()
+		elif target.action=="select_cash":select_cash(target.node)
 		elif target.action=="case_scan" or (target.action=="case_lock" and target.target=="unlock"):
 			animate_coop_counter_action(target)
 		elif not target.action.is_empty():coop_panel.send(target.action,target.get("id",""),target.get("target",""))
@@ -614,6 +644,7 @@ func mark_touch_target(cash:Dictionary,item:Dictionary,over_desktop:bool):
 		glow.mark(Transform3D(Basis.IDENTITY,DETACHER),Vector3(.22,.18,.17))
 
 func basket_accessible()->bool:
+	if coop_panel.connected and coop_panel.basket_carried:return true
 	return basket_carried or near(clerk.basket.body.global_position,BASKET_REACH)
 
 func basket_aimed()->bool:
@@ -622,9 +653,14 @@ func basket_aimed()->bool:
 
 func refresh_supply_buttons():
 	var in_play:bool=not coop_panel.connected and not coop_panel.visible and not (desktop_overlay and desktop_overlay.visible) and not basket_panel.get_parent().visible and not checkout_panel.get_parent().visible
-	basket_button.visible=in_play and basket_accessible()
-	checkout_button.visible=in_play and can_serve_customer()
-	basket_button.text=("Panier en main (%d)" if basket_carried else "Panier (%d)")%clerk.basket.items.size()
+	basket_button.visible=not coop_panel.visible and not (desktop_overlay and desktop_overlay.visible) and basket_accessible()
+	checkout_button.visible=not coop_panel.visible and not (desktop_overlay and desktop_overlay.visible) and can_serve_customer()
+	var basket_count:int=clerk.basket.items.size()
+	var carrying:bool=basket_carried
+	if coop_panel.connected and is_instance_valid(coop_panel.mirror):
+		basket_count=coop_panel.mirror.state.get("cases",[]).filter(func(item):return item.in_basket).size()
+		carrying=coop_panel.basket_carried
+	basket_button.text=("Panier en main (%d)" if carrying else "Panier (%d)")%basket_count
 	basket_button.disabled=action_busy()
 	lock_button.hide()
 	flip_button.visible=in_play and game.held!=null and not clerk.inspection.opened and clerk.inspection.finger<0
@@ -637,6 +673,9 @@ func refresh_supply_buttons():
 	lock_button.text="Retirer l’antivol" if locked else "Poser l’antivol"
 
 func open_basket():
+	if coop_panel.connected:
+		open_coop_basket()
+		return
 	if action_busy() or not basket_accessible():return
 	if clerk.inspection.opened:
 		game._message("Referme le boîtier avant d’utiliser le panier.")
@@ -647,6 +686,7 @@ func open_basket():
 	operations.get_parent().hide()
 	checkout_panel.get_parent().hide()
 	for child in basket_panel.get_children():
+		if child.name=="MessengerTitle":continue
 		basket_panel.remove_child(child)
 		child.queue_free()
 	var heading:=Label.new()
@@ -680,6 +720,11 @@ func open_basket():
 	basket_panel.get_parent().show()
 
 func toggle_basket_carry():
+	if not coop_panel.connected and clerk.basket.body.get_meta("guest_held",false):return
+	if coop_panel.connected:
+		coop_panel.send("basket_carry")
+		basket_panel.get_parent().hide()
+		return
 	if action_busy() or not basket_accessible():return
 	var body:RigidBody3D=clerk.basket.body
 	if basket_carried:
@@ -744,6 +789,8 @@ func coop_interaction()->Dictionary:
 	if clerk.desktop.project_ray(game.aim_hands[0]).x>=0:
 		var screen_size:Vector2=clerk.screen.mesh.size
 		return coop_marked({"action":"computer","label":"Ouvrir l’ordi"},clerk.screen.global_transform,Vector3(screen_size.x+.012,screen_size.y+.012,.018))
+	var money:=coop_cash_target()
+	if not money.is_empty():return money
 	for target in clerk.targets:
 		if target.action!="drawer" or not near(target.node.global_position) or aimed(target.node.global_position,target.radius+.022)==INF:continue
 		var label:="Fermer le tiroir" if coop_panel.checkout.get("drawer_open",false) else "Ouvrir le tiroir"
@@ -756,13 +803,24 @@ func coop_interaction()->Dictionary:
 		if coop_panel.guest_open:return {"action":"disc_use","label":"Remettre le disque"}
 		return {"action":"disc_flip","label":"Retourner le disque"}
 	if holding:
-		if coop_panel.guest_open:return {"action":"disc_use","label":"Sortir le disque"}
+		if coop_panel.guest_open:
+			var case_node:Node3D=coop_panel.mirror.nodes.get("cases"+coop_panel.guest_case_id) if is_instance_valid(coop_panel.mirror) else null
+			if is_instance_valid(case_node):
+				var center:Vector3=case_node.to_global(Vector3(0,-.012,.004))
+				return coop_marked({"action":"disc_use","label":"Sortir le disque"},Transform3D(case_node.global_basis,center),Vector3(.13,.13,.015))
+			return {"action":"disc_use","label":"Sortir le disque"}
 		if near(clerk.scanner.global_position) and aimed(clerk.scanner.global_position,.24)<INF:return coop_marked({"action":"case_scan","label":"Scanner"},clerk.scanner.global_transform,Vector3(.22,.17,.18))
 		if near(DETACHER) and aimed(DETACHER,.20)<INF:return coop_marked({"action":"case_lock","target":"unlock","label":"Retirer l’antivol"},Transform3D(Basis.IDENTITY,DETACHER),Vector3(.22,.18,.17))
 		if near(clerk.lock_bin) and aimed(clerk.lock_bin,.20)<INF:return coop_marked({"action":"case_lock","target":"relock","label":"Poser l’antivol"},Transform3D(Basis.IDENTITY,clerk.lock_bin),Vector3(.23,.16,.22))
 		if coop_panel.customer_pos.is_finite() and near(coop_panel.customer_pos) and aimed(coop_panel.customer_pos,.42)<INF:
 			return coop_marked({"action":"case_handoff","label":"Remettre le film"},Transform3D(Basis.IDENTITY,coop_panel.customer_pos),Vector3(.24,.19,.20))
 		if basket_aimed():return coop_marked({"action":"held_basket","label":"Mettre au panier"},clerk.basket.body.global_transform,Vector3(.46,.27,.39))
+		var tray:=Vector3(1.75,1.19,-5.92)
+		if near(tray,1.8) and aimed(tray,.32)<INF:
+			return coop_marked({"action":"case_sort","label":"Mettre au tri"},Transform3D(Basis.IDENTITY,tray),Vector3(.46,.14,.40))
+		if coop_panel.guest_shelf.is_finite() and near(coop_panel.guest_shelf,1.45) and aimed(coop_panel.guest_shelf,.23)<INF:
+			var row:Array=coop_panel.mirror.state.get("stock",{}).get(coop_panel.guest_shelf_key,[])
+			if row.size()>=5:return coop_marked({"action":"case_rack","label":"Ranger en rayon"},row[4],Vector3(.15,.21,.033))
 		return {"action":"case_flip","label":"Retourner"}
 	if is_instance_valid(coop_panel.mirror):
 		for entry in coop_panel.mirror.state.get("discs",[]):
@@ -771,11 +829,41 @@ func coop_interaction()->Dictionary:
 	for target in clerk.targets:
 		if target.action in ["phone","door"] and aimed(target.node.global_position,target.radius)<INF:
 			return coop_marked({"action":target.action,"label":"Répondre" if target.action=="phone" else "Porte"},target.node.global_transform,Vector3.ONE*target.radius*1.5)
+	if basket_aimed():return coop_marked({"action":"basket_menu","label":"Ouvrir le panier"},clerk.basket.body.global_transform,Vector3(.46,.27,.39))
 	var chosen:=coop_case_target()
 	if not chosen.is_empty():
 		chosen.label="Prendre"
 		return chosen
 	return {"action":"","label":"Viser un objet"}
+
+func coop_cash_target()->Dictionary:
+	var entries:Array=clerk.wallet.palms[CASH_HAND]
+	if tap_aim:
+		for entry in entries:
+			if aimed(entry.node.global_position,.04)<INF:
+				return coop_marked({"action":"select_cash","node":entry.node,"label":"Choisir cette pièce"},entry.node.global_transform,Vector3(.08,.025,.065))
+	if not entries.is_empty():
+		if coop_panel.customer_pos.is_finite() and not has_tender_in_hand() and near(coop_panel.customer_pos) and aimed(coop_panel.customer_pos,.42)<INF:
+			return coop_marked({"action":"cash_give","label":"Rendre la monnaie"},Transform3D(Basis.IDENTITY,coop_panel.customer_pos),Vector3(.24,.19,.20))
+		if coop_panel.checkout.get("drawer_open",false) and near(clerk.drawer.global_position) and aimed(clerk.drawer.global_position,.28)<INF and (is_instance_valid(selected_cash) or has_tender_in_hand()):
+			return coop_marked({"action":"cash_put","label":"Déposer en caisse"},clerk.drawer.global_transform,Vector3(.56,.10,.36))
+	if is_instance_valid(coop_panel.mirror):
+		for entry in coop_panel.mirror.state.get("cash",[]):
+			if entry.get("owner","")=="guest" or not near(entry.transform.origin) or aimed(entry.transform.origin,.07)==INF:continue
+			var tender:bool=str(entry.id).begins_with("tender")
+			return coop_marked({"action":"cash_take" if tender else "cash_pick","target":"tender" if tender else entry.id,"label":"Prendre le paiement" if tender else "Ramasser l’argent"},entry.transform,Vector3(.14,.025,.08))
+	if coop_panel.checkout.get("drawer_open",false) and coop_panel.checkout.get("received",false):
+		var nearest:=INF
+		var result:Dictionary={}
+		for target in clerk.targets:
+			if target.action!="money" or not near(target.node.global_position):continue
+			if int(coop_panel.checkout.get("till",{}).get(str(target.value),0))<=0:continue
+			var depth:=aimed(target.node.global_position,minf(target.radius+.022,.14))
+			if depth>=nearest:continue
+			nearest=depth
+			result=coop_marked({"action":"cash_take","target":str(target.value),"label":"Prendre %.2f $"%(int(target.value)/100.0)},target.node.global_transform,Vector3(.14,.025,.08))
+		return result
+	return {}
 
 func coop_case_target()->Dictionary:
 	if not is_instance_valid(coop_panel.mirror):return {}
@@ -806,7 +894,7 @@ func refresh_action(over_desktop:bool):
 		flip_button.visible=not coop_panel.guest_disc.is_empty() or (holding and not coop_panel.guest_open)
 		flip_button.text="Retourner le disque" if not coop_panel.guest_disc.is_empty() else ("Voir la couverture" if coop_panel.guest_flipped else "Voir le dos")
 		case_button.disabled=not holding
-		drop_button.disabled=not holding
+		drop_button.disabled=not holding and coop_panel.guest_disc.is_empty() and not clerk.wallet.occupied(CASH_HAND)
 		action_hint.text=""
 		return
 	var inspection=clerk.inspection
@@ -973,7 +1061,9 @@ func take_spare():
 		return
 
 func can_serve_customer()->bool:
-	if coop_panel.connected or clerk.active.is_empty():return false
+	if coop_panel.connected:
+		return coop_panel.customer_pos.is_finite() and (near(coop_panel.customer_pos,1.65) or near(clerk.drawer.global_position,2.0))
+	if clerk.active.is_empty():return false
 	var offset:Vector3=game.head.global_position-clerk.drawer.global_position
 	return near(clerk.customer_hand(),1.65) or Vector2(offset.x,offset.z).length()<2.0
 
@@ -998,6 +1088,9 @@ func handoff():
 
 func drop():
 	if coop_panel.connected:
+		if clerk.wallet.occupied(CASH_HAND) and coop_panel.guest_case_id.is_empty():
+			if coop_panel.checkout.get("drawer_open",false):deposit_payment()
+			return
 		var tray:=Vector3(1.75,1.19,-5.92)
 		if not coop_panel.guest_disc.is_empty() and clerk.repairs.is_sorting_surface(table_point(.93)):
 			coop_panel.send("disc_use","","table")
@@ -1159,6 +1252,7 @@ func refresh_cash_panel():
 	if signature==cash_signature:return
 	cash_signature=signature
 	for child in cash_pieces.get_children():
+		if child.name=="MessengerTitle":continue
 		cash_pieces.remove_child(child)
 		child.queue_free()
 	var grouped:Dictionary={}
@@ -1213,11 +1307,26 @@ func animate_cash_pick(source:Vector3):
 
 func take_denomination(value:int,source:Vector3):
 	if action_busy():return
+	if coop_panel.connected:
+		coop_panel.send("cash_take","",str(value))
+		animate_cash_pick(source)
+		return
 	var count:int=clerk.wallet.palms[CASH_HAND].size()
 	clerk.wallet.take(CASH_HAND,value)
 	if clerk.wallet.palms[CASH_HAND].size()>count:animate_cash_pick(source)
 
 func take_payment():
+	if coop_panel.connected:
+		if action_busy():return
+		coop_panel.send("cash_take","","tender")
+		var source:Vector3=clerk.tender_note.global_position
+		if is_instance_valid(coop_panel.mirror):
+			for entry in coop_panel.mirror.state.get("cash",[]):
+				if str(entry.id).begins_with("tender"):
+					source=entry.transform.origin
+					break
+		animate_cash_pick(source)
+		return
 	if action_busy() or not (near(clerk.tender_note.global_position) or can_serve_customer()):return
 	var start:int=clerk.wallet.palms[CASH_HAND].size()
 	while clerk.tender_note.visible and clerk.wallet.palms[CASH_HAND].size()<32:
@@ -1227,6 +1336,12 @@ func take_payment():
 	if clerk.wallet.palms[CASH_HAND].size()>start:animate_cash_pick(clerk.tender_note.global_position)
 
 func deposit_payment(all_tender:bool=false):
+	if coop_panel.connected:
+		if action_busy() or not coop_panel.checkout.get("drawer_open",false):return
+		var target:="tender"
+		if not all_tender and is_instance_valid(selected_cash):target=str(selected_cash.get_meta("remote_cash_id",""))
+		animate_coop_cash("cash_put",target,clerk.drawer.global_position+Vector3.UP*.12)
+		return
 	if action_busy() or not clerk.drawer_open:return
 	if not near(clerk.drawer.global_position) and not (all_tender and can_serve_customer()):return
 	if all_tender:selected_cash=null
@@ -1258,6 +1373,9 @@ func deposit_payment(all_tender:bool=false):
 	tween_hand(action_motion,CASH_HAND,rest,.24)
 
 func open_change():
+	if coop_panel.connected:
+		open_coop_change()
+		return
 	if not can_serve_customer() or not clerk.tender_received:return
 	if not clerk.drawer_open:clerk.action("drawer",CASH_HAND)
 	checkout_panel.get_parent().hide()
@@ -1278,6 +1396,9 @@ func open_change():
 	change.get_parent().show()
 
 func open_checkout():
+	if coop_panel.connected:
+		open_coop_checkout()
+		return
 	if action_busy() or not can_serve_customer():return
 	basket_panel.get_parent().hide()
 	operations.get_parent().hide()
@@ -1285,6 +1406,7 @@ func open_checkout():
 	move_touch=-1
 	look_touch=-1
 	for child in checkout_panel.get_children():
+		if child.name=="MessengerTitle":continue
 		checkout_panel.remove_child(child)
 		child.queue_free()
 	var status_label:=Label.new()
@@ -1316,6 +1438,9 @@ func open_checkout():
 	checkout_panel.get_parent().show()
 
 func give_change():
+	if coop_panel.connected:
+		if not action_busy() and coop_panel.customer_pos.is_finite():animate_coop_cash("cash_give","",coop_panel.customer_pos+Vector3.UP*.06)
+		return
 	if action_busy() or not can_serve_customer():return
 	if not clerk.tender_received:
 		open_checkout()
@@ -1338,6 +1463,102 @@ func give_change():
 	)
 	tween_hand(action_motion,CASH_HAND,rest,.23)
 
+func animate_coop_cash(action:String,target:String,destination:Vector3):
+	if action_busy():return
+	var rest:=hand_rest(CASH_HAND)
+	begin_motion()
+	action_support_hand=CASH_HAND
+	tween_hand(action_motion,CASH_HAND,Transform3D(rest.basis,destination),.30)
+	action_motion.tween_callback(func():coop_panel.send(action,"",target))
+	tween_hand(action_motion,CASH_HAND,rest,.24)
+
+func open_coop_basket():
+	if action_busy() or not basket_accessible():return
+	if coop_panel.guest_open:
+		game._message("Referme le boîtier avant d’utiliser le panier.")
+		return
+	operations.get_parent().hide()
+	checkout_panel.get_parent().hide()
+	motion=Vector2.ZERO
+	move_touch=-1
+	look_touch=-1
+	for child in basket_panel.get_children():
+		if child.name=="MessengerTitle":continue
+		basket_panel.remove_child(child)
+		child.queue_free()
+	var heading:=Label.new()
+	heading.text="Panier à ranger"
+	basket_panel.add_child(heading)
+	if not coop_panel.guest_case_id.is_empty():
+		add_button(basket_panel,"Mettre le boîtier dans le panier",func():
+			coop_panel.send("held_basket")
+			basket_panel.get_parent().hide()
+		)
+	if is_instance_valid(coop_panel.mirror):
+		for entry in coop_panel.mirror.state.get("cases",[]):
+			if not entry.in_basket or entry.held:continue
+			var id:String=entry.id
+			var button:=add_button(basket_panel,str(game.layout.movies[entry.movie].title),func():
+				coop_panel.send("case_pick",id)
+				basket_panel.get_parent().hide()
+			)
+			button.disabled=not coop_panel.guest_case_id.is_empty()
+	add_button(basket_panel,"Poser le panier" if coop_panel.basket_carried else "Prendre le panier",toggle_basket_carry)
+	add_button(basket_panel,"Fermer",basket_panel.get_parent().hide)
+	basket_panel.get_parent().show()
+
+func open_coop_change():
+	if not can_serve_customer() or not coop_panel.checkout.get("received",false):return
+	coop_panel.send("drawer")
+	checkout_panel.get_parent().hide()
+	var change:=make_panel()
+	var heading:=Label.new()
+	heading.text="Pièces et billets"
+	change.add_child(heading)
+	var grid:=GridContainer.new()
+	grid.columns=3
+	change.add_child(grid)
+	for value in [1,5,10,25,100,200,500,1000,2000,5000]:
+		var cents:int=value
+		var button:=add_button(grid,"%.2f $"%(cents/100.0),func():
+			change.get_parent().queue_free()
+			take_denomination(cents,clerk.drawer.global_position)
+		)
+		button.disabled=int(coop_panel.checkout.get("till",{}).get(str(cents),0))<=0
+	add_button(change,"Fermer",change.get_parent().queue_free)
+	change.get_parent().show()
+
+func open_coop_checkout():
+	if action_busy() or not can_serve_customer():return
+	basket_panel.get_parent().hide()
+	operations.get_parent().hide()
+	motion=Vector2.ZERO
+	move_touch=-1
+	look_touch=-1
+	for child in checkout_panel.get_children():
+		if child.name=="MessengerTitle":continue
+		checkout_panel.remove_child(child)
+		child.queue_free()
+	var heading:=Label.new()
+	heading.text="Caisse · Total %.2f $ · Donné %.2f $"%[int(coop_panel.checkout.get("price",0))/100.0,int(coop_panel.checkout.get("tender",0))/100.0]
+	checkout_panel.add_child(heading)
+	add_button(checkout_panel,"Ouvrir le tiroir",func():coop_panel.send("drawer"))
+	if coop_panel.checkout.get("cash_visible",false):add_button(checkout_panel,"Prendre le paiement",take_payment)
+	if has_tender_in_hand():
+		add_button(checkout_panel,"Déposer le paiement",func():
+			animate_coop_cash("cash_put","open_tender",clerk.drawer.global_position+Vector3.UP*.12)
+		)
+	if coop_panel.checkout.get("received",false):
+		add_button(checkout_panel,"Choisir les pièces et billets",open_change)
+		if clerk.wallet.occupied(CASH_HAND) and not has_tender_in_hand():add_button(checkout_panel,"Rendre la monnaie",give_change)
+	if not coop_panel.guest_case_id.is_empty():
+		add_button(checkout_panel,"Remettre le boîtier",func():
+			checkout_panel.get_parent().hide()
+			coop_panel.send("case_handoff")
+		)
+	add_button(checkout_panel,"Fermer",checkout_panel.get_parent().hide)
+	checkout_panel.get_parent().show()
+
 func open_lobby():
 	game.lobby.start()
 	menu.get_parent().hide()
@@ -1350,6 +1571,7 @@ func open_lobby():
 func refresh_lobby():
 	if not lobby_panel or not lobby_panel.get_parent().visible:return
 	for child in lobby_panel.get_children():
+		if child.name=="MessengerTitle":continue
 		lobby_panel.remove_child(child)
 		child.queue_free()
 	var heading:=Label.new()

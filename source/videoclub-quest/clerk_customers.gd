@@ -101,6 +101,11 @@ func _physics_process(dt):
 			var player=game.head.global_position
 			player.y=0
 			if c.node.position.distance_to(player)<.48:blocked=true
+			var remote:Node3D=clerk.lan.remote_avatar
+			if is_instance_valid(remote) and remote.valid_pose:
+				var guest:Vector3=remote.targets[0].origin
+				guest.y=0
+				if c.node.position.distance_to(guest)<.48:blocked=true
 			if offset.length()<.07:c.cursor+=1
 			elif not blocked:
 				c.node.position+=offset.normalized()*minf(dt*.95,offset.length())

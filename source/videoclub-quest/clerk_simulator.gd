@@ -818,6 +818,9 @@ func _physics_process(dt):
 	var near=game.head.global_position.distance_to(Vector3(-4.07,1.5,7.1))<2
 	for c in customers.customers:
 		if c.node.position.distance_to(Vector3(-4.07,0,7.1))<2:near=true
+	if is_instance_valid(lan.remote_avatar) and lan.remote_avatar.valid_pose:
+		var guest:Vector3=lan.remote_avatar.targets[0].origin
+		near=near or Vector2(guest.x+4.1,guest.z-7.12).length()<1.8
 	door.rotation.y=move_toward(door.rotation.y,-PI/2 if near else 0,dt*1.6)
 	phone_timer-=dt
 	if phone_enabled and phone_timer<=0:

@@ -60,22 +60,28 @@ func take(hand:int,value:int,tender:bool=false):
 	arrange(hand)
 func remove_one(hand:int,index:int,deposit:bool):
 	var entry=palms[hand][index]
-	if deposit:
-		clerk.till[entry.value]+=1
-		if entry.tender and entry.get("customer_id",-1)==clerk.active.get("id",-2):
-			clerk.tender_deposited+=entry.value
-			clerk.tender_received=clerk.tender_deposited>=clerk.tender
-			if clerk.tender_received and clerk.tender==clerk.price:clerk.paid=true
+	if deposit:deposit_entry(entry)
 	entry.node.queue_free()
 	palms[hand].remove_at(index)
 	arrange(hand)
 	clerk.refresh_terminal()
+func deposit_entry(entry:Dictionary):
+	clerk.till[entry.value]+=1
+	if entry.tender and entry.get("customer_id",-1)==clerk.active.get("id",-2):
+		clerk.tender_deposited+=entry.value
+		clerk.tender_received=clerk.tender_deposited>=clerk.tender
+		if clerk.tender_received and clerk.tender==clerk.price:clerk.paid=true
+
+func record_change(amount:int):
+	clerk.change+=amount
+	clerk.paid=true
+	clerk.refresh_terminal()
+
 func give_customer(hand:int)->bool:
 	if clerk.active.is_empty() or not clerk.tender_received:return false
 	for entry in palms[hand]:
 		if entry.tender:return false
-	clerk.change+=total(hand)
-	clerk.paid=true
+	record_change(total(hand))
 	while occupied(hand):remove_one(hand,0,false)
 	clerk.refresh_terminal()
 	game._message("Monnaie remise dans la main du client. Tu peux lui donner le film.")

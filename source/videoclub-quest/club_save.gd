@@ -122,6 +122,7 @@ func snapshot()->Dictionary:
 	if is_instance_valid(c.repairs.disc):
 		state.repair={"data":c.repairs.data.duplicate(),"remaining":c.repairs.remaining,"source":record_id(c.repairs.source.get_meta("inventory_record",{})) if is_instance_valid(c.repairs.source) else -1}
 	for entry in c.wallet.loose:state.cash.append(pack_cash(entry,entry.node.global_transform))
+	for entry in c.lan.guest_cash:state.cash.append(pack_cash(entry,entry.node.global_transform))
 	for hand in range(2):
 		for i in range(c.wallet.palms[hand].size()):
 			var entry=c.wallet.palms[hand][i]
