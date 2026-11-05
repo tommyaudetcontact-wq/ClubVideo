@@ -438,6 +438,7 @@ func _prepare_screens() -> void:
 		screen.material_override = mat
 
 func _play_ambient_trailer()->void:
+	if touch_controls and touch_controls.coop_panel and touch_controls.coop_panel.connected:return
 	var available=trailer_streams.keys()
 	if available.is_empty():return
 	if available.size()>1:available.erase(active_trailer)

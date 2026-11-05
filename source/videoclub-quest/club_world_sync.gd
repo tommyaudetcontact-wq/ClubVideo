@@ -13,6 +13,8 @@ var basket_pose:Transform3D
 var last_stock:Dictionary={}
 var shelf_index:Dictionary={}
 var drawer_pose:Transform3D
+var drawer_target:Transform3D
+var drawer_motion:Tween
 
 static func shelf_key(game,record:Dictionary)->String:
 	return "%s|%d|%d"%[game._position_key(record.world.origin),record.movie,record.index]
@@ -66,7 +68,7 @@ static func capture(game)->String:
 			bars.append({"id":str(bar.get_instance_id()),"transform":bar.global_transform})
 	var day:Dictionary={}
 	for key in Save.SHIFT_FIELDS:day[key]=c.shift.get(key)
-	var payload={"stock":stock,"cases":cases,"clients":clients,"discs":discs,"cash":cash,"bars":bars,"basket":c.basket.body.global_transform,"drawer":c.drawer.global_transform,"shift":day}
+	var payload={"stock":stock,"cases":cases,"clients":clients,"discs":discs,"cash":cash,"bars":bars,"basket":c.basket.body.global_transform,"drawer":c.drawer.global_transform,"shift":day,"audio":{"scan":c.scan_serial,"ring":c.ring_serial,"ringing":c.ringing,"trailer":game.active_trailer}}
 	var raw:=var_to_bytes(payload)
 	return Marshalls.raw_to_base64(raw.compress(FileAccess.COMPRESSION_DEFLATE))
 
@@ -80,6 +82,7 @@ func setup(owner_game):
 	game=owner_game
 	basket_pose=game.clerk.basket.body.global_transform
 	drawer_pose=game.clerk.drawer.global_transform
+	drawer_target=drawer_pose
 	for index in range(game.dvd_records.size()):
 		shelf_index[shelf_key(game,game.dvd_records[index])]=index
 	game.clerk.tender_note.hide()
@@ -105,6 +108,7 @@ func apply(encoded:String):
 	if not value is Dictionary or not value.get("stock") is Dictionary:return
 	var stock:Dictionary=value.stock
 	if stock.size()>3500:return
+	sync_audio(value.get("audio",{}),state.get("audio",{}))
 	state=value
 	if last_stock!=stock:
 		for key in shelf_index:
@@ -125,7 +129,11 @@ func apply(encoded:String):
 		last_stock=stock
 		game._update_cover_lod(game.head.global_position,true)
 	game.clerk.basket.body.global_transform=value.basket
-	game.clerk.drawer.global_transform=value.drawer
+	if drawer_target!=value.drawer:
+		drawer_target=value.drawer
+		if drawer_motion and drawer_motion.is_valid():drawer_motion.kill()
+		drawer_motion=create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+		drawer_motion.tween_property(game.clerk.drawer,"global_transform",drawer_target,.19).set_trans(Tween.TRANS_SINE)
 	var seen:Dictionary={}
 	for key in stock:
 		var row:Array=stock[key]
@@ -153,8 +161,7 @@ func apply(encoded:String):
 				Actor.animate(node,"Walk" if entry.moving else "Idle")
 				update_carry(node,int(entry.carry))
 			elif category=="cases":
-				var cover:=node.get_node_or_null("PaperInsert_front") as Node3D
-				if cover:cover.visible=not entry.opened
+				set_case_open(node,entry.opened)
 				var lock:=node.get_node_or_null("Antitheft")
 				if entry.locked and not lock:game.clerk.add_lock(node)
 				elif not entry.locked and lock:
@@ -164,6 +171,59 @@ func apply(encoded:String):
 		if not seen.has(key):
 			nodes[key].queue_free()
 			nodes.erase(key)
+
+func sync_audio(audio:Dictionary,previous:Dictionary):
+	if audio.is_empty():return
+	if not previous.is_empty() and int(audio.scan)>int(previous.scan):
+		game.clerk.scanner.sound.play()
+	if audio.ringing:
+		if not previous.get("ringing",false) or int(audio.ring)>int(previous.get("ring",0)):
+			game.clerk.phone_audio.play()
+	elif previous.get("ringing",false):game.clerk.phone_audio.stop()
+	var trailer:int=int(audio.trailer)
+	if trailer!=game.active_trailer and game.trailer_streams.has(trailer):game._play_trailer(trailer)
+
+func set_case_open(node:Node3D,opened:bool):
+	if node.get_meta("mirror_open",false)==opened:return
+	node.set_meta("mirror_open",opened)
+	var shell:=node.get_node("MoldedPlasticOnly") as MeshInstance3D
+	var front:=node.get_node("PaperInsert_front") as MeshInstance3D
+	var spine:=node.get_node("PaperInsert_spine") as MeshInstance3D
+	var tray:=node.get_node_or_null("MirrorInterior") as Node3D
+	if not tray:
+		tray=Node3D.new()
+		tray.name="MirrorInterior"
+		node.add_child(tray)
+		var height:=shell.get_aabb().size.y
+		var base:=Props.box(tray,Vector3(0,0,-.004),Vector3(.135,height,.005),"202326")
+		base.material_override=shell.material_override
+		var hinge:=Node3D.new()
+		hinge.name="Hinge"
+		tray.add_child(hinge)
+		hinge.position.x=-.0675
+		var lid:=Props.box(hinge,Vector3(.0675,0,.003),Vector3(.135,height,.004),"202326")
+		lid.material_override=shell.material_override
+		var cover:=front.duplicate() as Node3D
+		hinge.add_child(cover)
+		cover.position.x=.0675
+		cover.show()
+	var hinge:=tray.get_node("Hinge") as Node3D
+	var previous:Variant=node.get_meta("mirror_lid_motion",null) if node.has_meta("mirror_lid_motion") else null
+	if previous is Tween and previous.is_valid():previous.kill()
+	shell.hide()
+	front.hide()
+	spine.hide()
+	tray.show()
+	var motion:=node.create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	node.set_meta("mirror_lid_motion",motion)
+	motion.tween_property(hinge,"rotation:y",-2.8 if opened else 0.0,.18).set_trans(Tween.TRANS_SINE)
+	if not opened:
+		motion.tween_callback(func():
+			tray.hide()
+			shell.show()
+			front.show()
+			spine.show()
+		)
 
 func make_visual(category:String,entry:Dictionary)->Node3D:
 	var node:Node3D
@@ -211,6 +271,7 @@ func update_shelf(record:Dictionary):
 	game.clerk.locks.update_slot(record)
 
 func restore_local():
+	game.clerk.phone_audio.stop()
 	for index in originals:
 		var record:Dictionary=game.dvd_records[index]
 		record.merge(originals[index],true)
@@ -219,6 +280,7 @@ func restore_local():
 	for node in hidden:
 		if is_instance_valid(node):node.visible=hidden[node]
 	game.clerk.basket.body.global_transform=basket_pose
+	if drawer_motion and drawer_motion.is_valid():drawer_motion.kill()
 	game.clerk.drawer.global_transform=drawer_pose
 	game.clerk.refresh_tender_visual()
 	queue_free()

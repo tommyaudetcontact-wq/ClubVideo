@@ -324,7 +324,7 @@ func sync_hands():
 func show_grip(delta:float):
 	for i in range(2):
 		var visual:Node3D=game.hand_visuals[i]
-		var holding:bool=is_instance_valid(game.held) and game.held_hand==i
+		var holding:bool=(is_instance_valid(game.held) and game.held_hand==i) or (coop_panel.connected and i==CASE_HAND and not coop_panel.guest_case_id.is_empty())
 		visual.visible=holding or clerk.wallet.occupied(i) or (action_busy() and i==action_support_hand)
 		if not visual.visible:continue
 		visual.position=Vector3(-.070 if i==0 else .070,-.068,.028)
@@ -353,6 +353,21 @@ func animate_pick(origin:Vector3):
 	game.hands[hand].global_transform=Transform3D(rest.basis,origin)
 	begin_motion()
 	tween_hand(action_motion,hand,rest,.26)
+
+func animate_coop_counter_action(target:Dictionary):
+	var rest:Transform3D=coop_panel.guest_held_pose()
+	var working:Transform3D=target.pose
+	if target.action=="case_scan":
+		var direction:Vector3=clerk.scanner.direction
+		working=Transform3D(Basis.looking_at(-direction,Vector3.UP),clerk.scanner.global_position+direction*.23)
+	begin_motion()
+	coop_panel.moving_case=true
+	coop_panel.case_animation_pose=rest
+	action_motion.tween_property(coop_panel,"case_animation_pose",working,.27).set_trans(Tween.TRANS_SINE)
+	action_motion.tween_callback(func():coop_panel.send(target.action,"",target.get("target","")))
+	action_motion.tween_interval(.20)
+	action_motion.tween_property(coop_panel,"case_animation_pose",rest,.26).set_trans(Tween.TRANS_SINE)
+	action_motion.tween_callback(func():coop_panel.moving_case=false)
 
 func toggle_crouch():
 	crouching=not crouching
@@ -509,6 +524,8 @@ func use_target():
 		if not tap_aim:sync_hands()
 		var target:=coop_interaction()
 		if target.action=="computer":open_desktop()
+		elif target.action=="case_scan" or (target.action=="case_lock" and target.target=="unlock"):
+			animate_coop_counter_action(target)
 		elif not target.action.is_empty():coop_panel.send(target.action,target.get("id",""),target.get("target",""))
 		return
 	clerk.shift.started=true
@@ -727,6 +744,10 @@ func coop_interaction()->Dictionary:
 	if clerk.desktop.project_ray(game.aim_hands[0]).x>=0:
 		var screen_size:Vector2=clerk.screen.mesh.size
 		return coop_marked({"action":"computer","label":"Ouvrir l’ordi"},clerk.screen.global_transform,Vector3(screen_size.x+.012,screen_size.y+.012,.018))
+	for target in clerk.targets:
+		if target.action!="drawer" or not near(target.node.global_position) or aimed(target.node.global_position,target.radius+.022)==INF:continue
+		var label:="Fermer le tiroir" if coop_panel.checkout.get("drawer_open",false) else "Ouvrir le tiroir"
+		return coop_marked({"action":"drawer_toggle","label":label},target.node.global_transform,Vector3(.26,.09,.12))
 	var holding:bool=not coop_panel.guest_case_id.is_empty()
 	if near(clerk.repairs.station) and aimed(clerk.repairs.station,.23)<INF:
 		return coop_marked({"action":"disc_use","target":"repair","label":"Surfaceuse"},Transform3D(Basis.IDENTITY,clerk.repairs.station),Vector3(.20,.16,.20))
@@ -822,7 +843,7 @@ func refresh_action(over_desktop:bool):
 
 func case_action():
 	if coop_panel.connected:
-		coop_panel.send("case_open")
+		coop_panel.toggle_guest_case()
 		return
 	if clerk.inspection.finger>=0:use_disc()
 	else:toggle_case()

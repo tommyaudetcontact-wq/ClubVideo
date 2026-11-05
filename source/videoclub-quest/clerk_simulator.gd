@@ -32,11 +32,14 @@ var chute_serial=0
 var screen:MeshInstance3D
 var door:Node3D
 var drawer:Node3D
+var drawer_motion:Tween
 var drawer_open=false
 var phone:Node3D
 var phone_hand=-1
 var phone_timer=32.0
 var ringing=false
+var ring_serial:=0
+var scan_serial:=0
 var phone_audio:AudioStreamPlayer3D
 var page=0
 var scanned=false
@@ -609,13 +612,19 @@ func pick_case(c:Dictionary,hand:int,grip:bool):
 	c.node.reparent(game.dvd_grip_anchors[hand],false)
 	c.node.transform=Transform3D.IDENTITY
 	game._message("Boîtier de service. Scanner et détacheur au comptoir.\nMain libre + poignée sur le bord : ouvrir après retrait de l'antivol.")
+func set_drawer_open(open:bool):
+	if drawer_open==open:return
+	drawer_open=open
+	if drawer_motion and drawer_motion.is_valid():drawer_motion.kill()
+	drawer_motion=create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	drawer_motion.tween_property(drawer,"position:z",-6.82 if open else -6.6,.25)
+
 func action(which:String,hand:int,value:int=0):
 	match which:
 		"page":desktop.open_program(value)
 		"door":door.rotation.y=-PI/2
 		"drawer":
-			drawer_open=not drawer_open
-			create_tween().tween_property(drawer,"position:z",-6.82 if drawer_open else -6.6,.25)
+			set_drawer_open(not drawer_open)
 		"money":wallet.take(hand,value)
 		"tender":wallet.take(hand,tender,true)
 		"change":
@@ -631,8 +640,7 @@ func action(which:String,hand:int,value:int=0):
 			elif active.get("is_return",false) and paid and scanned:
 				complete_return()
 			elif not active.is_empty():
-				drawer_open=true
-				drawer.position.z=-6.82
+				set_drawer_open(true)
 				game._message("Le total et le montant donné sont affichés. Calcule la monnaie de tête.")
 		"scan":scan_held()
 		"unlock":
@@ -817,6 +825,7 @@ func _physics_process(dt):
 		phone_timer=95
 	ring_tick-=dt
 	if ringing and ring_tick<=0:
+		ring_serial+=1
 		phone_audio.play()
 		ring_tick=3
 	if customer_delay>0:
@@ -1096,6 +1105,7 @@ func scan_item(item:Dictionary)->bool:
 		game._message("Le paiement est terminé. Ce boîtier n’a pas été facturé.")
 		return false
 	node.set_meta("barcode_scanned",true)
+	scan_serial+=1
 	item.scanned=true
 	accept_replacement(item)
 	refresh_basket()

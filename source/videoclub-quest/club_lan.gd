@@ -139,10 +139,11 @@ func handle_request(request:Variant):
 				receipt="Le client a changé. Vérifie la caisse."
 			else:
 				receipt=remote_cash(action,request.get("coins",{}))
-		"drawer":
-			if not clerk.active.is_empty() and not clerk.active.get("is_return",false):
-				clerk.page=0
-				clerk.action("computer",-1)
+		"drawer","drawer_toggle":
+			if is_instance_valid(remote_avatar) and remote_avatar.valid_pose and remote_avatar.targets[0].origin.distance_to(clerk.drawer.global_position)<=2.0:
+				if action=="drawer_toggle":clerk.action("drawer",-1)
+				else:clerk.set_drawer_open(true)
+			else:receipt="Approche-toi de la caisse."
 		"return":
 			if clerk.active.get("is_return",false) and clerk.paid and clerk.scanned:
 				clerk.page=2
@@ -157,7 +158,7 @@ func handle_request(request:Variant):
 		var inventory:Dictionary={}
 		for denomination in clerk.till:
 			inventory[str(denomination)]=clerk.till[denomination]
-		response["checkout"]={"customer":clerk.active.get("id",-1),"price":clerk.price,"tender":clerk.tender,"received":clerk.tender_received,"paid":clerk.paid,"cash_visible":clerk.tender_note.visible,"till":inventory}
+		response["checkout"]={"customer":clerk.active.get("id",-1),"price":clerk.price,"tender":clerk.tender,"received":clerk.tender_received,"paid":clerk.paid,"cash_visible":clerk.tender_note.visible,"drawer_open":clerk.drawer_open,"till":inventory}
 		response["notice"]=receipt
 		response["guest_case"]=str(guest_case.node.get_instance_id()) if not guest_case.is_empty() else ""
 		if not guest_case.is_empty() and not guest_case.record.is_empty() and guest_case.kind in ["return","sorting","shelve"]:
@@ -300,6 +301,7 @@ func pick_guest_case(action:String,id:String)->String:
 	node.collision_mask=0
 	guest_flipped=false
 	clerk.shift.started=true
+	clerk.game._play_trailer(guest_case.movie)
 	update_guest_case_pose()
 	return ""
 

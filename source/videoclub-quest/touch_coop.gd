@@ -11,6 +11,8 @@ var guest_disc_back:=false
 var customer_pos:=Vector3.INF
 var guest_shelf:=Vector3.INF
 var guest_shelf_key:=""
+var moving_case:=false
+var case_animation_pose:=Transform3D.IDENTITY
 const LAN=preload("res://club_lan.gd")
 var socket:StreamPeerTCP
 var players:VBoxContainer
@@ -189,6 +191,7 @@ func reset(message:String):
 	customer_pos=Vector3.INF
 	guest_shelf=Vector3.INF
 	guest_shelf_key=""
+	moving_case=false
 	game.clerk.repairs.marker.hide()
 	game.interaction_glow(0).hide()
 	pages.clear()
@@ -299,10 +302,23 @@ func decode_position(position:Variant)->Vector3:
 	if not position is Array or position.size()!=3:return Vector3.INF
 	return Vector3(float(position[0]),float(position[1]),float(position[2]))
 
+func toggle_guest_case():
+	if guest_case_id.is_empty() or not guest_disc.is_empty() or not is_instance_valid(mirror):return
+	var node:Node3D=mirror.nodes.get("cases"+guest_case_id)
+	if is_instance_valid(node):
+		var can_preview:=guest_open or node.get_node_or_null("Antitheft")==null
+		if can_preview:mirror.set_case_open(node,not guest_open)
+	send("case_open")
+
+func guest_held_pose()->Transform3D:
+	return LAN.held_pose(game.head.global_transform,guest_flipped)
+
 func _physics_process(_delta:float):
 	if not is_instance_valid(mirror):return
 	var node:Node3D=mirror.nodes.get("cases"+guest_case_id)
-	if is_instance_valid(node):node.global_transform=LAN.held_pose(game.head.global_transform,guest_flipped)
+	if is_instance_valid(node):
+		node.global_transform=case_animation_pose if moving_case else guest_held_pose()
+		game.hands[game.touch_controls.CASE_HAND].global_transform=node.global_transform
 	var disc_node:Node3D=mirror.nodes.get("discs"+guest_disc)
 	if is_instance_valid(disc_node):disc_node.global_transform=LAN.disc_pose(game.head.global_transform,guest_disc_back)
 
