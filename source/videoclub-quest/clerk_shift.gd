@@ -68,8 +68,8 @@ func finish()->bool:
 		if item.kind in ["return","shelve"]:
 			clerk.game._message("Vide la chute et range les retours avant la fermeture. Les boîtiers à démêler peuvent attendre.")
 			return false
-	if is_instance_valid(clerk.repairs.disc) or not clerk.inspection.loose_discs.is_empty() or is_instance_valid(clerk.inspection.carried):
-		clerk.game._message("Termine les réparations et remets les disques libres dans leurs boîtiers.")
+	if is_instance_valid(clerk.repairs.disc) or is_instance_valid(clerk.inspection.carried):
+		clerk.game._message("Libère la machine de réparation et dépose tout disque que tu tiens. Les disques sur la table peuvent attendre.")
 		return false
 	var expected=initial_cash+revenue
 	var actual=cash_in_till()
