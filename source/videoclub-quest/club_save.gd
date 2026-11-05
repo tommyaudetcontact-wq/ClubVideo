@@ -288,6 +288,9 @@ func restore(s:Dictionary)->bool:
 	for job in s.returns:c.returns_due.append(unpack_job(job))
 	for key in SHIFT_FIELDS:
 		if s.shift.has(key):c.shift.set(key,s.shift[key])
+	var elapsed:=maxf(0.0,float(c.shift.duration)-float(c.shift.time_left))
+	c.shift.duration=c.shift.OPEN_SECONDS
+	c.shift.time_left=0.0 if c.shift.closing else maxf(0.0,c.shift.duration-elapsed)
 	for key in COUNTER_FIELDS:c.set(key,s.counter[key])
 	c.till=s.till.duplicate()
 	if not c.active.is_empty() and not c.active.has("cash_started"):

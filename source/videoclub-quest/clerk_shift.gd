@@ -1,8 +1,10 @@
 extends RefCounted
+
+const OPEN_SECONDS := 360.0
 var clerk
 var day=1
-var duration=600.0
-var time_left=600.0
+var duration=OPEN_SECONDS
+var time_left=OPEN_SECONDS
 var closing=false
 var summary=false
 var enabled=true
@@ -79,7 +81,7 @@ func finish()->bool:
 	return true
 func next_day():
 	day+=1
-	duration=600.0
+	duration=OPEN_SECONDS
 	time_left=duration
 	closing=false
 	summary=false
@@ -98,6 +100,6 @@ func next_day():
 	clerk.repairs.processed=0
 	clerk.customers.spawn_timer=5
 func text()->String:
-	if not started:return "JOUR 1 · PRÊT\nPrends un objet ou touche la caisse pour commencer.\nJournées de 10 minutes ; difficulté progressive.\nLa fermeture laisse finir les clients et ranger."
+	if not started:return "JOUR 1 · PRÊT\nPrends un objet ou touche la caisse pour commencer.\nJournées de 6 minutes ; difficulté progressive.\nLa fermeture laisse finir les clients et ranger."
 	if summary:return report
 	return "JOUR %d · %s\nOuverture restante : %d:%02d\nPatience : caisse 2:00 · file 2:00\nRetours : %d · rangés : %d\nFin des arrivées : termine et range, puis clique ici.\nLe bilan compare la caisse réelle au montant attendu."%[day,"FERMETURE" if closing else "OUVERT",int(time_left)/60,int(time_left)%60,returned,restocked]
