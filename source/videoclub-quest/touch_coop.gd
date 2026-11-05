@@ -7,6 +7,7 @@ var guest_case_id:=""
 var guest_flipped:=false
 var guest_open:=false
 var basket_carried:=false
+var spare_carried:=false
 var guest_disc:=""
 var guest_disc_back:=false
 var customer_pos:=Vector3.INF
@@ -196,6 +197,7 @@ func reset(message:String):
 	guest_flipped=false
 	guest_open=false
 	basket_carried=false
+	spare_carried=false
 	guest_disc=""
 	customer_pos=Vector3.INF
 	guest_shelf=Vector3.INF
@@ -286,6 +288,7 @@ func receive(reply:Dictionary):
 		guest_flipped=bool(reply.get("guest_flipped",false))
 		guest_open=bool(reply.get("guest_open",false))
 		basket_carried=bool(reply.get("guest_basket",false))
+		spare_carried=bool(reply.get("guest_spare",false))
 		guest_disc=str(reply.get("guest_disc",""))
 		guest_disc_back=bool(reply.get("guest_disc_back",false))
 		customer_pos=decode_position(reply.get("customer_pos"))

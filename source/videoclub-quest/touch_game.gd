@@ -210,7 +210,10 @@ func setup(g):
 	buttons.add_child(action_hint)
 	menu=make_panel()
 	add_button(menu,"Jouer en solo",play_solo)
-	add_button(menu,"Sauvegarder",func():game.session.save_game())
+	add_button(menu,"Sauvegarder",func():
+		if coop_panel.connected:coop_panel.send("save")
+		else:game.session.save_game()
+	)
 	var continue_button:=add_button(menu,"Continuer la sauvegarde",continue_solo)
 	continue_button.disabled=not FileAccess.file_exists(game.session.save_path) and not FileAccess.file_exists(game.session.save_path+".bak")
 	add_button(menu,"Nouvelle partie",confirm_new_game)
@@ -319,7 +322,12 @@ func make_panel()->VBoxContainer:
 	var close:=Button.new()
 	close.text="×"
 	close.custom_minimum_size=Vector2(32,30)
-	close.pressed.connect(panel.hide)
+	close.pressed.connect(func():
+		panel.hide()
+		if game.modes.menu_open:
+			if menu and panel==menu.get_parent():toggle_menu()
+			elif menu:menu.get_parent().show()
+	)
 	header.add_child(close)
 	panel.hide()
 	return box
@@ -567,7 +575,7 @@ func use_target():
 		elif target.action=="cash_put":deposit_payment()
 		elif target.action=="cash_give":give_change()
 		elif target.action=="select_cash":select_cash(target.node)
-		elif target.action=="case_scan" or (target.action=="case_lock" and target.target=="unlock"):
+		elif target.action=="case_scan" or target.action=="case_handoff" or (target.action=="case_lock" and target.target=="unlock"):
 			animate_coop_counter_action(target)
 		elif not target.action.is_empty():coop_panel.send(target.action,target.get("id",""),target.get("target",""))
 		return
@@ -787,6 +795,10 @@ func pick_touch_case(item:Dictionary):
 	game._play_trailer(item.movie)
 
 func put_in_basket():
+	if coop_panel.connected:
+		coop_panel.send("held_basket")
+		basket_panel.get_parent().hide()
+		return
 	if action_busy() or not game.held or not basket_accessible():return
 	basket_panel.get_parent().hide()
 	var held_case:Node3D=game.held
@@ -951,6 +963,9 @@ func case_action():
 
 func toggle_case():
 	if action_busy():return
+	if coop_panel.connected:
+		coop_panel.toggle_guest_case()
+		return
 	if not game.held:
 		game._message("Prends un boîtier.")
 		return
@@ -970,6 +985,12 @@ func flip_item():
 
 func use_disc():
 	if action_busy():return
+	if coop_panel.connected:
+		var target:=""
+		if near(clerk.repairs.station) and aimed(clerk.repairs.station,.23)<INF:target="repair"
+		elif not coop_panel.guest_disc.is_empty() and clerk.repairs.is_sorting_surface(table_point(.93)):target="table"
+		coop_panel.send("disc_use","",target)
+		return
 	var inspection=clerk.inspection
 	if inspection.finger>=0:
 		var station:Vector3=clerk.repairs.station
@@ -997,6 +1018,10 @@ func use_disc():
 				return
 
 func scan():
+	if coop_panel.connected:
+		if not action_busy() and not coop_panel.guest_case_id.is_empty() and near(clerk.scanner.global_position):
+			animate_coop_counter_action({"action":"case_scan","pose":clerk.scanner.global_transform})
+		return
 	if action_busy() or not game.held or clerk.inspection.opened:return
 	if not near(clerk.scanner.global_position):
 		game._message("Approche-toi du scanner du comptoir.")
@@ -1020,6 +1045,14 @@ func scan():
 	tween_hand(action_motion,hand,rest,.25)
 
 func use_lock():
+	if coop_panel.connected:
+		if action_busy() or coop_panel.guest_case_id.is_empty() or not is_instance_valid(coop_panel.mirror):return
+		var node:Node3D=coop_panel.mirror.nodes.get("cases"+coop_panel.guest_case_id)
+		if not is_instance_valid(node):return
+		if node.get_node_or_null("Antitheft"):
+			if near(DETACHER):animate_coop_counter_action({"action":"case_lock","target":"unlock","pose":Transform3D(Basis.IDENTITY,DETACHER)})
+		else:coop_panel.send("case_lock","","relock")
+		return
 	if action_busy() or not game.held or clerk.inspection.opened:return
 	if game.held.get_meta("antitheft",false):
 		if not near(DETACHER):
@@ -1063,6 +1096,9 @@ func animate_unlock(item:Node3D):
 	action_motion.parallel().tween_property(game.hands[other],"global_transform",free_rest,.27).set_trans(Tween.TRANS_SINE)
 
 func take_spare():
+	if coop_panel.connected:
+		coop_panel.send("spare_take")
+		return
 	if not near(clerk.lock_bin) or spare_carried:return
 	clerk.locks.ensure_spare()
 	for body in clerk.locks.bars:
@@ -1081,6 +1117,9 @@ func can_serve_customer()->bool:
 	return near(clerk.customer_hand(),1.65) or Vector2(offset.x,offset.z).length()<2.0
 
 func can_handoff()->bool:
+	if coop_panel.connected:
+		if coop_panel.guest_case_id.is_empty() or not is_instance_valid(coop_panel.mirror):return false
+		return coop_panel.mirror.state.get("cases",[]).any(func(item):return item.id==coop_panel.guest_case_id and item.kind=="rental")
 	return game.held!=null and not clerk.active.is_empty() and clerk.held_service.get("kind","")=="rental"
 
 func target_customer()->bool:
@@ -1089,6 +1128,14 @@ func target_customer()->bool:
 	return aimed(clerk.customer_hand(),.32)<INF or aimed(customer+Vector3.UP*1.23,.34)<INF or aimed(customer+Vector3.UP*1.53,.29)<INF
 
 func handoff():
+	if coop_panel.connected:
+		if action_busy() or not can_serve_customer() or not can_handoff():return
+		if coop_panel.guest_open:
+			game._message("Referme le boîtier avant de le donner.")
+			return
+		checkout_panel.get_parent().hide()
+		animate_coop_counter_action({"action":"case_handoff","pose":Transform3D(coop_panel.guest_held_pose().basis,coop_panel.customer_pos)})
+		return
 	if action_busy() or not can_serve_customer():return
 	if clerk.inspection.opened:
 		game._message("Remets le disque et referme le boîtier avant de le donner.")
@@ -1567,7 +1614,7 @@ func open_coop_checkout():
 	if not coop_panel.guest_case_id.is_empty():
 		add_button(checkout_panel,"Remettre le boîtier",func():
 			checkout_panel.get_parent().hide()
-			coop_panel.send("case_handoff")
+			handoff()
 		)
 	add_button(checkout_panel,"Fermer",checkout_panel.get_parent().hide)
 	checkout_panel.get_parent().show()

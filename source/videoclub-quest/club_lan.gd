@@ -20,6 +20,7 @@ var guest_inspection:Node3D
 var guest_disc_back:=false
 var guest_cash:Array=[]
 var guest_basket:=false
+var guest_spare:=false
 var stock_sent_at:=0
 const PeerPose=preload("res://club_peer_pose.gd")
 
@@ -53,6 +54,9 @@ func permit(ip:String)->String:
 	return token
 
 func disconnect_client():
+	if guest_spare:
+		clerk.locks.put_in_bin(clerk.locks.create_bar())
+		guest_spare=false
 	if guest_basket:release_guest_basket()
 	for entry in guest_cash:
 		clerk.wallet.deposit_entry(entry)
@@ -141,6 +145,10 @@ func handle_request(request:Variant):
 			if not guest_case.is_empty() and not guest_inspection.opened:
 				guest_flipped=not guest_flipped
 				update_guest_case_pose()
+		"save":
+			receipt="Partie partagée sauvegardée." if clerk.game.session.save_game(false) else "Échec de la sauvegarde."
+		"spare_take":
+			receipt=take_guest_spare()
 		"case_open","disc_use","disc_flip","case_scan","case_lock","case_handoff","case_sort","case_rack","phone","door","day":
 			receipt=guest_action(action,request)
 		"case_basket","case_shelf":
@@ -180,6 +188,7 @@ func handle_request(request:Variant):
 			response["guest_shelf"]=[slot.x,slot.y,slot.z]
 			response["guest_shelf_key"]=WorldSync.shelf_key(clerk.game,guest_case.record)
 		response["guest_basket"]=guest_basket
+		response["guest_spare"]=guest_spare
 		response["guest_cash"]=guest_cash.map(func(entry):return {"id":str(entry.node.get_instance_id()),"value":entry.value,"tender":entry.tender,"customer_id":entry.customer_id})
 		response["guest_flipped"]=guest_flipped
 		response["guest_open"]=is_instance_valid(guest_inspection) and guest_inspection.opened
@@ -439,14 +448,11 @@ func guest_action(action:String,request:Dictionary)->String:
 				clerk.locks.set_locked(node,false)
 				clerk.locks.put_in_bin(clerk.locks.create_bar())
 			else:
-				if p.distance_to(clerk.lock_bin)>1.8:return "Approche-toi des barres jaunes."
-				clerk.locks.ensure_spare()
-				for bar in clerk.locks.bars:
-					if not bar.get_meta("in_bin",false):continue
-					clerk.locks.bars.erase(bar)
-					bar.queue_free()
-					clerk.locks.set_locked(node,true)
-					break
+				if not guest_spare:
+					var receipt:String=take_guest_spare()
+					if not guest_spare:return receipt
+				guest_spare=false
+				clerk.locks.set_locked(node,true)
 			clerk.refresh_terminal()
 		"case_handoff":
 			if clerk.active.is_empty() or int(request.get("customer",-2))!=int(clerk.active.get("id",-1)):return ""
@@ -583,3 +589,16 @@ func release_guest_basket():
 	basket.freeze=false
 	basket.sleeping=false
 	basket.linear_velocity=Vector3.ZERO
+
+func take_guest_spare()->String:
+	if guest_spare:return "Tu tiens déjà une barre jaune."
+	if not is_instance_valid(remote_avatar) or not remote_avatar.valid_pose:return ""
+	if remote_avatar.targets[0].origin.distance_to(clerk.lock_bin)>1.8:return "Approche-toi des barres jaunes."
+	clerk.locks.ensure_spare()
+	for bar in clerk.locks.bars:
+		if not bar.get_meta("in_bin",false):continue
+		clerk.locks.bars.erase(bar)
+		bar.queue_free()
+		guest_spare=true
+		return "Barre jaune en main."
+	return "Aucune barre jaune disponible."

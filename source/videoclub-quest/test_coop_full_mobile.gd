@@ -134,8 +134,8 @@ func _initialize():
 	assert(not coop.guest_case_id.is_empty())
 	guest.head.global_position=Vector3(.72,1.45,-6.15)
 	if item.node.get_meta("antitheft",false):
-		coop.send("case_lock")
-		await create_timer(.55).timeout
+		guest.touch_controls.use_lock()
+		await create_timer(.85).timeout
 	assert(not item.node.get_meta("antitheft",false))
 	coop.toggle_guest_case()
 	assert(coop.mirror.nodes["cases"+coop.guest_case_id].get_meta("mirror_open"))
@@ -145,21 +145,21 @@ func _initialize():
 	var interior:Node3D=visual.get_node("MirrorInterior")
 	assert(interior.visible and not visual.get_node("MoldedPlasticOnly").visible)
 	assert(interior.get_node("Hinge").rotation.y < -.5)
-	coop.send("disc_use")
+	guest.touch_controls.use_disc()
 	await create_timer(.55).timeout
 	assert(not coop.guest_disc.is_empty() and item.node.get_meta("disc_movie")==-1)
 	coop.send("disc_flip")
 	await create_timer(.55).timeout
 	assert(coop.guest_disc_back)
-	coop.send("disc_use")
+	guest.touch_controls.use_disc()
 	await create_timer(.55).timeout
 	assert(coop.guest_disc.is_empty() and item.node.get_meta("inspected",false))
 	coop.send("case_open")
 	await create_timer(.55).timeout
 	assert(not coop.guest_open)
 	guest.head.global_position=host.clerk.scanner.global_position+Vector3(0,.30,.35)
-	coop.send("case_scan")
-	await create_timer(.55).timeout
+	guest.touch_controls.scan()
+	await create_timer(.85).timeout
 	assert(item.scanned and coop.mirror.state.audio.scan==host.clerk.scan_serial)
 	guest.head.global_position=host.clerk.drawer.global_position+Vector3(0,.3,.3)
 	var change_due:int=host.clerk.tender-host.clerk.price
@@ -174,8 +174,8 @@ func _initialize():
 	guest.touch_controls.give_change()
 	await create_timer(.8).timeout
 	assert(host.clerk.paid and guest.clerk.wallet.total(0)==0)
-	coop.send("case_handoff")
-	await create_timer(.65).timeout
+	guest.touch_controls.handoff()
+	await create_timer(.85).timeout
 	assert(coop.guest_case_id.is_empty() and host.clerk.active.is_empty())
 	guest.head.global_position=host.clerk.drawer.global_position+Vector3(0,.35,.3)
 	host.clerk.set_drawer_open(false)
