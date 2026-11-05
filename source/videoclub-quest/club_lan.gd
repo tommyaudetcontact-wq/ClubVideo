@@ -82,9 +82,9 @@ func handle_request(request:Variant):
 		if not is_instance_valid(remote_avatar):
 			remote_avatar=PeerPose.new()
 			clerk.game.add_child(remote_avatar)
-		remote_avatar.receive(request.pose)
+		remote_avatar.receive(request.pose,request)
 		if request.get("action")=="pose":
-			send_response({"v":VERSION,"pose":PeerPose.pack(clerk.game)})
+			send_response({"v":VERSION,"pose":PeerPose.pack(clerk.game),"avatar":PeerPose.appearance(clerk.game)})
 			return
 	var now:=Time.get_ticks_msec()
 	if now-last_request<90 and request.get("action","").is_empty():return
@@ -119,6 +119,7 @@ func handle_request(request:Variant):
 		response["checkout"]={"customer":clerk.active.get("id",-1),"price":clerk.price,"tender":clerk.tender,"received":clerk.tender_received,"paid":clerk.paid,"cash_visible":clerk.tender_note.visible,"till":inventory}
 		response["notice"]=receipt
 		response["pose"]=PeerPose.pack(clerk.game)
+		response["avatar"]=PeerPose.appearance(clerk.game)
 	send_response(response)
 
 func send_response(response:Dictionary):

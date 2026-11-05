@@ -83,7 +83,7 @@ func _refresh_labels() -> void:
 		labels[6].text="Chargement : remplace la partie en cours"
 		labels[7].text="Sauvegarde automatique toutes les minutes"
 		return
-	labels[10].text=""
+	labels[10].text="Avatar : "+game.clerk_model_name()+" · changer"
 	labels[0].text="Reprendre"
 	labels[1].text="Téléportation : "+("ACTIVÉE" if game.teleportation.enabled else "DÉSACTIVÉE")
 	labels[2].text="Rangement manuel : "+("ACTIVÉ" if manual_mode else "ASSISTÉ")
@@ -173,6 +173,7 @@ func _activate(row: int) -> void:
 		5:game.netflix.toggle()
 		6:OS.shell_open("https://www.netflix.com/ca-fr/login")
 		8:menu_page=1
+		10:game.toggle_clerk_model()
 		9:
 			if game.lobby:
 				game.lobby.start()

@@ -172,11 +172,12 @@ func receive(reply:Dictionary):
 		if not is_instance_valid(avatar):
 			avatar=PeerPose.new()
 			game.add_child(avatar)
-		avatar.receive(reply.pose)
+		avatar.receive(reply.pose,reply.get("avatar",{}))
 
 func send(action:String):
 	if not socket or socket.get_status()!=StreamPeerTCP.STATUS_CONNECTED:return
 	var message:={"v":1,"pin":pin.text,"features":["checkout"],"action":action,"customer":checkout.get("customer",-1),"coins":selected,"pose":PeerPose.pack(game)}
+	message.merge(PeerPose.appearance(game))
 	socket.put_data((JSON.stringify(message)+"\n").to_utf8_buffer())
 
 func choose(value:String):

@@ -212,6 +212,10 @@ func setup(g):
 	continue_button.disabled=not FileAccess.file_exists(game.session.save_path) and not FileAccess.file_exists(game.session.save_path+".bak")
 	add_button(menu,"Nouvelle partie",confirm_new_game)
 	add_button(menu,"Son des bandes-annonces",func():game.modes._activate(7))
+	var avatar_button:=add_button(menu,"Avatar : "+game.clerk_model_name(),func():
+		game.toggle_clerk_model()
+	)
+	avatar_button.pressed.connect(func():avatar_button.text="Avatar : "+game.clerk_model_name())
 	add_button(menu,"Coop",open_coop)
 	add_button(menu,"Lobby Wi-Fi",open_lobby)
 	operations=make_panel()

@@ -6,6 +6,6 @@ Simulateur de vidéoclub du début des années 2000. Les clients arrivent seuls,
 - Android : jeu 3D tactile avec sauvegarde locale.
 - Coop Wi-Fi : le Quest héberge la partie depuis l’ordinateur du comptoir. Sur Android, ouvre Coop et saisis l’adresse et le code affichés. Le téléphone voit les mouvements VR et gère le paiement dans la partie hébergée.
 
-[Quest 0.7.8](https://github.com/tommyaudetcontact-wq/ClubVideo/releases/tag/v0.7.8) · [Android 0.7.9](https://github.com/tommyaudetcontact-wq/ClubVideo/releases/tag/v0.7.9) · [Page de téléchargement](https://tommyaudetcontact-wq.github.io/ClubVideo/) · [Versions](https://github.com/tommyaudetcontact-wq/ClubVideo/releases)
+[Quest 0.8.0](https://github.com/tommyaudetcontact-wq/ClubVideo/releases/tag/v0.8.0) · [Android 0.8.0](https://github.com/tommyaudetcontact-wq/ClubVideo/releases/tag/v0.8.0) · [Page de téléchargement](https://tommyaudetcontact-wq.github.io/ClubVideo/) · [Versions](https://github.com/tommyaudetcontact-wq/ClubVideo/releases)
 
 La sauvegarde complète de référence est l’archive source de la release 0.6.5. Les scripts et les nouvelles ressources suivis dans `source/` s’appliquent par-dessus cette archive.

@@ -3,6 +3,8 @@ extends Node3D
 var touch_profile := OS.has_feature("touchgame") or "--touch-profile" in OS.get_cmdline_user_args()
 var touch_controls:CanvasLayer
 var lobby:Node
+var clerk_model:=0
+var local_clerk_avatar:Node3D
 var pc_vr := OS.has_feature("pcvr") or "--pcvr-profile" in OS.get_cmdline_user_args()
 var COVER_DETAIL_BUDGET := 96 if pc_vr else 48
 var COVER_DETAIL_ENTER := 5.0 if pc_vr else 4.0
@@ -82,6 +84,9 @@ var lod_update_usec := 0
 var lod_occlusion_tests := 0
 
 func _ready() -> void:
+	var avatar_settings:=ConfigFile.new()
+	if avatar_settings.load("user://avatar.cfg")==OK:
+		clerk_model=1 if avatar_settings.get_value("avatar","clerk_model",0)==1 else 0
 	var startup:Node=get_meta("startup_loader",null) if has_meta("startup_loader") else null
 	if startup:await startup.stage(41.0,"Ouverture du magasin…")
 	if pc_vr:
@@ -142,6 +147,10 @@ func _ready() -> void:
 	lobby=preload("res://club_lobby.gd").new()
 	add_child(lobby)
 	lobby.setup(self)
+	if xr_active or touch_profile:
+		local_clerk_avatar=preload("res://club_peer_pose.gd").new()
+		add_child(local_clerk_avatar)
+		local_clerk_avatar.attach_local(self)
 	if startup:await startup.stage(95.0,"Vérification de la sauvegarde…")
 	session=load("res://club_save.gd").new()
 	add_child(session)
@@ -587,6 +596,16 @@ func _cover_in_view(eye: Vector3, center: Vector3, forward: Vector3) -> bool:
 func _position_key(p: Vector3) -> String:
 	return "%.4f,%.4f,%.4f" % [p.x,p.y,p.z]
 
+func clerk_model_name()->String:
+	return "Fille" if clerk_model==1 else "Gars"
+
+func toggle_clerk_model():
+	clerk_model=1-clerk_model
+	var preferences:=ConfigFile.new()
+	preferences.set_value("avatar","clerk_model",clerk_model)
+	preferences.save("user://avatar.cfg")
+	_message("Avatar de commis : "+clerk_model_name())
+
 func _message(text: String) -> void:
 	hud.text = text
 
@@ -771,7 +790,7 @@ func _recenter_entry(force := false) -> void:
 	_write_diagnostics()
 
 func _write_diagnostics() -> void:
-	var state := {"xr_active":xr_active,"tracking":xr_interface.get_tracking_status() if xr_interface else -1,"spawn_centered":spawn_centered,"head_local":[head.position.x,head.position.y,head.position.z],"head_world":[head.global_position.x,head.global_position.y,head.global_position.z],"origin":[origin.position.x,origin.position.y,origin.position.z],"viewport_xr":get_viewport().use_xr,"viewport_size":str(get_viewport().get_visible_rect().size),"xr_target_size":str(xr_interface.get_render_target_size()) if xr_interface else "none","msaa":get_viewport().msaa_3d,"camera_current":head.current,"fps":Engine.get_frames_per_second(),"dvd_count":dvd_records.size(),"near_covers":lod_selected.size(),"lod_candidates":lod_last_examined,"build":"PC-0.7.8" if pc_vr else ("0.7.9" if touch_profile else "0.7.8"),"teleport_mode":teleportation.enabled,"baked_lighting":baked_lighting_active,"active_trailer":active_trailer,"trailer_playing":trailer_player.is_playing(),"video_position":trailer_player.stream_position,"screens":screens.size(),"draw_calls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)}
+	var state := {"xr_active":xr_active,"tracking":xr_interface.get_tracking_status() if xr_interface else -1,"spawn_centered":spawn_centered,"head_local":[head.position.x,head.position.y,head.position.z],"head_world":[head.global_position.x,head.global_position.y,head.global_position.z],"origin":[origin.position.x,origin.position.y,origin.position.z],"viewport_xr":get_viewport().use_xr,"viewport_size":str(get_viewport().get_visible_rect().size),"xr_target_size":str(xr_interface.get_render_target_size()) if xr_interface else "none","msaa":get_viewport().msaa_3d,"camera_current":head.current,"fps":Engine.get_frames_per_second(),"dvd_count":dvd_records.size(),"near_covers":lod_selected.size(),"lod_candidates":lod_last_examined,"build":"PC-0.7.8" if pc_vr else "0.8.0","teleport_mode":teleportation.enabled,"baked_lighting":baked_lighting_active,"active_trailer":active_trailer,"trailer_playing":trailer_player.is_playing(),"video_position":trailer_player.stream_position,"screens":screens.size(),"draw_calls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)}
 	state["texture_mip_bias"]=ProjectSettings.get_setting("rendering/textures/default_filters/texture_mipmap_bias",0.0)
 	state["foveation_level"]=xr_interface.call("get_foveation_level") if xr_interface and xr_interface.has_method("get_foveation_level") else -1
 	if Engine.has_singleton("OpenXRFbCompositionLayerSettingsExtension"):
