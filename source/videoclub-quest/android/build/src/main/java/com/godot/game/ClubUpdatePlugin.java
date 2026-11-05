@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.net.Uri;
+import android.net.wifi.WifiManager;
 import android.provider.Settings;
 
 import androidx.core.content.FileProvider;
@@ -13,6 +14,10 @@ import org.godotengine.godot.plugin.GodotPlugin;
 import org.godotengine.godot.plugin.UsedByGodot;
 
 import java.io.File;
+import java.net.InterfaceAddress;
+import java.net.NetworkInterface;
+import java.util.ArrayList;
+import java.util.Enumeration;
 
 public final class ClubUpdatePlugin extends GodotPlugin {
     public ClubUpdatePlugin(Godot godot) {
@@ -22,6 +27,51 @@ public final class ClubUpdatePlugin extends GodotPlugin {
     @Override
     public String getPluginName() {
         return "ClubUpdate";
+    }
+
+    private WifiManager.MulticastLock discoveryLock;
+
+    @UsedByGodot
+    public void setDiscoveryEnabled(boolean enabled) {
+        Activity activity = getActivity();
+        if (activity == null) return;
+        activity.runOnUiThread(() -> {
+            try {
+                if (!enabled) {
+                    if (discoveryLock != null && discoveryLock.isHeld()) discoveryLock.release();
+                    return;
+                }
+                if (discoveryLock == null) {
+                    WifiManager manager = (WifiManager) activity.getApplicationContext().getSystemService(Activity.WIFI_SERVICE);
+                    if (manager == null) return;
+                    discoveryLock = manager.createMulticastLock("ClubVideoDiscovery");
+                    discoveryLock.setReferenceCounted(false);
+                }
+                if (!discoveryLock.isHeld()) discoveryLock.acquire();
+            } catch (SecurityException exception) {
+                android.util.Log.w("ClubVideo", "Wi-Fi discovery lock unavailable", exception);
+            }
+        });
+    }
+
+    @UsedByGodot
+    public String[] discoveryBroadcasts() {
+        ArrayList<String> addresses = new ArrayList<>();
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces != null && interfaces.hasMoreElements()) {
+                NetworkInterface network = interfaces.nextElement();
+                if (!network.isUp() || network.isLoopback() || network.isPointToPoint()) continue;
+                for (InterfaceAddress address : network.getInterfaceAddresses()) {
+                    if (address.getBroadcast() != null && address.getAddress().isSiteLocalAddress()) {
+                        addresses.add(address.getBroadcast().getHostAddress());
+                    }
+                }
+            }
+        } catch (java.net.SocketException exception) {
+            android.util.Log.w("ClubVideo", "Cannot enumerate Wi-Fi interfaces", exception);
+        }
+        return addresses.toArray(new String[0]);
     }
 
     @UsedByGodot

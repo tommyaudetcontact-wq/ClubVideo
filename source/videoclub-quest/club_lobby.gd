@@ -3,7 +3,8 @@ extends Node
 const PORT := 39166
 const MAGIC := "VideoClubLobby/1"
 const INTERVAL := 1.35
-const LIFETIME := 6500
+const LIFETIME := 8500
+const MULTICAST := "239.255.39.166"
 
 var game
 var socket:PacketPeerUDP
@@ -14,6 +15,9 @@ var device_id:=""
 var display_name:=""
 var announce_in:=0.0
 var available:=false
+var bridge
+var broadcast_targets:PackedStringArray=[]
+var multicast_interfaces:PackedStringArray=[]
 var last_playing:=false
 var status:="Recherche sur le Wi-Fi…"
 signal changed
@@ -22,10 +26,11 @@ signal join_granted(ip:String,grant:String)
 func setup(g):
 	game=g
 	name="LobbyWiFi"
+	if Engine.has_singleton("ClubUpdate"):bridge=Engine.get_singleton("ClubUpdate")
 	process_mode=Node.PROCESS_MODE_ALWAYS
 	device_id=Crypto.new().generate_random_bytes(12).hex_encode()
 	display_name=("Android" if game.touch_profile else "Quest")+" "+device_id.left(4).to_upper()
-	if OS.has_feature("android") or "--lan-lobby" in OS.get_cmdline_user_args():start()
+	if "--lan-lobby" in OS.get_cmdline_user_args():start()
 
 func start():
 	if socket:return
@@ -57,9 +62,41 @@ func set_available(value:bool):
 	available=value
 	if not game.touch_profile and game.clerk and (game.clerk.lan.server!=null)!=value:
 		game.clerk.lan.toggle_host()
-	status="Visible sur le Wi-Fi." if available else "Invisible sur le Wi-Fi."
-	if socket:announce("255.255.255.255")
+	if bridge and bridge.has_method("setDiscoveryEnabled"):bridge.setDiscoveryEnabled(available)
+	if available:refresh_network_routes()
+	if socket:announce_network()
+	status="Visible sur le Wi-Fi." if available and socket else ("Wi-Fi indisponible." if available else "Invisible sur le Wi-Fi.")
 	changed.emit()
+
+func refresh_network_routes():
+	broadcast_targets=PackedStringArray(["255.255.255.255"])
+	if bridge and bridge.has_method("discoveryBroadcasts"):
+		for address in bridge.discoveryBroadcasts():
+			if not address in broadcast_targets:broadcast_targets.append(address)
+	if not socket:return
+	for interface in IP.get_local_interfaces():
+		var has_lan:=false
+		for address in interface.get("addresses",[]):
+			if address.begins_with("192.168.") or address.begins_with("10.") or address.begins_with("172."):
+				has_lan=true
+				break
+		var interface_name:=str(interface.get("name",""))
+		if has_lan and not interface_name.is_empty() and not interface_name in multicast_interfaces:
+			if socket.join_multicast_group(MULTICAST,interface_name)==OK:
+				multicast_interfaces.append(interface_name)
+
+func announce_network():
+	for address in broadcast_targets:announce(address)
+	if not multicast_interfaces.is_empty():announce(MULTICAST)
+
+func _notification(what:int):
+	if what==NOTIFICATION_APPLICATION_RESUMED and available:
+		if bridge and bridge.has_method("setDiscoveryEnabled"):bridge.setDiscoveryEnabled(true)
+		refresh_network_routes()
+		announce_in=0
+
+func _exit_tree():
+	if bridge and bridge.has_method("setDiscoveryEnabled"):bridge.setDiscoveryEnabled(false)
 
 func toggle_available():
 	set_available(not available)
@@ -72,7 +109,7 @@ func _process(delta:float):
 	if announce_in<=0 or playing!=last_playing:
 		last_playing=playing
 		announce_in=INTERVAL
-		announce("255.255.255.255")
+		if available:announce_network()
 		for id in peers.keys():
 			if now-int(peers[id].seen)>LIFETIME:
 				peers.erase(id)
@@ -102,7 +139,7 @@ func receive(packet:Variant,ip:String,now:int):
 		peers[sender]={"id":sender,"name":peer_name,"ip":ip,"seen":now,"ready":ready,"hosting":hosting}
 		if old.is_empty() or old.get("ready")!=ready or old.get("name")!=peer_name or old.get("hosting")!=hosting:
 			changed.emit()
-		if old.is_empty() and not packet.get("reply",false):announce(ip,true)
+		if available and (old.is_empty() or old.get("ready")!=ready) and not packet.get("reply",false):announce(ip,true)
 		return
 	if packet.get("to")!=device_id or not peers.has(sender) or peers[sender].ip!=ip:return
 	var ticket:=str(packet.get("ticket",""))
