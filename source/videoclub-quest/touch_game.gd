@@ -372,6 +372,7 @@ func _physics_process(delta:float):
 	update_stick()
 	coop_button.visible=coop_panel.connected and not coop_panel.visible and not get_tree().paused
 	if get_tree().paused:
+		hide_coop_guides()
 		counter_actions.hide()
 		checkout_button.hide()
 		basket_button.hide()
@@ -388,7 +389,9 @@ func _physics_process(delta:float):
 	counter_actions.visible=can_serve_customer() and not (desktop_overlay and desktop_overlay.visible)
 	change_button.disabled=action_busy()
 	handoff_button.disabled=action_busy()
-	if action_busy() or coop_panel.visible or basket_panel.get_parent().visible or checkout_panel.get_parent().visible or (desktop_overlay and desktop_overlay.visible):return
+	if action_busy() or coop_panel.visible or basket_panel.get_parent().visible or checkout_panel.get_parent().visible or (desktop_overlay and desktop_overlay.visible):
+		hide_coop_guides()
+		return
 	var f:Vector3=-game.head.global_basis.z
 	f.y=0
 	f=f.normalized()
@@ -408,6 +411,11 @@ func _physics_process(delta:float):
 	elif notice_time>0:
 		notice_time-=delta
 		if notice_time<=0:status.text=""
+
+func hide_coop_guides():
+	if not coop_panel.connected:return
+	coop_panel.update_shelf_marker(false)
+	game.interaction_glow(0).hide()
 
 func _unhandled_input(event:InputEvent):
 	if get_tree().paused or action_busy() or coop_panel.visible or basket_panel.get_parent().visible or checkout_panel.get_parent().visible or (desktop_overlay and desktop_overlay.visible):return
@@ -710,31 +718,38 @@ func put_in_basket():
 	place_held_case(clerk.basket.body.to_global(Vector3(0,.16,0)))
 	if game.held!=held_case:game._message("Boîtier mis dans le panier.")
 
+func coop_marked(target:Dictionary,pose:Transform3D,bounds:Vector3)->Dictionary:
+	target.pose=pose
+	target.bounds=bounds
+	return target
+
 func coop_interaction()->Dictionary:
-	if clerk.desktop.project_ray(game.aim_hands[0]).x>=0:return {"action":"computer","label":"Ouvrir l’ordi"}
+	if clerk.desktop.project_ray(game.aim_hands[0]).x>=0:
+		var screen_size:Vector2=clerk.screen.mesh.size
+		return coop_marked({"action":"computer","label":"Ouvrir l’ordi"},clerk.screen.global_transform,Vector3(screen_size.x+.012,screen_size.y+.012,.018))
 	var holding:bool=not coop_panel.guest_case_id.is_empty()
 	if near(clerk.repairs.station) and aimed(clerk.repairs.station,.23)<INF:
-		return {"action":"disc_use","target":"repair","label":"Surfaceuse"}
+		return coop_marked({"action":"disc_use","target":"repair","label":"Surfaceuse"},Transform3D(Basis.IDENTITY,clerk.repairs.station),Vector3(.20,.16,.20))
 	if not coop_panel.guest_disc.is_empty():
 		if clerk.repairs.is_sorting_surface(table_point(.93)):return {"action":"disc_use","target":"table","label":"Déposer le disque"}
 		if coop_panel.guest_open:return {"action":"disc_use","label":"Remettre le disque"}
 		return {"action":"disc_flip","label":"Retourner le disque"}
 	if holding:
 		if coop_panel.guest_open:return {"action":"disc_use","label":"Sortir le disque"}
-		if near(clerk.scanner.global_position) and aimed(clerk.scanner.global_position,.24)<INF:return {"action":"case_scan","label":"Scanner"}
-		if near(DETACHER) and aimed(DETACHER,.20)<INF:return {"action":"case_lock","target":"unlock","label":"Retirer l’antivol"}
-		if near(clerk.lock_bin) and aimed(clerk.lock_bin,.20)<INF:return {"action":"case_lock","target":"relock","label":"Poser l’antivol"}
+		if near(clerk.scanner.global_position) and aimed(clerk.scanner.global_position,.24)<INF:return coop_marked({"action":"case_scan","label":"Scanner"},clerk.scanner.global_transform,Vector3(.22,.17,.18))
+		if near(DETACHER) and aimed(DETACHER,.20)<INF:return coop_marked({"action":"case_lock","target":"unlock","label":"Retirer l’antivol"},Transform3D(Basis.IDENTITY,DETACHER),Vector3(.22,.18,.17))
+		if near(clerk.lock_bin) and aimed(clerk.lock_bin,.20)<INF:return coop_marked({"action":"case_lock","target":"relock","label":"Poser l’antivol"},Transform3D(Basis.IDENTITY,clerk.lock_bin),Vector3(.23,.16,.22))
 		if coop_panel.customer_pos.is_finite() and near(coop_panel.customer_pos) and aimed(coop_panel.customer_pos,.42)<INF:
-			return {"action":"case_handoff","label":"Remettre le film"}
-		if basket_aimed():return {"action":"held_basket","label":"Mettre au panier"}
+			return coop_marked({"action":"case_handoff","label":"Remettre le film"},Transform3D(Basis.IDENTITY,coop_panel.customer_pos),Vector3(.24,.19,.20))
+		if basket_aimed():return coop_marked({"action":"held_basket","label":"Mettre au panier"},clerk.basket.body.global_transform,Vector3(.46,.27,.39))
 		return {"action":"case_flip","label":"Retourner"}
 	if is_instance_valid(coop_panel.mirror):
 		for entry in coop_panel.mirror.state.get("discs",[]):
 			if clerk.repairs.is_sorting_surface(entry.transform.origin) and aimed(entry.transform.origin,.10)<INF:
-				return {"action":"disc_use","target":entry.id,"label":"Prendre le disque"}
+				return coop_marked({"action":"disc_use","target":entry.id,"label":"Prendre le disque"},entry.transform,Vector3(.13,.13,.015))
 	for target in clerk.targets:
 		if target.action in ["phone","door"] and aimed(target.node.global_position,target.radius)<INF:
-			return {"action":target.action,"label":"Répondre" if target.action=="phone" else "Porte"}
+			return coop_marked({"action":target.action,"label":"Répondre" if target.action=="phone" else "Porte"},target.node.global_transform,Vector3.ONE*target.radius*1.5)
 	var chosen:=coop_case_target()
 	if not chosen.is_empty():
 		chosen.label="Prendre"
@@ -746,21 +761,26 @@ func coop_case_target()->Dictionary:
 	var best:=INF
 	var result:Dictionary={}
 	for item in coop_panel.mirror.state.get("cases",[]):
-		if item.held:continue
+		if item.held or item.get("busy",false):continue
 		var gap:=aimed(item.transform.origin,.115)
 		if gap>=best:continue
 		best=gap
-		result={"id":item.id,"action":"case_pick"}
+		result=coop_marked({"id":item.id,"action":"case_pick"},item.transform,Vector3(.15,.21,.033))
 	var ray:Node3D=game.aim_hands[CASE_HAND]
 	var record:Dictionary=game.shelf_ray(ray.global_position,-ray.global_basis.z,2.2)
 	if not record.is_empty() and ray.global_position.distance_to(record.world.origin)<best:
-		return {"id":coop_panel.mirror.shelf_key(game,record),"action":"shelf_pick"}
+		return coop_marked({"id":coop_panel.mirror.shelf_key(game,record),"action":"shelf_pick"},record.world,Vector3(.15,.21,.033))
 	return result
 
 func refresh_action(over_desktop:bool):
 	if coop_panel.connected:
 		var holding:bool=not coop_panel.guest_case_id.is_empty()
-		primary_button.text=coop_interaction().label
+		var target:=coop_interaction()
+		primary_button.text=target.label
+		var glow:MeshInstance3D=game.interaction_glow(0)
+		if target.has("pose"):glow.mark(target.pose,target.bounds)
+		else:glow.hide()
+		coop_panel.update_shelf_marker(true)
 		case_button.text="Fermer" if coop_panel.guest_open else "Ouvrir"
 		flip_button.visible=not coop_panel.guest_disc.is_empty() or (holding and not coop_panel.guest_open)
 		flip_button.text="Retourner le disque" if not coop_panel.guest_disc.is_empty() else ("Voir la couverture" if coop_panel.guest_flipped else "Voir le dos")

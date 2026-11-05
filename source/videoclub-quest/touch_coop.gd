@@ -10,6 +10,7 @@ var guest_disc:=""
 var guest_disc_back:=false
 var customer_pos:=Vector3.INF
 var guest_shelf:=Vector3.INF
+var guest_shelf_key:=""
 const LAN=preload("res://club_lan.gd")
 var socket:StreamPeerTCP
 var players:VBoxContainer
@@ -187,6 +188,9 @@ func reset(message:String):
 	guest_disc=""
 	customer_pos=Vector3.INF
 	guest_shelf=Vector3.INF
+	guest_shelf_key=""
+	game.clerk.repairs.marker.hide()
+	game.interaction_glow(0).hide()
 	pages.clear()
 	selected_case=""
 	if is_instance_valid(avatar):avatar.queue_free()
@@ -266,6 +270,7 @@ func receive(reply:Dictionary):
 		guest_disc_back=bool(reply.get("guest_disc_back",false))
 		customer_pos=decode_position(reply.get("customer_pos"))
 		guest_shelf=decode_position(reply.get("guest_shelf"))
+		guest_shelf_key=str(reply.get("guest_shelf_key",""))
 		if not str(reply.get("notice","")).is_empty():
 			feedback.text=reply.notice
 			game._message(reply.notice)
@@ -280,6 +285,15 @@ func receive(reply:Dictionary):
 			avatar=PeerPose.new()
 			game.add_child(avatar)
 		avatar.receive(reply.pose,reply.get("avatar",{}))
+
+func update_shelf_marker(enabled:bool):
+	var marker:MeshInstance3D=game.clerk.repairs.marker
+	marker.hide()
+	if not enabled or guest_case_id.is_empty() or guest_open or not is_instance_valid(mirror):return
+	var row:Array=mirror.state.get("stock",{}).get(guest_shelf_key,[])
+	if row.size()<5 or not row[4] is Transform3D:return
+	marker.global_transform=row[4]
+	marker.show()
 
 func decode_position(position:Variant)->Vector3:
 	if not position is Array or position.size()!=3:return Vector3.INF

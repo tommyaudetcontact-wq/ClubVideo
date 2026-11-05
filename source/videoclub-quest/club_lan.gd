@@ -160,9 +160,10 @@ func handle_request(request:Variant):
 		response["checkout"]={"customer":clerk.active.get("id",-1),"price":clerk.price,"tender":clerk.tender,"received":clerk.tender_received,"paid":clerk.paid,"cash_visible":clerk.tender_note.visible,"till":inventory}
 		response["notice"]=receipt
 		response["guest_case"]=str(guest_case.node.get_instance_id()) if not guest_case.is_empty() else ""
-		if not guest_case.is_empty() and not guest_case.record.is_empty():
+		if not guest_case.is_empty() and not guest_case.record.is_empty() and guest_case.kind in ["return","sorting","shelve"]:
 			var slot:Vector3=guest_case.record.world.origin
 			response["guest_shelf"]=[slot.x,slot.y,slot.z]
+			response["guest_shelf_key"]=WorldSync.shelf_key(clerk.game,guest_case.record)
 		response["guest_flipped"]=guest_flipped
 		response["guest_open"]=is_instance_valid(guest_inspection) and guest_inspection.opened
 		response["guest_disc"]=str(guest_inspection.carried.get_instance_id()) if is_instance_valid(guest_inspection) and is_instance_valid(guest_inspection.carried) else ""
