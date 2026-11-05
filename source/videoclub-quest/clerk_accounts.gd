@@ -34,13 +34,8 @@ func scan_return(node:Node3D)->int:
 		cycle=rental(account,int(node.get_meta("movie",0)),int(node.get_meta("inventory_record",{}).get("id",-1)))
 		node.set_meta("return_cycle",cycle)
 	if entry.rentals.has(cycle):entry.rentals[cycle].returned=true
-	var fee=200 if node.get_meta("returned_damage",node.get_meta("dirty",false)) else 0
-	if not entry.charges.has(cycle):
-		entry.charges[cycle]=fee
-		entry.balance+=fee
-	else:fee=0
 	node.set_meta("return_checked",true)
-	return fee
+	return 0
 func settle(account:int,cents:int):
 	var entry=ensure(account)
 	entry.balance=maxi(0,int(entry.balance)-cents)
@@ -49,3 +44,8 @@ func restore(data:Dictionary):
 	accounts=data.get("accounts",{}).duplicate(true)
 	next_account=int(data.get("next_account",1))
 	next_rental=int(data.get("next_rental",1))
+	for entry in accounts.values():
+		var removed:=0
+		for amount in entry.get("charges",{}).values():removed+=int(amount)
+		entry.balance=maxi(0,int(entry.get("balance",0))-removed)
+		entry.charges={}

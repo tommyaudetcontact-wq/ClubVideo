@@ -2,6 +2,7 @@ extends Node3D
 const Props=preload("res://clerk_props.gd")
 const Actor=preload("res://customer_actor.gd")
 const MAX_VISIBLE_PEOPLE=8
+const VisitIcons=preload("res://club_visit_icons.gd")
 var game
 var clerk
 var grid=AStarGrid2D.new()
@@ -44,6 +45,8 @@ func spawn_customer():
 	c.companions=[]
 	if remaining>=1 and group<.24:
 		c.family=true
+		c.children_mess_count=randi_range(1,3) if randf()<.30 else 0
+		c.children_mess_delay=randf_range(8,25)
 		c.companions.append(randi_range(6,7))
 		if remaining>=2 and randf()<.38:c.companions.append((c.companions[0]+1)%2+6)
 	elif remaining>=1 and group<.44:
@@ -54,6 +57,8 @@ func spawn_customer():
 	if c.account_id<0:c.account_id=clerk.accounts.choose_account(customers.map(func(customer):return int(customer.get("account_id",-1))))
 	c.visit_balance=int(clerk.accounts.ensure(c.account_id).balance)
 	c.return_and_rent=not c.return_job.is_empty() and randf()<.55
+	c.visit_mask=VisitIcons.reason_mask(c)
+	VisitIcons.update(n,c.visit_mask)
 	if not c.return_job.is_empty():
 		c.return_job.account_id=c.account_id
 		var carry=Node3D.new()
@@ -75,10 +80,9 @@ func population()->int:
 	for customer in customers:total+=customer.get("companions",[]).size()
 	return total
 
-func traffic_interval(progress:float,day:int)->Vector2:
-	var peak:=(progress>=.17 and progress<.38) or (progress>=.65 and progress<.87)
-	var difficulty:=clampf((day-1)*1.6,0,13)
-	return Vector2(19-difficulty*.45,32-difficulty*.65) if peak else Vector2(54-difficulty,83-difficulty)
+func traffic_interval(_progress:float,_day:int)->Vector2:
+	var pressure:=minf(8,float(maxi(0,clerk.shift.wave-1))*1.5)
+	return Vector2(14-pressure,22-pressure)
 
 func _physics_process(dt):
 	if not game:return
@@ -118,15 +122,12 @@ func _physics_process(dt):
 					c.patience=0.0
 				"enter":
 					if not c.return_job.is_empty():
-						c.state="return_counter" if c.get("return_and_rent",false) or int(c.return_job.get("refund",0))>0 else "return_drop"
-						route(c,Vector3(-.6,0,-5.05) if c.state=="return_counter" else Vector3(-2.5,0,-4.8))
+						c.state="return_drop"
+						route(c,Vector3(-2.5,0,-4.8))
 					else:begin_browse(c)
 				"return_counter":
-					c.return_item=clerk.deliver_return(c.return_job,c,true)
-					c.is_return=true
-					c.movie=c.return_job.movie
-					c.return_job={}
-					c.state="queue"
+					c.state="return_drop"
+					route(c,Vector3(-2.5,0,-4.8))
 				"replacement_browse":
 					c.wait-=dt
 					if c.wait<=0:
@@ -144,9 +145,18 @@ func _physics_process(dt):
 						choose_alternative(c,next_title)
 					clerk.refresh_terminal()
 				"return_drop":
-					clerk.deliver_return(c.return_job,c)
+					var job:Dictionary=c.return_job
+					clerk.deliver_return(job,c)
 					c.return_job={}
-					dismiss(c)
+					if int(job.get("refund",0))>0:
+						c.is_refund=true
+						c.refund_due=int(job.refund)
+						c.state="queue"
+						route(c,Vector3(-.6,0,-5.05))
+					elif c.get("return_and_rent",false):
+						c.return_and_rent=false
+						begin_browse(c)
+					else:dismiss(c)
 				"browse":
 					if not c.has("reservations"):
 						begin_browse(c)
@@ -201,16 +211,19 @@ func _physics_process(dt):
 				c.node.get_node("Arm"+str(side)).rotation.x=1.25 if c==clerk.active and side==1 else -sin(clock*8+side*PI/2)*(.25 if moving else 0)
 func update_children(c:Dictionary,dt:float):
 	if not c.get("family",false):return
-	var remaining:=120.0+float(c.get("patience_bonus",0))-float(c.get("patience",0))
-	if c.state=="service" and remaining<=30.0 and not (c==clerk.active and clerk.paid) and not c.get("children_played",false):
+	if not c.has("children_mess_count"):
+		c.children_mess_count=randi_range(1,3) if randf()<.30 else 0
+		c.children_mess_delay=randf_range(8,25)
+	c.children_mess_delay=maxf(0,float(c.get("children_mess_delay",0))-dt)
+	if c.children_mess_count>0 and c.children_mess_delay<=0 and c.state not in ["enter","exit"] and not c.get("children_played",false):
 		c.children_played=true
-		var count:=randi_range(1,2)
 		for i in range(c.companions.size()):
 			var child:Node3D=c.node.get_node_or_null("Companion%d"%i)
 			if not child or int(c.companions[i])<6:continue
 			var run:Dictionary={"node":child}
 			if route(run,Vector3(-1.0 if i==0 else 1.0,0,.5)):
-				child.set_meta("aisle_run",{"path":run.path,"cursor":1,"home":child.position,"drop":count if i==0 else 0,"back":false})
+				child.set_meta("aisle_run",{"path":run.path,"cursor":1,"home":child.position,"drop":c.children_mess_count,"back":false})
+				break
 	for i in range(c.companions.size()):
 		var child:Node3D=c.node.get_node_or_null("Companion%d"%i)
 		if not child or not child.has_meta("aisle_run"):continue
@@ -303,29 +316,5 @@ func update_service_visual(c:Dictionary,dt:float):
 		var toward:Vector3=game.head.global_position-c.node.global_position
 		if toward.length_squared()>.01:c.node.rotation.y=lerp_angle(c.node.rotation.y,atan2(-toward.x,-toward.z),minf(1,dt*6))
 	var bar=c.node.get_node_or_null("Patience")
-	if not bar:
-		bar=Node3D.new()
-		bar.name="Patience"
-		c.node.add_child(bar)
-		bar.position.y=1.99
-		for i in range(2):
-			var panel=MeshInstance3D.new()
-			panel.name="Fill" if i else "Background"
-			var mesh=QuadMesh.new()
-			mesh.size=Vector2(.42,.045)
-			panel.mesh=mesh
-			var mat=StandardMaterial3D.new()
-			mat.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED
-			mat.albedo_color=Color("43be72") if i else Color("23272b")
-			panel.material_override=mat
-			panel.position.z=.002*i
-			bar.add_child(panel)
-	bar.visible=at_counter
-	if at_counter:
-		bar.look_at(game.head.global_position,Vector3.UP,true)
-		var limit=120.0+float(c.get("patience_bonus",0))
-		var fraction=clampf(1-float(c.get("patience",0))/limit,0,1)
-		var fill=bar.get_node("Fill")
-		fill.scale.x=maxf(.001,fraction)
-		fill.position.x=-.21*(1-fraction)
-		fill.material_override.albedo_color=Color("e85249") if fraction<.25 else Color("43be72")
+	if bar:bar.hide()
+	VisitIcons.update(c.node,VisitIcons.reason_mask(c))

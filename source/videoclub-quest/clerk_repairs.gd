@@ -14,6 +14,7 @@ var marker:MeshInstance3D
 var processed=0
 var case_slots:Array[Vector3]=[]
 func setup(c):
+	process_mode=Node.PROCESS_MODE_ALWAYS
 	clerk=c
 	game=c.game
 	Props.box(self,Vector3(.05,.88,-8.8),Vector3(6.4,.05,.8),"565c60")
@@ -147,15 +148,21 @@ func take_disc(inspection,hand:int,p:Vector3)->bool:
 	disc=null
 	label.text="SURFACEUSE · 30 s\nPose le disque sur le plateau"
 	return true
+func _physics_process(dt:float):
+	if not game or not clerk.lan:return
+	if game.touch_profile and game.touch_controls and game.touch_controls.coop_panel.connected:return
+	if not get_tree().paused or clerk.lan.authenticated:tick(dt)
+
 func tick(dt:float):
-	if remaining>0:
+	if remaining>0 and is_instance_valid(disc):
 		remaining=maxf(0,remaining-dt)
 		disc.rotate_object_local(Vector3.FORWARD,dt*8)
 		label.text="RÉPARATION · %d s"%ceili(remaining)
 		if remaining<=0:
 			data.dirty=false
 			disc.material_override.set_shader_parameter("scratched",false)
-			if is_instance_valid(source):source.set_meta("dirty",false)
+			if is_instance_valid(source):
+				source.set_meta("dirty",false)
 			processed+=1
 			label.text="DISQUE RÉPARÉ\nGâchette pour reprendre"
 	marker.visible=false

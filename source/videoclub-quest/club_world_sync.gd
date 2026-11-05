@@ -5,6 +5,7 @@ const Props=preload("res://clerk_props.gd")
 const Case=preload("res://held_case.gd")
 const Save=preload("res://club_save.gd")
 var game
+var host_basket
 var nodes:Dictionary={}
 var originals:Dictionary={}
 var hidden:Dictionary={}
@@ -32,7 +33,7 @@ static func capture(game,include_stock:bool=true)->String:
 	for item in c.cases:
 		var node:Node3D=item.node
 		if not is_instance_valid(node):continue
-		cases.append({"id":str(node.get_instance_id()),"movie":item.movie,"disc":node.get_meta("disc_movie",item.movie),"dirty":node.get_meta("dirty",false),"locked":node.get_meta("antitheft",false),"transform":node.global_transform,"opened":(c.inspection.opened and node==c.inspection.case_node) or (is_instance_valid(c.lan.guest_inspection) and c.lan.guest_inspection.opened and node==c.lan.guest_inspection.case_node),"held":node==game.held or item==c.secondary or node.get_meta("guest_held",false),"busy":node.get_meta("customer_animating",false),"kind":item.kind,"in_basket":item in c.basket.items,"scanned":item.scanned})
+		cases.append({"id":str(node.get_instance_id()),"movie":item.movie,"disc":node.get_meta("disc_movie",item.movie),"dirty":node.get_meta("dirty",false),"locked":node.get_meta("antitheft",false),"transform":node.global_transform,"opened":(c.inspection.opened and node==c.inspection.case_node) or (is_instance_valid(c.lan.guest_inspection) and c.lan.guest_inspection.opened and node==c.lan.guest_inspection.case_node),"held":node==game.held or item==c.secondary or node.get_meta("guest_held",false),"busy":node.get_meta("customer_animating",false),"kind":item.kind,"in_basket":node.get_meta("in_basket",false),"basket_owner":node.get_meta("basket_owner","host"),"scanned":item.scanned})
 	for record in game.modes.loose_dvds:
 		var loose:Node3D=record.get("loose_body")
 		if is_instance_valid(loose):
@@ -47,13 +48,15 @@ static func capture(game,include_stock:bool=true)->String:
 			var follower:Node3D=n.get_node_or_null("Companion%d"%index)
 			if follower:
 				followers.append({"index":index,"transform":follower.global_transform,"clip":actor_clip(follower)})
-		clients.append({"id":str(customer.id),"transform":n.global_transform,"moving":customer.cursor<customer.path.size(),"companions":customer.get("companions",[]),"followers":followers,"clip":actor_clip(n),"carry":customer.get("movie",-1) if is_instance_valid(customer.get("carry")) and customer.carry.visible else -1})
+		clients.append({"id":str(customer.id),"transform":n.global_transform,"intent":load("res://club_visit_icons.gd").reason_mask(customer),"moving":customer.cursor<customer.path.size(),"companions":customer.get("companions",[]),"followers":followers,"clip":actor_clip(n),"carry":customer.get("movie",-1) if is_instance_valid(customer.get("carry")) and customer.carry.visible else -1})
 	var discs:Array=[]
 	if c.inspection.opened and is_instance_valid(c.inspection.disc) and c.inspection.disc.visible:
 		var id:int=c.inspection.case_node.get_meta("disc_movie",-1)
 		discs.append(disc_state(c.inspection.disc,id,c.inspection.case_node.get_meta("dirty",false)))
 	for loose in c.inspection.loose_discs:
-		discs.append(disc_state(loose.node,loose.data.movie,loose.data.get("dirty",false)))
+		var loose_state:Dictionary=disc_state(loose.node,loose.data.movie,loose.data.get("dirty",false))
+		loose_state.loose=true
+		discs.append(loose_state)
 	if is_instance_valid(c.inspection.carried):
 		discs.append(disc_state(c.inspection.carried,c.inspection.carried_data.movie,c.inspection.carried_data.get("dirty",false)))
 	var guest=c.lan.guest_inspection
@@ -77,7 +80,7 @@ static func capture(game,include_stock:bool=true)->String:
 			bars.append({"id":str(bar.get_instance_id()),"transform":bar.global_transform})
 	var day:Dictionary={}
 	for key in Save.SHIFT_FIELDS:day[key]=c.shift.get(key)
-	var payload={"stock":stock,"cases":cases,"clients":clients,"discs":discs,"cash":cash,"bars":bars,"basket":c.basket.body.global_transform,"drawer":c.drawer.global_transform,"shift":day,"audio":{"scan":c.scan_serial,"ring":c.ring_serial,"ringing":c.ringing,"trailer":game.active_trailer}}
+	var payload={"stock":stock,"cases":cases,"clients":clients,"discs":discs,"cash":cash,"bars":bars,"repair":{"remaining":c.repairs.remaining,"busy":is_instance_valid(c.repairs.disc)},"guest_basket":c.lan.personal_basket().body.global_transform,"basket":c.basket.body.global_transform,"drawer":c.drawer.global_transform,"shift":day,"audio":{"scan":c.scan_serial,"ring":c.ring_serial,"ringing":c.ringing,"trailer":game.active_trailer}}
 	if not include_stock:payload.erase("stock")
 	var raw:=var_to_bytes(payload)
 	return Marshalls.raw_to_base64(raw.compress(FileAccess.COMPRESSION_DEFLATE))
@@ -147,7 +150,17 @@ func apply(encoded:String):
 			update_shelf(record)
 		last_stock=stock
 		game._update_cover_lod(game.head.global_position,true)
-	game.clerk.basket.body.global_transform=value.basket
+	game.clerk.basket.body.global_transform=value.get("guest_basket",value.basket)
+	if not is_instance_valid(host_basket):
+		host_basket=load("res://clerk_basket.gd").new()
+		add_child(host_basket)
+		host_basket.setup(game.clerk)
+		host_basket.body.collision_layer=0
+		host_basket.body.collision_mask=0
+	host_basket.body.global_transform=value.basket
+	var repair:Dictionary=value.get("repair",{})
+	game.clerk.repairs.remaining=float(repair.get("remaining",0))
+	game.clerk.repairs.label.text=("RÉPARATION · %d s"%ceili(game.clerk.repairs.remaining)) if game.clerk.repairs.remaining>0 else ("DISQUE RÉPARÉ · Reprendre" if repair.get("busy",false) else "SURFACEUSE · Pose le disque")
 	if drawer_target!=value.drawer:
 		drawer_target=value.drawer
 		if drawer_motion and drawer_motion.is_valid():drawer_motion.kill()
@@ -180,6 +193,7 @@ func apply(encoded:String):
 				if not motion_targets.has(key):node.global_transform=entry.transform
 				motion_targets[key]=entry.transform
 			if category=="clients":
+				load("res://club_visit_icons.gd").update(node,int(entry.get("intent",2)))
 				Actor.animate(node,str(entry.get("clip","Walk" if entry.moving else "Idle")))
 				update_carry(node,int(entry.carry))
 				for follower in entry.get("followers",[]):
@@ -190,6 +204,8 @@ func apply(encoded:String):
 					nodes[follower_key]=child
 					motion_targets[follower_key]=follower.transform
 					Actor.animate(child,str(follower.clip))
+			elif category=="discs":
+				if node.material_override is ShaderMaterial:node.material_override.set_shader_parameter("scratched",entry.dirty)
 			elif category=="cases":
 				set_case_open(node,entry.opened)
 				var lock:=node.get_node_or_null("Antitheft")

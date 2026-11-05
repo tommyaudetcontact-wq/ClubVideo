@@ -33,6 +33,7 @@ var tap_aim := false
 var action_motion:Tween
 var action_support_hand:=-1
 var move_touch := -1
+var move_dragged := false
 var look_touch := -1
 var look_start := Vector2.ZERO
 var look_moved := false
@@ -286,13 +287,13 @@ func make_stick(dimensions:Vector2,color:Color)->Panel:
 	return panel
 
 func stick_center()->Vector2:
-	return Vector2(145,get_viewport().get_visible_rect().size.y-145)
+	return move_start if move_touch>=0 else Vector2(145,get_viewport().get_visible_rect().size.y-145)
 
 func update_stick():
 	var center:=stick_center()
 	stick_base.position=center-stick_base.size*.5
 	stick_thumb.position=center+motion*54-stick_thumb.size*.5
-	stick_base.visible=not get_tree().paused
+	stick_base.visible=move_touch>=0 and move_dragged and not get_tree().paused and not action_busy() and not coop_panel.visible and not basket_panel.get_parent().visible and not checkout_panel.get_parent().visible and not (desktop_overlay and desktop_overlay.visible)
 	stick_thumb.visible=stick_base.visible
 
 func make_panel()->VBoxContainer:
@@ -472,23 +473,32 @@ func _unhandled_input(event:InputEvent):
 	if get_tree().paused or action_busy() or coop_panel.visible or basket_panel.get_parent().visible or checkout_panel.get_parent().visible or (desktop_overlay and desktop_overlay.visible):return
 	if event is InputEventScreenTouch:
 		if event.pressed:
-			if event.position.distance_to(stick_center())<=77.0 and move_touch<0:
+			if event.position.x<get_viewport().get_visible_rect().size.x*.45 and move_touch<0:
 				move_touch=event.index
-				move_start=stick_center()
+				move_start=event.position
+				move_dragged=false
 			elif look_touch<0:
 				look_touch=event.index
 				look_start=event.position
 				look_moved=false
 		else:
 			if event.index==move_touch:
+				var was_dragged:=move_dragged
 				move_touch=-1
+				move_dragged=false
 				motion=Vector2.ZERO
+				update_stick()
+				if not was_dragged:tap_target(event.position)
 			if event.index==look_touch:
 				look_touch=-1
 				if not look_moved:
 					tap_target(event.position)
 	elif event is InputEventScreenDrag:
-		if event.index==move_touch:motion=((event.position-move_start)/75.0).limit_length(1.0)
+		if event.index==move_touch:
+			var offset:Vector2=event.position-move_start
+			if offset.length()>8:move_dragged=true
+			motion=offset.limit_length(75.0)/75.0 if move_dragged else Vector2.ZERO
+			update_stick()
 		elif event.index==look_touch:
 			if event.position.distance_to(look_start)>6:look_moved=true
 			game.origin.rotation.y-=event.relative.x*.004
@@ -556,6 +566,9 @@ func pointed_item()->Dictionary:
 
 func use_target():
 	if get_tree().paused or action_busy() or coop_panel.visible or basket_panel.get_parent().visible or checkout_panel.get_parent().visible:return
+	if tapped_empty_lid():
+		toggle_case()
+		return
 	if coop_panel.connected:
 		if not tap_aim:sync_hands()
 		var target:=coop_interaction()
@@ -577,6 +590,7 @@ func use_target():
 		elif target.action=="select_cash":select_cash(target.node)
 		elif target.action=="case_scan" or target.action=="case_handoff" or (target.action=="case_lock" and target.target=="unlock"):
 			animate_coop_counter_action(target)
+		elif target.action=="surface_drop":drop_on_surface()
 		elif not target.action.is_empty():coop_panel.send(target.action,target.get("id",""),target.get("target",""))
 		return
 	clerk.shift.started=true
@@ -599,8 +613,10 @@ func use_target():
 		use_cash(cash)
 		return
 	if clerk.inspection.finger>=0:
-		if aimed(clerk.inspection.carried.global_position,.083)<INF:flip_item()
-		else:use_disc()
+		if near(clerk.repairs.station) and aimed(clerk.repairs.station,.23)<INF:use_disc()
+		elif aimed(clerk.inspection.carried.global_position,.083)<INF:flip_item()
+		elif clerk.inspection.opened and game.held and aimed(game.held.global_position,.14)<INF:use_disc()
+		elif not drop_on_surface():use_disc()
 		return
 	if clerk.inspection.opened and is_instance_valid(clerk.inspection.disc) and aimed(clerk.inspection.disc.global_position,.085)<INF:
 		use_disc()
@@ -612,8 +628,16 @@ func use_target():
 		elif tap_aim and aimed(game.held.global_position,.105)<INF:toggle_case()
 		elif tap_aim:
 			var destination:=case_drop_target()
-			if destination.is_finite():place_held_case(destination)
+			var record:Dictionary=clerk.held_service.get("record",{})
+			if destination.is_finite() and (clerk.in_sort_tray(destination) or (not record.is_empty() and destination.distance_to(record.world.origin)<.01)):
+				place_held_case(destination)
+			elif not drop_on_surface() and destination.is_finite():place_held_case(destination)
 		return
+	if tap_aim and drop_on_surface():return
+	for loose_disc in clerk.inspection.loose_discs:
+		if not clerk.wallet.occupied(CASH_HAND) and near(loose_disc.node.global_position,2.0) and aimed(loose_disc.node.global_position,.08)<INF:
+			clerk.inspection.take_loose_disc(loose_disc,CASH_HAND)
+			return
 	if is_instance_valid(game.candy.held_balls[0]):
 		game.candy.release_ball(0)
 		return
@@ -679,7 +703,7 @@ func refresh_supply_buttons():
 	var basket_count:int=clerk.basket.items.size()
 	var carrying:bool=basket_carried
 	if coop_panel.connected and is_instance_valid(coop_panel.mirror):
-		basket_count=coop_panel.mirror.state.get("cases",[]).filter(func(item):return item.in_basket).size()
+		basket_count=coop_panel.mirror.state.get("cases",[]).filter(func(item):return item.in_basket and item.get("basket_owner","host")=="guest").size()
 		carrying=coop_panel.basket_carried
 	basket_button.text=("Panier en main (%d)" if carrying else "Panier (%d)")%basket_count
 	basket_button.disabled=action_busy()
@@ -825,10 +849,12 @@ func coop_interaction()->Dictionary:
 		return coop_marked({"action":"disc_use","target":"repair","label":"Surfaceuse"},Transform3D(Basis.IDENTITY,clerk.repairs.station),Vector3(.20,.16,.20))
 	if not coop_panel.guest_disc.is_empty():
 		if clerk.repairs.is_sorting_surface(table_point(.93)):return {"action":"disc_use","target":"table","label":"Déposer le disque"}
-		if coop_panel.guest_open:return {"action":"disc_use","label":"Remettre le disque"}
+		if coop_panel.guest_open and (not tap_aim or aimed(coop_panel.guest_held_pose().origin,.17)<INF):return {"action":"disc_use","label":"Remettre le disque"}
+		if tap_aim and surface_drop_point().is_finite():return {"action":"surface_drop","label":"Déposer ici"}
 		return {"action":"disc_flip","label":"Retourner le disque"}
 	if holding:
 		if coop_panel.guest_open:
+			if tap_aim and aimed(coop_panel.guest_held_pose().origin,.17)==INF and surface_drop_point().is_finite():return {"action":"surface_drop","label":"Déposer ici"}
 			var case_node:Node3D=coop_panel.mirror.nodes.get("cases"+coop_panel.guest_case_id) if is_instance_valid(coop_panel.mirror) else null
 			if is_instance_valid(case_node):
 				var center:Vector3=case_node.to_global(Vector3(0,-.012,.004))
@@ -846,10 +872,11 @@ func coop_interaction()->Dictionary:
 		if coop_panel.guest_shelf.is_finite() and near(coop_panel.guest_shelf,1.45) and aimed(coop_panel.guest_shelf,.23)<INF:
 			var row:Array=coop_panel.mirror.state.get("stock",{}).get(coop_panel.guest_shelf_key,[])
 			if row.size()>=5:return coop_marked({"action":"case_rack","label":"Ranger en rayon"},row[4],Vector3(.15,.21,.033))
+		if tap_aim and aimed(coop_panel.guest_held_pose().origin,.13)==INF and surface_drop_point().is_finite():return {"action":"surface_drop","label":"Déposer ici"}
 		return {"action":"case_flip","label":"Retourner"}
 	if is_instance_valid(coop_panel.mirror):
 		for entry in coop_panel.mirror.state.get("discs",[]):
-			if clerk.repairs.is_sorting_surface(entry.transform.origin) and aimed(entry.transform.origin,.10)<INF:
+			if (entry.get("loose",false) or clerk.repairs.is_sorting_surface(entry.transform.origin)) and near(entry.transform.origin,2.0) and aimed(entry.transform.origin,.10)<INF:
 				return coop_marked({"action":"disc_use","target":entry.id,"label":"Prendre le disque"},entry.transform,Vector3(.13,.13,.015))
 	for target in clerk.targets:
 		if target.action in ["phone","door"] and aimed(target.node.global_position,target.radius)<INF:
@@ -859,6 +886,7 @@ func coop_interaction()->Dictionary:
 	if not chosen.is_empty():
 		chosen.label="Prendre"
 		return chosen
+	if tap_aim and (clerk.wallet.occupied(CASH_HAND) or basket_carried) and surface_drop_point().is_finite():return {"action":"surface_drop","label":"Déposer ici"}
 	return {"action":"","label":"Viser un objet"}
 
 func coop_cash_target()->Dictionary:
@@ -969,9 +997,6 @@ func toggle_case():
 	if not game.held:
 		game._message("Prends un boîtier.")
 		return
-	if clerk.inspection.finger>=0 and clerk.inspection.opened:
-		game._message("Remets le disque avant de fermer.")
-		return
 	clerk.inspection.toggle_case()
 	if clerk.inspection.opened:clerk.inspection.finish_lid(true)
 
@@ -997,6 +1022,8 @@ func use_disc():
 		if near(station) and aimed(station,.23)<INF:
 			inspection.carried.global_position=station
 			inspection.interact(inspection.finger,false)
+		elif clerk.repairs.is_sorting_surface(table_point(.93)):
+			clerk.repairs.place_disc(inspection,table_point(.93))
 		elif inspection.opened:
 			inspection.carried.global_position=inspection.interior.to_global(Vector3(0,-.012,.004))
 			inspection.interact(inspection.finger,false)
@@ -1395,11 +1422,11 @@ func take_payment():
 		if clerk.wallet.palms[CASH_HAND].size()==count:break
 	if clerk.wallet.palms[CASH_HAND].size()>start:animate_cash_pick(clerk.tender_note.global_position)
 
-func deposit_payment(all_tender:bool=false):
+func deposit_payment(all_tender:bool=false,all_cash:bool=false):
 	if coop_panel.connected:
 		if action_busy() or not coop_panel.checkout.get("drawer_open",false):return
-		var target:="tender"
-		if not all_tender and is_instance_valid(selected_cash):target=str(selected_cash.get_meta("remote_cash_id",""))
+		var target:="all" if all_cash else "tender"
+		if not all_cash and not all_tender and is_instance_valid(selected_cash):target=str(selected_cash.get_meta("remote_cash_id",""))
 		animate_coop_cash("cash_put",target,clerk.drawer.global_position+Vector3.UP*.12)
 		return
 	if action_busy() or not clerk.drawer_open:return
@@ -1408,7 +1435,7 @@ func deposit_payment(all_tender:bool=false):
 	var entries:Array=clerk.wallet.palms[CASH_HAND]
 	var pieces:Array[Node3D]=[]
 	for entry in entries:
-		if (is_instance_valid(selected_cash) and entry.node==selected_cash) or (not is_instance_valid(selected_cash) and entry.tender):
+		if all_cash or (is_instance_valid(selected_cash) and entry.node==selected_cash) or (not is_instance_valid(selected_cash) and entry.tender):
 			pieces.append(entry.node)
 	if pieces.is_empty():
 		game._message("Choisis une pièce ou un billet dans ta main gauche.")
@@ -1472,6 +1499,7 @@ func open_checkout():
 	var status_label:=Label.new()
 	status_label.text="Caisse  ·  Total %.2f $  ·  Donné %.2f $"%[clerk.price/100.0,clerk.tender/100.0]
 	checkout_panel.add_child(status_label)
+	add_cash_help(checkout_panel)
 	if clerk.tender_note.visible:
 		add_button(checkout_panel,"Prendre le paiement",take_payment)
 	if has_tender_in_hand():
@@ -1556,7 +1584,7 @@ func open_coop_basket():
 		)
 	if is_instance_valid(coop_panel.mirror):
 		for entry in coop_panel.mirror.state.get("cases",[]):
-			if not entry.in_basket or entry.held:continue
+			if not entry.in_basket or entry.held or entry.get("basket_owner","host")!="guest":continue
 			var id:String=entry.id
 			var button:=add_button(basket_panel,str(game.layout.movies[entry.movie].title),func():
 				coop_panel.send("case_pick",id)
@@ -1602,6 +1630,7 @@ func open_coop_checkout():
 	var heading:=Label.new()
 	heading.text="Caisse · Total %.2f $ · Donné %.2f $"%[int(coop_panel.checkout.get("price",0))/100.0,int(coop_panel.checkout.get("tender",0))/100.0]
 	checkout_panel.add_child(heading)
+	add_cash_help(checkout_panel)
 	add_button(checkout_panel,"Ouvrir le tiroir",func():coop_panel.send("drawer"))
 	if coop_panel.checkout.get("cash_visible",false):add_button(checkout_panel,"Prendre le paiement",take_payment)
 	if has_tender_in_hand():
@@ -1656,3 +1685,76 @@ func refresh_lobby():
 		add_button(lobby_panel,"Accuser réception",func():game.lobby.reply(true))
 		add_button(lobby_panel,"Refuser",func():game.lobby.reply(false))
 	add_button(lobby_panel,"Retour",func():lobby_panel.get_parent().hide();menu.get_parent().show())
+
+func tapped_empty_lid()->bool:
+	if not tap_aim:return false
+	var hinge:Node3D
+	if coop_panel.connected:
+		if not coop_panel.guest_open or not is_instance_valid(coop_panel.mirror):return false
+		var node:Node3D=coop_panel.mirror.nodes.get("cases"+coop_panel.guest_case_id)
+		if node:hinge=node.get_node_or_null("MirrorInterior/Hinge")
+	else:
+		if clerk.inspection.opened:hinge=clerk.inspection.lid
+	if not is_instance_valid(hinge):return false
+	var aim:Node3D=game.aim_hands[0]
+	var origin:Vector3=hinge.to_local(aim.global_position)
+	var direction:Vector3=hinge.global_basis.inverse()*(-aim.global_basis.z)
+	if absf(direction.z)<.001:return false
+	var distance:float=(.003-origin.z)/direction.z
+	var hit:Vector3=origin+direction*distance
+	return distance>=0 and distance<2 and hit.x>=0 and hit.x<=.135 and absf(hit.y)<=.105
+
+func add_cash_help(panel:Control):
+	var label:=Label.new()
+	label.text="Paiement → tiroir → choisir la monnaie → client.\nTouche une pièce en main pour la sélectionner, puis le tiroir pour la remettre.\nLe montant à rendre se calcule de tête."
+	label.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
+	label.custom_minimum_size.x=350
+	panel.add_child(label)
+	if clerk.wallet.occupied(CASH_HAND) and not has_tender_in_hand():
+		add_button(panel,"Remettre l’argent en main dans le tiroir",func():
+			panel.get_parent().hide()
+			if coop_panel.connected:animate_coop_cash("cash_put","open_all",clerk.drawer.global_position+Vector3.UP*.12)
+			else:
+				if not clerk.drawer_open:clerk.action("drawer",CASH_HAND)
+				deposit_payment(false,true)
+		)
+
+func surface_drop_point()->Vector3:
+	var aim:Node3D=game.aim_hands[0]
+	return load("res://club_surface_drop.gd").hit(game,aim.global_position,-aim.global_basis.z)
+
+func drop_on_surface()->bool:
+	if not tap_aim:return false
+	var point:=surface_drop_point()
+	if not point.is_finite():return false
+	if coop_panel.connected:
+		coop_panel.send("surface_drop",str(selected_cash.get_meta("remote_cash_id","")) if is_instance_valid(selected_cash) else "",JSON.stringify([point.x,point.y,point.z]))
+		return true
+	var dropper=load("res://club_surface_drop.gd")
+	if is_instance_valid(clerk.inspection.carried):dropper.drop_disc(clerk.inspection,point)
+	elif game.held:
+		if clerk.inspection.opened:clerk.inspection.close_case()
+		var item:Dictionary=clerk.adopt_held_case() if clerk.held_service.is_empty() else clerk.held_service
+		if item.is_empty():return false
+		dropper.release_body(item.node,clerk,point)
+		clerk.clear_hand()
+	elif clerk.wallet.occupied(CASH_HAND):
+		var entries:Array=clerk.wallet.palms[CASH_HAND]
+		if is_instance_valid(selected_cash):
+			var selected:Array=entries.filter(func(entry):return entry.node==selected_cash)
+			for entry in selected:entries.erase(entry)
+			dropper.drop_cash(clerk.wallet,selected,point)
+		else:dropper.drop_cash(clerk.wallet,entries,point)
+		selected_cash=null
+		clerk.wallet.arrange(CASH_HAND)
+	elif basket_carried:
+		toggle_basket_carry()
+		clerk.basket.body.global_position=point
+	elif is_instance_valid(game.candy.held_balls[0]):
+		var body:RigidBody3D=game.candy.held_balls[0]
+		game.candy.release_ball(0)
+		body.global_position=point
+		body.linear_velocity=Vector3.ZERO
+	else:return false
+	game._message("Objet déposé à l’endroit touché.")
+	return true

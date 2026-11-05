@@ -1,9 +1,9 @@
 extends Node
 const VERSION=2
-const CASE_META=["disc_movie","disc_uid","disc_mismatch_seen","dirty","inspected","antitheft","sort_slot","in_basket","in_sort_tray","barcode_scanned","needs_relock","return_account","return_cycle","return_checked","returned_damage"]
-const SHIFT_FIELDS=["day","duration","time_left","closing","summary","started","served","abandoned","lost_sales","missed_scans","revenue","refunds","returned","restocked","damaged","initial_cash","wave","break_left","report","business_balance"]
+const CASE_META=["basket_owner","disc_movie","disc_uid","disc_mismatch_seen","dirty","inspected","antitheft","sort_slot","in_basket","in_sort_tray","barcode_scanned","needs_relock","return_account","return_cycle","return_checked","returned_damage"]
+const SHIFT_FIELDS=["rush_model","day","duration","time_left","closing","summary","started","served","abandoned","lost_sales","missed_scans","revenue","refunds","returned","restocked","damaged","initial_cash","wave","break_left","report","business_balance"]
 const COUNTER_FIELDS=["price","tender","tender_parts","tender_received","tender_deposited","paid","change","drawer_open","page","rentals","elapsed","customer_delay","chute_serial","tasks","reminders"]
-const CLIENT_FIELDS=["id","state","cursor","wait","messy","movie","patience","patience_bonus","missing","handed","is_return","replace_title","replacement_movie","replacement_queue","family","companions","children_played","handoff_wait","return_and_rent","browse_index","price_titles","discount","cash_started","next_mess","mess_done","account_id","visit_balance","account_due","offer_ready","subtotal","gst","qst","billed_titles"]
+const CLIENT_FIELDS=["visit_mask","is_refund","refund_due","children_mess_count","children_mess_delay","id","state","cursor","wait","messy","movie","patience","patience_bonus","missing","handed","is_return","replace_title","replacement_movie","replacement_queue","family","companions","children_played","handoff_wait","return_and_rent","browse_index","price_titles","discount","cash_started","next_mess","mess_done","account_id","visit_balance","account_due","offer_ready","subtotal","gst","qst","billed_titles"]
 var game
 var save_path="user://club-save.dat"
 var autosave_clock=0.0
@@ -63,14 +63,14 @@ func _notification(what):
 func record_id(record:Dictionary)->int:return int(record.get("id",-1))
 func pack_job(job:Dictionary)->Dictionary:
 	if job.is_empty():return {}
-	return {"movie":job.movie,"time":job.get("time",0.0),"record":record_id(job.record),"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0))}
+	return {"movie":job.movie,"time":job.get("time",0.0),"record":record_id(job.record),"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0)),"locked":bool(job.get("locked",false))}
 func unpack_job(job:Dictionary)->Dictionary:
 	if job.is_empty():return {}
-	return {"movie":job.movie,"time":job.time,"record":game.dvd_records[job.record],"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0))}
+	return {"movie":job.movie,"time":job.time,"record":game.dvd_records[job.record],"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0)),"locked":bool(job.get("locked",false))}
 
 func pack_case(item:Dictionary,node:Node3D)->Dictionary:
 	var result={"movie":item.movie,"kind":item.kind,"scanned":item.get("scanned",false),"task":item.get("task",""),"record":record_id(item.get("record",{})),"transform":node.global_transform,"meta":{}}
-	for key in CASE_META:result.meta[key]=node.get_meta(key,false if key in ["disc_mismatch_seen","dirty","inspected","antitheft","in_basket","in_sort_tray","barcode_scanned","needs_relock","return_checked","returned_damage"] else -1)
+	for key in CASE_META:result.meta[key]=node.get_meta(key,"host" if key=="basket_owner" else false if key in ["disc_mismatch_seen","dirty","inspected","antitheft","in_basket","in_sort_tray","barcode_scanned","needs_relock","return_checked","returned_damage"] else -1)
 	if node==game.held or (not game.clerk.secondary.is_empty() and node==game.clerk.secondary.node):
 		result.transform=Transform3D(Basis(Vector3.RIGHT,-PI/2),Vector3(1.45,1.16+.022*(game.clerk.cases.find(item)+1),-6.53))
 	return result
@@ -81,6 +81,8 @@ func snapshot()->Dictionary:
 	state.accounts=c.accounts.snapshot()
 	state.loose_locks=c.locks.snapshot()
 	state.queue_gap=maxf(0,c.customers.queue_gate-c.customers.clock)
+	if is_instance_valid(c.lan.guest_basket_node):
+		state.guest_basket_transform=Transform3D(Basis.IDENTITY,c.lan.guest_basket_node.home) if c.lan.guest_basket else c.lan.guest_basket_node.body.global_transform
 	state.basket_transform=c.basket.body.global_transform if c.basket.hand<0 else Transform3D(Basis.IDENTITY,c.basket.home)
 	if game.touch_profile and game.touch_controls and game.touch_controls.basket_carried:
 		state.basket_transform=game.touch_controls.basket_resting_pose
@@ -113,7 +115,7 @@ func snapshot()->Dictionary:
 	for key in SHIFT_FIELDS:state.shift[key]=c.shift.get(key)
 	for key in COUNTER_FIELDS:state.counter[key]=c.get(key)
 	for loose in c.inspection.loose_discs:
-		state.loose_discs.append({"data":loose.data.duplicate(),"transform":loose.node.global_transform})
+		state.loose_discs.append({"data":loose.data.duplicate(),"transform":loose.node.global_transform,"physical":is_instance_valid(loose.get("body"))})
 	var guest=c.lan.guest_inspection
 	if is_instance_valid(guest) and is_instance_valid(guest.carried):
 		state.loose_discs.append({"data":guest.carried_data.duplicate(),"transform":Transform3D(Basis(Vector3.RIGHT,-PI/2),Vector3(1.65,.916,-8.7))})
@@ -265,6 +267,9 @@ func restore(s:Dictionary)->bool:
 			item.node.collision_mask=0
 	c.basket.body.global_transform=s.get("basket_transform",Transform3D(Basis.IDENTITY,c.basket.home))
 	c.basket.restore_items()
+	if s.has("guest_basket_transform"):
+		c.lan.personal_basket().restore_items()
+		c.lan.personal_basket().body.global_transform=s.guest_basket_transform
 	for saved in s.clients:
 		var node=load("res://clerk_props.gd").customer(c.customers,int(saved.id)%6)
 		node.position=saved.position
@@ -292,11 +297,38 @@ func restore(s:Dictionary)->bool:
 	for job in s.returns:c.returns_due.append(unpack_job(job))
 	for key in SHIFT_FIELDS:
 		if s.shift.has(key):c.shift.set(key,s.shift[key])
-	var elapsed:=maxf(0.0,float(c.shift.duration)-float(c.shift.time_left))
-	c.shift.duration=c.shift.OPEN_SECONDS
-	c.shift.time_left=0.0 if c.shift.closing else maxf(0.0,c.shift.duration-elapsed)
+	if not s.shift.has("rush_model"):
+		c.shift.wave=1
+		c.shift.duration=c.shift.OPEN_SECONDS
+		c.shift.time_left=c.shift.OPEN_SECONDS
+		c.shift.break_left=0
+		c.shift.closing=false
 	for key in COUNTER_FIELDS:c.set(key,s.counter[key])
 	c.till=s.till.duplicate()
+	if not s.shift.has("rush_model"):
+		for item in c.cases:
+			if item.kind=="return":
+				item.scanned=true
+				c.accounts.scan_return(item.node)
+		for customer in c.customers.customers:
+			if not customer.get("is_return",false):continue
+			for item in customer.get("items",[]):
+				item.node.reparent(c)
+				item.node.global_position=c.return_bin+Vector3(0,.15,0)
+				item.node.freeze=false
+				item.node.collision_layer=8
+				item.node.collision_mask=1|8
+			c.waiting.erase(customer)
+			if c.active==customer:
+				c.active={}
+				c.price=0
+				c.tender=0
+				c.tender_parts=[]
+				c.tender_received=false
+				c.paid=false
+			customer.is_return=false
+			if customer.get("return_and_rent",false):c.customers.begin_browse(customer)
+			else:c.customers.dismiss(customer)
 	if not c.active.is_empty() and not c.active.has("cash_started"):
 		c.active.cash_started=c.tender_deposited>0 or c.paid or c.tender_parts.reduce(func(sum,value):return sum+value,0)<c.tender
 	c.customers.spawn_timer=s.spawn_timer
@@ -307,7 +339,9 @@ func restore(s:Dictionary)->bool:
 		var disc=c.inspection.create_disc(entry.data.movie,entry.data.dirty)
 		c.inspection.add_child(disc)
 		disc.global_transform=entry.transform
-		c.inspection.loose_discs.append({"node":disc,"data":entry.data.duplicate()})
+		var loose:Dictionary={"node":disc,"data":entry.data.duplicate()}
+		if entry.get("physical",false):loose.body=load("res://club_surface_drop.gd").disc_body(c.inspection,disc,entry.transform.origin)
+		c.inspection.loose_discs.append(loose)
 	if not s.repair.is_empty():
 		c.repairs.data=s.repair.data.duplicate()
 		c.repairs.remaining=s.repair.remaining

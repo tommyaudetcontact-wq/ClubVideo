@@ -3,6 +3,7 @@ const Props=preload("res://clerk_props.gd")
 var clerk
 var game
 var body:RigidBody3D
+var owner_key="host"
 var hand=-1
 var items:Array=[]
 var targeted:Array[Dictionary]=[{},{}]
@@ -51,6 +52,7 @@ func store(item:Dictionary)->bool:
 		return true
 	if not items.has(item):items.append(item)
 	item.node.set_meta("in_basket",true)
+	item.node.set_meta("basket_owner",owner_key)
 	item.node.set_meta("sort_slot",-1)
 	item.node.freeze=true
 	item.node.collision_layer=0
@@ -141,7 +143,7 @@ func release(h:int):
 func restore_items():
 	items.clear()
 	for item in clerk.cases:
-		if item.node.get_meta("in_basket",false):
+		if item.node.get_meta("in_basket",false) and item.node.get_meta("basket_owner","host")==owner_key:
 			items.append(item)
 			item.node.freeze=true
 			item.node.collision_layer=0

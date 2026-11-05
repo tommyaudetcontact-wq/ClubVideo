@@ -65,7 +65,7 @@ func _initialize():
 	coop.selected_case=str(item.node.get_instance_id())
 	coop.send("case_basket")
 	await create_timer(.65).timeout
-	assert(item in host.clerk.basket.items and coop.mirror.state.cases[0].in_basket)
+	assert(item in host.clerk.lan.personal_basket().items and coop.mirror.state.cases[0].in_basket)
 	guest.head.global_position=host.clerk.tender_note.global_position+Vector3(0,.3,.3)
 	guest.touch_controls.take_payment()
 	await create_timer(.6).timeout
@@ -87,7 +87,7 @@ func _initialize():
 	guest.touch_controls.deposit_payment()
 	await create_timer(.8).timeout
 	assert(host.clerk.till[25]==before and guest.clerk.wallet.total(0)==0)
-	guest.head.global_position=host.clerk.basket.body.global_position+Vector3(0,.4,.4)
+	guest.head.global_position=host.clerk.lan.personal_basket().body.global_position+Vector3(0,.4,.4)
 	coop.send("basket_carry")
 	await create_timer(.3).timeout
 	assert(coop.basket_carried and host.clerk.lan.guest_basket)
@@ -97,7 +97,14 @@ func _initialize():
 	coop.send("case_pick",str(item.node.get_instance_id()))
 	await create_timer(.65).timeout
 	assert(coop.guest_case_id==str(item.node.get_instance_id()) and item.node.get_meta("guest_held",false))
-	assert(not item in host.clerk.basket.items)
+	assert(not item in host.clerk.lan.personal_basket().items)
+	var release_point:=Vector3(-1.4,1.25,-5.95)
+	coop.send("surface_drop","",JSON.stringify([release_point.x,release_point.y,release_point.z]))
+	await create_timer(.35).timeout
+	assert(coop.guest_case_id.is_empty() and not item.node.freeze and not item.node.get_meta("guest_held",false))
+	coop.send("case_pick",str(item.node.get_instance_id()))
+	await create_timer(.4).timeout
+	assert(coop.guest_case_id==str(item.node.get_instance_id()))
 	host.clerk.pick_case(item,0,false)
 	assert(host.held!=item.node)
 	coop.send("case_flip")
@@ -105,7 +112,7 @@ func _initialize():
 	assert(coop.guest_flipped)
 	coop.send("held_basket")
 	await create_timer(.65).timeout
-	assert(coop.guest_case_id.is_empty() and item in host.clerk.basket.items)
+	assert(coop.guest_case_id.is_empty() and item in host.clerk.lan.personal_basket().items)
 	var stock:Dictionary=host.dvd_records.filter(func(record):return not record.get("clerk_reserved",false))[0]
 	guest.head.global_position=stock.world.origin+Vector3(0,0,.5)
 	var world=load("res://club_world_sync.gd")
@@ -145,12 +152,34 @@ func _initialize():
 	var interior:Node3D=visual.get_node("MirrorInterior")
 	assert(interior.visible and not visual.get_node("MoldedPlasticOnly").visible)
 	assert(interior.get_node("Hinge").rotation.y < -.5)
+	item.node.set_meta("dirty",true)
 	guest.touch_controls.use_disc()
 	await create_timer(.55).timeout
 	assert(not coop.guest_disc.is_empty() and item.node.get_meta("disc_movie")==-1)
 	coop.send("disc_flip")
 	await create_timer(.55).timeout
 	assert(coop.guest_disc_back)
+	var disc_point:Vector3=guest.head.global_position+Vector3(0,-.4,-.3)
+	coop.send("surface_drop","",JSON.stringify([disc_point.x,disc_point.y,disc_point.z]))
+	await create_timer(.35).timeout
+	assert(coop.guest_disc.is_empty() and host.clerk.inspection.loose_discs.size()==1)
+	var dropped_disc:Dictionary=host.clerk.inspection.loose_discs[0]
+	assert(is_instance_valid(dropped_disc.body))
+	coop.send("disc_use","",str(dropped_disc.node.get_instance_id()))
+	await create_timer(.35).timeout
+	assert(not coop.guest_disc.is_empty() and host.clerk.inspection.loose_discs.is_empty())
+	guest.head.global_position=host.clerk.repairs.station+Vector3(0,.3,.35)
+	coop.send("disc_use","","repair")
+	await create_timer(.45).timeout
+	assert(is_instance_valid(host.clerk.repairs.disc) and host.clerk.repairs.data.dirty and coop.guest_disc.is_empty())
+	host.clerk.repairs.remaining=.05
+	await create_timer(.45).timeout
+	assert(host.clerk.repairs.remaining==0 and not host.clerk.repairs.data.dirty)
+	assert(not coop.mirror.state.repair.remaining>0)
+	coop.send("disc_use","","repair")
+	await create_timer(.45).timeout
+	assert(not coop.guest_disc.is_empty() and not host.clerk.lan.guest_inspection.carried_data.dirty)
+	guest.head.global_position=Vector3(.72,1.45,-6.15)
 	guest.touch_controls.use_disc()
 	await create_timer(.55).timeout
 	assert(coop.guest_disc.is_empty() and item.node.get_meta("inspected",false))
@@ -187,6 +216,27 @@ func _initialize():
 	coop.send("drawer_toggle")
 	await create_timer(.8).timeout
 	assert(not host.clerk.drawer_open and not coop.checkout.drawer_open)
+	# The same guest wallet pays complaint refunds, without requiring a rental scan.
+	host.clerk.customer_delay=0
+	host.clerk.customers.spawn_customer()
+	var complainant:Dictionary=host.clerk.customers.customers[-1]
+	complainant.is_refund=true
+	complainant.refund_due=25
+	complainant.visit_mask=5
+	complainant.return_and_rent=false
+	host.clerk.customer_ready(complainant)
+	var refunds_before:int=host.clerk.shift.refunds
+	guest.head.global_position=host.clerk.drawer.global_position+Vector3(0,.3,.3)
+	coop.send("drawer")
+	await create_timer(.35).timeout
+	coop.send("cash_take","","25")
+	await create_timer(.4).timeout
+	assert(guest.clerk.wallet.total(0)==25)
+	guest.head.global_position=host.clerk.customer_hand()+Vector3(0,.25,.3)
+	guest.touch_controls.give_change()
+	await create_timer(.85).timeout
+	assert(host.clerk.active.is_empty() and host.clerk.shift.refunds==refunds_before+25)
+	assert(guest.clerk.wallet.total(0)==0)
 	# A snapshot changes the destination, while rendered customers move between snapshots.
 	var npc_visual:Node3D=coop.mirror.nodes.get("clients"+str(shopper.id))
 	assert(is_instance_valid(npc_visual))
@@ -197,6 +247,7 @@ func _initialize():
 	coop.mirror._process(.02)
 	assert(npc_visual.global_position.x>start.x and npc_visual.global_position.x<shopper.node.global_position.x)
 	# A disconnect returns reserved drawer money exactly once.
+	guest.head.global_position=host.clerk.drawer.global_position+Vector3(0,.35,.3)
 	coop.send("drawer")
 	await create_timer(.25).timeout
 	var cash_before:int=host.clerk.till[25]
@@ -214,5 +265,5 @@ func _initialize():
 	var compressed_delta:String=world.capture(host,false)
 	assert(compressed_delta.length()<compressed_full.length()/2)
 	print("WORLD_PAYLOAD full=",compressed_full.length()," delta=",compressed_delta.length())
-	print("COOP_FULL_SIMULATION_OK: early cash, no-code grant, mirrored inventory and day, shared basket, shared cash, local restore")
+	print("COOP_FULL_MOBILE_OK: early cash, no-code grant, mirrored inventory and day, personal baskets, repaired guest disc, shared cash, local restore")
 	quit()

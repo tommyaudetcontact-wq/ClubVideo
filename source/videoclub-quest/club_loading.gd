@@ -3,6 +3,9 @@ extends Node3D
 const GAME := "res://main.tscn"
 const ART := ["res://assets/loading/checkout.png", "res://assets/loading/games.png"]
 const TIPS := [
+	"Les clients sont patients sans limite. Profite des temps morts entre les rushs pour traiter les retours.",
+	"Sur mobile, glisse le pouce dans la partie gauche : le joystick apparaît sous ton doigt.",
+	"Les retours arrivent dans la chute. À toi de décider quand vérifier et réparer les disques.",
 	"Scanne le dos du boîtier, puis retire la barre jaune avant de le remettre au client.",
 	"Vérifie l’état du disque. Si le client revient demander un remboursement, il sera compté dans tes pertes.",
 	"Après un retour, remets une barre jaune avant de replacer le boîtier en rayon.",

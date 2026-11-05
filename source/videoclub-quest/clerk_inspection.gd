@@ -163,7 +163,7 @@ func finger_transform(hand:int)->Transform3D:
 func try_take_open_disc(hand:int)->bool:
 	if hand==game.held_hand or hand==game.clerk.secondary_hand or hand==game.clerk.basket.hand or finger>=0:return false
 	if not opened or opening_amount<.30 or not is_instance_valid(disc) or not disc.visible:return false
-	if finger_transform(hand).origin.distance_to(disc.global_position)>.16:return false
+	if minf(finger_transform(hand).origin.distance_to(disc.global_position),game.hands[hand].global_position.distance_to(disc.global_position))>.18:return false
 	if lid_hand>=0:finish_lid(true)
 	take_open_disc(hand)
 	return true
@@ -219,6 +219,9 @@ func put_carried_in_case()->bool:
 
 func take_loose_disc(item:Dictionary,hand:int):
 	carried=item.node
+	if is_instance_valid(item.get("body")):
+		carried.reparent(self)
+		item.body.queue_free()
 	carried_data=item.data
 	loose_discs.erase(item)
 	finger=hand
@@ -253,6 +256,7 @@ func _physics_process(dt):
 			clean_progress=0.0
 	last_clean_position=carried.global_position
 func close_case():
+	if lid_tween and lid_tween.is_valid():lid_tween.kill()
 	if lid_tween and lid_tween.is_valid():lid_tween.kill()
 	for part in hidden_parts:
 		if is_instance_valid(part):part.visible=true

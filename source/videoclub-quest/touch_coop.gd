@@ -400,6 +400,7 @@ func refresh():
 	info.text="●  Vidéo Club Messenger · Wi-Fi"
 	if connected and is_instance_valid(mirror):
 		var shift:Dictionary=mirror.state.get("shift",{})
-		var seconds:=int(shift.get("time_left",0))
+		var rest:float=float(shift.get("break_left",0))
+		var seconds:=int(rest if rest>0 else shift.get("time_left",0))
 		info.text+="
-Jour %d · %d:%02d"%[int(shift.get("day",1)),seconds/60,seconds%60]
+Rush %d · %s · %d:%02d"%[int(shift.get("wave",1)),"Pause" if rest>0 else "Arrivées",seconds/60,seconds%60]

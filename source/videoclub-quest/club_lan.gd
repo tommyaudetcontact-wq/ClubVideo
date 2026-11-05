@@ -20,6 +20,16 @@ var guest_inspection:Node3D
 var guest_disc_back:=false
 var guest_cash:Array=[]
 var guest_basket:=false
+var guest_basket_node
+func personal_basket():
+	if not is_instance_valid(guest_basket_node):
+		guest_basket_node=load("res://clerk_basket.gd").new()
+		guest_basket_node.owner_key="guest"
+		guest_basket_node.home=Vector3(-.95,1.17,-5.95)
+		add_child(guest_basket_node)
+		guest_basket_node.setup(clerk)
+	return guest_basket_node
+
 var guest_spare:=false
 var stock_sent_at:=0
 const PeerPose=preload("res://club_peer_pose.gd")
@@ -135,6 +145,8 @@ func handle_request(request:Variant):
 	match action:
 		"case_pick","shelf_pick":
 			receipt=pick_guest_case(action,str(request.get("case","")))
+		"surface_drop":
+			receipt=drop_guest_on_surface(request)
 		"case_drop":
 			drop_guest_case()
 		"held_basket":
@@ -258,12 +270,12 @@ func assist_case(action:String,id:String)->String:
 			return "Ce boîtier est déjà manipulé par l’hôte."
 		if node.global_position.distance_to(guest)>2.0:return "Approche-toi du boîtier."
 		if action=="case_basket":
-			var basket:RigidBody3D=clerk.basket.body
-			if item in clerk.basket.items:return "Ce boîtier est déjà dans le panier."
+			var basket:RigidBody3D=personal_basket().body
+			if item in personal_basket().items:return "Ce boîtier est déjà dans le panier."
 			if basket.global_position.distance_to(guest)>2.0:return "Approche-toi du panier."
-			if clerk.basket.items.size()>=clerk.basket.CAPACITY:return "Le panier est plein."
+			if personal_basket().items.size()>=personal_basket().CAPACITY:return "Le panier est plein."
 			node.global_position=basket.to_global(Vector3(0,.16,0))
-			if clerk.basket.store(item):
+			if personal_basket().store(item):
 				clerk.refresh_terminal()
 				return "Boîtier ajouté au panier."
 		else:
@@ -271,11 +283,10 @@ func assist_case(action:String,id:String)->String:
 			if record.is_empty() or item.kind not in ["return","shelve","sorting"]:return "Ce boîtier n’est pas à ranger."
 			if record.world.origin.distance_to(guest)>1.7:return "Approche-toi de son emplacement en rayon."
 			if clerk.active.get("is_return",false) and item in clerk.active.items:return "Termine le retour au comptoir."
-			if node.get_meta("disc_movie",-1)!=item.movie or node.get_meta("dirty",false):return "Le disque doit être vérifié ou réparé."
 			if not node.get_meta("antitheft",false):return "Pose l’antivol avant le rangement."
-			if item.kind=="return" and not item.scanned:return "Scanne le retour avant de le ranger."
-			clerk.basket.items.erase(item)
-			clerk.basket.arrange()
+			personal_basket().items.erase(item)
+			personal_basket().arrange()
+			record.dirty=node.get_meta("dirty",false)
 			clerk.restore_stock(record)
 			if item.kind=="return":clerk.shift.restocked+=1
 			clerk.tasks.erase(item.get("task",""))
@@ -318,7 +329,8 @@ func pick_guest_case(action:String,id:String)->String:
 	if guest_case.is_empty():return "Ce boîtier est déjà pris ou indisponible."
 	var node:RigidBody3D=guest_case.node
 	clerk.basket.items.erase(guest_case)
-	clerk.basket.arrange()
+	personal_basket().items.erase(guest_case)
+	personal_basket().arrange()
 	if node.get_parent()!=clerk:node.reparent(clerk)
 	for key in ["in_basket","in_sort_tray"]:node.set_meta(key,false)
 	node.set_meta("sort_slot",-1)
@@ -339,7 +351,7 @@ func update_guest_case_pose():
 	if not is_instance_valid(remote_avatar) or not remote_avatar.valid_pose:return
 	var head_pose:Transform3D=remote_avatar.targets[0]
 	if guest_basket:
-		var basket:RigidBody3D=clerk.basket.body
+		var basket:RigidBody3D=personal_basket().body
 		basket.global_transform=head_pose*Transform3D(Basis(Vector3.UP,.10),Vector3(-.35,-.43,-.77))
 	for index in range(guest_cash.size()):
 		if remote_avatar.tracked_hands:
@@ -379,12 +391,12 @@ func drop_guest_case():
 
 func store_guest_case()->String:
 	if guest_case.is_empty() or guest_inspection.opened:return ""
-	var basket:RigidBody3D=clerk.basket.body
+	var basket:RigidBody3D=personal_basket().body
 	if basket.global_position.distance_to(remote_avatar.targets[0].origin)>2.0:return "Approche-toi du panier."
-	if clerk.basket.items.size()>=clerk.basket.CAPACITY:return "Le panier est plein."
+	if personal_basket().items.size()>=personal_basket().CAPACITY:return "Le panier est plein."
 	var item:=guest_case
 	item.node.global_position=basket.to_global(Vector3(0,.16,0))
-	if not clerk.basket.store(item):return "Approche le boîtier du panier."
+	if not personal_basket().store(item):return "Approche le boîtier du panier."
 	item.node.remove_meta("guest_held")
 	guest_case={}
 	guest_flipped=false
@@ -423,7 +435,6 @@ func guest_action(action:String,request:Dictionary)->String:
 	var node:Node3D=guest_case.node
 	if action=="case_open":
 		if guest_inspection.opened:
-			if is_instance_valid(guest_inspection.carried):return "Remets le disque ou pose-le avant de fermer."
 			guest_inspection.close_case()
 		elif node.get_meta("antitheft",false):
 			return "Retire d’abord l’antivol."
@@ -484,12 +495,15 @@ func use_guest_disc(p:Vector3,target:String)->String:
 			if is_instance_valid(repairs.disc):return "La surfaceuse est occupée."
 			guest_inspection.carried.global_position=repairs.station
 			repairs.insert_disc(guest_inspection)
-		else:repairs.take_disc(guest_inspection,0,repairs.station)
+		else:
+			if repairs.remaining>0:return "Réparation en cours : %d s."%ceili(repairs.remaining)
+			repairs.take_disc(guest_inspection,0,repairs.station)
 	elif is_instance_valid(guest_inspection.carried):
 		if target=="table" and p.distance_to(Vector3(2.1,.93,-8.7))<1.9:
 			repairs.place_disc(guest_inspection,Vector3(clampf(p.x,1.25,3.0),.93,-8.7))
 		elif target.is_empty() and not guest_inspection.put_carried_in_case():return "Ouvre un boîtier vide pour y remettre le disque."
 	elif target.is_empty():
+		if not guest_cash.is_empty():return "Dépose d’abord l’argent pour libérer ta main gauche."
 		guest_inspection.take_open_disc(0)
 	else:
 		for loose in clerk.inspection.loose_discs:
@@ -534,9 +548,9 @@ func guest_money(action:String,request:Dictionary)->String:
 			entry.body.queue_free()
 			break
 	elif action=="cash_put":
-		if id=="open_tender" and p.distance_to(clerk.drawer.global_position)<=1.8:
+		if id in ["open_tender","open_all"] and p.distance_to(clerk.drawer.global_position)<=1.8:
 			clerk.set_drawer_open(true)
-			id="tender"
+			id="all" if id=="open_all" else "tender"
 		if not clerk.drawer_open or p.distance_to(clerk.drawer.global_position)>1.8:return "Approche-toi du tiroir ouvert."
 		for entry in guest_cash.duplicate():
 			if id!="all" and id!=str(entry.node.get_instance_id()) and not (id=="tender" and entry.tender):continue
@@ -568,9 +582,9 @@ func toggle_guest_basket()->String:
 		release_guest_basket()
 		return "Panier posé."
 	if not is_instance_valid(remote_avatar) or not remote_avatar.valid_pose:return ""
-	var basket:RigidBody3D=clerk.basket.body
+	var basket:RigidBody3D=personal_basket().body
 	var touch=clerk.game.touch_controls
-	if clerk.basket.hand>=0 or (touch and touch.basket_carried):return "Le panier est déjà pris."
+	if personal_basket().hand>=0:return "Le panier est déjà pris."
 	if basket.global_position.distance_to(remote_avatar.targets[0].origin)>2.0:return "Approche-toi du panier."
 	guest_basket=true
 	basket.set_meta("guest_held",true)
@@ -582,7 +596,7 @@ func toggle_guest_basket()->String:
 
 func release_guest_basket():
 	guest_basket=false
-	var basket:RigidBody3D=clerk.basket.body
+	var basket:RigidBody3D=personal_basket().body
 	basket.remove_meta("guest_held")
 	basket.collision_layer=8
 	basket.collision_mask=1|8
@@ -602,3 +616,34 @@ func take_guest_spare()->String:
 		guest_spare=true
 		return "Barre jaune en main."
 	return "Aucune barre jaune disponible."
+
+func drop_guest_on_surface(request:Dictionary)->String:
+	if not is_instance_valid(remote_avatar) or not remote_avatar.valid_pose:return ""
+	var coordinates:Variant=JSON.parse_string(str(request.get("target","")))
+	if not coordinates is Array or coordinates.size()!=3:return ""
+	for value in coordinates:
+		if not (value is int or value is float) or not is_finite(float(value)):return ""
+	var point:=Vector3(coordinates[0],coordinates[1],coordinates[2])
+	if point.distance_to(remote_avatar.targets[0].origin)>3.3 or absf(point.x)>20 or absf(point.z)>30 or point.y<-.1 or point.y>8:return "Approche-toi de la surface."
+	var dropper=load("res://club_surface_drop.gd")
+	if is_instance_valid(guest_inspection) and is_instance_valid(guest_inspection.carried):
+		dropper.drop_disc(guest_inspection,point)
+	elif not guest_case.is_empty():
+		if guest_inspection.opened:guest_inspection.close_case()
+		var node:RigidBody3D=guest_case.node
+		node.remove_meta("guest_held")
+		dropper.release_body(node,clerk,point)
+		guest_case={}
+		guest_flipped=false
+	elif not guest_cash.is_empty():
+		var selected:=str(request.get("case",""))
+		if not selected.is_empty():
+			var pieces:Array=guest_cash.filter(func(entry):return str(entry.node.get_instance_id())==selected)
+			for entry in pieces:guest_cash.erase(entry)
+			dropper.drop_cash(clerk.wallet,pieces,point)
+		else:dropper.drop_cash(clerk.wallet,guest_cash,point)
+	elif guest_basket:
+		release_guest_basket()
+		personal_basket().body.global_position=point
+	else:return "Prends un objet à déposer."
+	return "Objet déposé à l’endroit touché."

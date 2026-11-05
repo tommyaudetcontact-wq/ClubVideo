@@ -392,8 +392,11 @@ func start_next():
 	active.offer_ready=false
 	if not active.has("account_id"):active.account_id=accounts.create_account()
 	if not active.has("visit_balance"):active.visit_balance=int(accounts.ensure(active.account_id).balance)
-	active.account_due=0 if active.get("is_return",false) else int(active.visit_balance)
-	if active.get("is_return",false):
+	active.account_due=0 if active.get("is_return",false) or active.get("is_refund",false) else int(active.visit_balance)
+	if active.get("is_refund",false):
+		price=0
+		page=2
+	elif active.get("is_return",false):
 		active.items=[active.return_item]
 		price=0
 		page=2
@@ -403,7 +406,7 @@ func start_next():
 	price=int(active.account_due)
 	tender_parts=[]
 	tender=0
-	tender_received=active.get("is_return",false)
+	tender_received=active.get("is_return",false) or active.get("is_refund",false)
 	paid=active.get("is_return",false)
 	offer_rental_payment()
 	refresh_tender_visual()
@@ -463,9 +466,10 @@ func terminal_content(tab:int)->String:
 	elif tab==0 or (tab==2 and not active.is_empty() and active.get("is_return",false)):
 		if active.is_empty():title+="Aucun client à la caisse.\nLocations terminées : %d\n"%rentals
 		else:
-			title="CLIENT %03d · %s\n"%[int(active.get("account_id",active.id+1)),"RETOUR" if active.get("is_return",false) else "LOCATION"]
+			title="CLIENT %03d · %s\n"%[int(active.get("account_id",active.id+1)),"REMBOURSEMENT" if active.get("is_refund",false) else "RETOUR" if active.get("is_return",false) else "LOCATION"]
 			title+="TOTAL %.2f $ · DONNÉ %.2f $\n"%[price/100.0,tender/100.0]
-			if not active.get("is_return",false):
+			if active.get("is_refund",false):title+="Réclamation : %.2f $\nChoisis et remets les pièces et billets au client.\n"%(int(active.get("refund_due",0))/100.0)
+			if not active.get("is_return",false) and not active.get("is_refund",false):
 				title+="HT %.2f · TPS %.2f · TVQ %.2f\n"%[active.get("subtotal",0)/100.0,active.get("gst",0)/100.0,active.get("qst",0)/100.0]
 				if int(active.get("account_due",0))>0:title+="ANCIEN SOLDE : %.2f $\n"%(active.account_due/100.0)
 			for item in active.items:
@@ -474,16 +478,16 @@ func terminal_content(tab:int)->String:
 				title+="REMPLACER : %s\n"%str(game.layout.movies[missing].title).left(24)
 			if int(active.get("discount",0))>0:title+="FORFAIT 3 CLASSIQUES : 5.00 $\n"
 			title+="Antivols : %s\nPaiement : %s\n"%["RETIRÉS" if unlocked else "À RETIRER","REÇU" if paid else "À ENCAISSER"]
-			title+="Patience : %d s\n"%maxi(0,120+int(active.get("patience_bonus",0))-int(active.get("patience",0)))
+			title+="Attente sans limite\n"
 			if not active.missing.is_empty():title+="Vérifie un autre exemplaire."
 			elif active.get("is_return",false):title+="Utilise le bouton Terminer le retour."
 			else:title+="Utilise le bouton Ouvrir le tiroir."
 
 	elif tab==1:
 		title+="TÂCHES DU QUART\n"+"\n".join(tasks)
-		title+="\nRetours : inspecter, réparer, scanner, ranger."
+		title+="\nRetours : choisis quand vérifier, réparer et ranger."
 	else:
-		title+="RETOURS\n1. Inspecter les deux faces.\n2. Scanner : frais de rayures au dossier.\n3. Bac À RÉPARER et surfaceuse 30 s.\n4. Remettre la barre jaune.\n5. Ranger au repère vert."
+		title+="RETOURS\nLes films arrivent dans la chute.\nAucuns frais pour les rayures.\nVérification et surfaceuse au choix.\nRemets l’antivol avant le rangement."
 	return title
 func interact(hand:int,grip:bool)->bool:
 	if shift:shift.started=true
@@ -573,6 +577,8 @@ func interact(hand:int,grip:bool)->bool:
 func pick_case(c:Dictionary,hand:int,grip:bool):
 	if c.node.get_meta("guest_held",false):return
 	if locks:locks.update_slot(c.get("record",{}))
+	basket.items.erase(c)
+	if lan and is_instance_valid(lan.guest_basket_node):lan.guest_basket_node.items.erase(c)
 	c.node.set_meta("sort_slot",-1)
 	c.node.set_meta("in_basket",false)
 	c.node.set_meta("in_sort_tray",false)
@@ -680,10 +686,9 @@ func handoff_item(item:Dictionary)->bool:
 	else:
 		shift.missed_scans+=1
 		shift.lost_sales+=Pricing.unit(game.layout.movies[id])
-	var unchecked:bool=not node.get_meta("inspected",false)
 	var locked:bool=node.get_meta("antitheft",false)
 	var defective:bool=node.get_meta("dirty",false) or node.get_meta("disc_movie",-1)!=id
-	var refund:int=Pricing.unit(game.layout.movies[id]) if was_scanned and (unchecked or locked or defective) else 0
+	var refund:int=Pricing.unit(game.layout.movies[id]) if was_scanned and (locked or defective) else 0
 	active.items.erase(item)
 	cases.erase(item)
 	node.queue_free()
@@ -691,7 +696,7 @@ func handoff_item(item:Dictionary)->bool:
 	active.handed+=1
 	var account=int(active.get("account_id",active.id))
 	var cycle=accounts.rental(account,id,record.id)
-	returns_due.append({"movie":id,"time":elapsed+60,"record":record,"account_id":account,"rental_id":cycle,"refund":refund})
+	returns_due.append({"movie":id,"time":elapsed+60,"record":record,"account_id":account,"rental_id":cycle,"refund":refund,"locked":locked})
 	if not active.items.is_empty():
 		refresh_invoice()
 		game._message("Film remis sans scan. Perte enregistrée." if not was_scanned else "Remets les autres boîtiers au client.")
@@ -732,19 +737,10 @@ func release()->bool:
 				if active.get("is_return",false) and held_service in active.get("items",[]):
 					game._message("Termine le retour à l'ordinateur avant de ranger ce boîtier.")
 					return true
-				if (held_service.kind!="shelve" or game.held.get_meta("inspected",false)) and game.held.get_meta("disc_movie",-1)!=held_service.movie:
-					game._message("Ce boîtier ne contient pas encore le bon disque.")
-					return true
 				if not game.held.get_meta("antitheft",false):
 					game._message("Réinsère une barre jaune dans le boîtier avant de le ranger.")
 					return true
-				if held_service.kind=="return" and (not held_service.scanned):
-					game._message("Inspecte et scanne le retour avant de ranger.")
-					return true
-				if game.held.get_meta("dirty",false):
-					game._message("Répare ce disque avant de le remettre en rayon.")
-					return true
-				held_service.record.dirty=false
+				held_service.record.dirty=game.held.get_meta("dirty",false)
 				restore_stock(held_service.record)
 				if shift and held_service.kind=="return":shift.restocked+=1
 				if held_service.has("task"):tasks.erase(held_service.task)
@@ -801,7 +797,6 @@ func consume_case():
 func _physics_process(dt):
 	if not game:return
 	elapsed+=dt
-	repairs.tick(dt)
 	shift.tick(dt)
 	shift_ui_clock+=dt
 	if shift_ui_clock>=1:
@@ -867,21 +862,19 @@ func take_due_return()->Dictionary:
 	return {}
 func deliver_return(job:Dictionary,customer:Dictionary={},at_counter:bool=false):
 	if shift:shift.returned+=1
-	var destination=Vector3(-.83,1.14,-5.85) if at_counter else return_bin+Vector3(0,.15,0)
+	var destination=return_bin+Vector3(0,.15,0)
+	at_counter=false
 	var returned=new_case(job.movie,destination,"return")
 	returned.record=job.record
 	load("res://clerk_inventory.gd").bind(returned.node,job.record)
-	locks.set_locked(returned.node,false)
-	returned.node.set_meta("needs_relock",true)
+	locks.set_locked(returned.node,bool(job.get("locked",false)))
+	returned.node.set_meta("needs_relock",not bool(job.get("locked",false)))
 	var account=int(job.get("account_id",customer.get("account_id",-1)))
 	if account<0:account=accounts.create_account()
 	returned.node.set_meta("return_account",account)
 	returned.node.set_meta("return_cycle",int(job.get("rental_id",-1)))
 	returned.node.set_meta("return_checked",false)
 	var refund:=int(job.get("refund",0))
-	if refund>0:
-		shift.refunds+=refund
-		game._message("Le client demande un remboursement pour ce boîtier. Perte de %.2f $ enregistrée."%(refund/100.0))
 	var dirty=bool(job.record.get("dirty",false)) if refund>0 else randf()<minf(.45,.30+.015*(shift.day-1))
 	returned.node.set_meta("dirty",dirty)
 	returned.node.set_meta("returned_damage",dirty and refund==0)
@@ -897,7 +890,9 @@ func deliver_return(job:Dictionary,customer:Dictionary={},at_counter:bool=false)
 			var slide=create_tween()
 			slide.tween_property(returned.node,"position",destination,.6)
 			slide.tween_callback(func():returned.node.freeze=false)
-	returned.task="Retour : "+str(game.layout.movies[job.movie].title)+" — inspecter, scanner, remettre l'antivol, ranger."
+	returned.scanned=true
+	accounts.scan_return(returned.node)
+	returned.task="Retour à traiter : "+str(game.layout.movies[job.movie].title)+" — vérifier ou réparer au choix, remettre en rayon."
 	tasks.append(returned.task)
 	refresh_terminal()
 	return returned
@@ -1116,7 +1111,7 @@ func scan_item(item:Dictionary)->bool:
 	refresh_terminal()
 	return true
 func offer_rental_payment():
-	if active.is_empty() or active.get("is_return",false) or active.get("offer_ready",false) or active.get("cash_started",false):return
+	if active.is_empty() or active.get("is_refund",false) or active.get("is_return",false) or active.get("offer_ready",false) or active.get("cash_started",false):return
 	var titles:Array=active.get("price_titles",active.items.map(func(item):return item.movie))
 	var expected:int=Pricing.quote(game.layout.movies,titles).total+int(active.get("account_due",0))
 	if expected<=0:return
@@ -1126,7 +1121,7 @@ func offer_rental_payment():
 	for value in tender_parts:tender+=value
 
 func refresh_invoice():
-	if active.is_empty() or active.get("is_return",false):return
+	if active.is_empty() or active.get("is_refund",false) or active.get("is_return",false):return
 	var ids:Array=active.get("billed_titles",[]).duplicate()
 	for item in active.items:
 		if item.scanned:ids.append(item.movie)
@@ -1140,3 +1135,21 @@ func refresh_invoice():
 	offer_rental_payment()
 	refresh_tender_visual()
 
+
+func complete_refund(amount:int):
+	if active.is_empty() or not active.get("is_refund",false):return
+	shift.refunds+=amount
+	var customer=active
+	active={}
+	tender_parts=[]
+	refresh_tender_visual()
+	customer_delay=2
+	if customer.get("return_and_rent",false):
+		customer.return_and_rent=false
+		customer.is_refund=false
+		customer.is_return=false
+		customer.visit_mask=2
+		customers.begin_browse(customer)
+	else:customers.dismiss(customer)
+	refresh_terminal()
+	game._message("Remboursement remis au client.")

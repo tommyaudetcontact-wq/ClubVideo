@@ -73,6 +73,9 @@ func deposit_entry(entry:Dictionary):
 		if clerk.tender_received and clerk.tender==clerk.price:clerk.paid=true
 
 func record_change(amount:int):
+	if clerk.active.get("is_refund",false):
+		clerk.complete_refund(amount)
+		return
 	clerk.change+=amount
 	clerk.paid=true
 	clerk.refresh_terminal()
