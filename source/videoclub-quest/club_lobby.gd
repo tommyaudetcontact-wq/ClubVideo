@@ -65,7 +65,7 @@ func set_available(value:bool):
 	start()
 	if available==value:return
 	available=value
-	if not game.touch_profile and game.clerk and (game.clerk.lan.server!=null)!=value:
+	if game.clerk and ((not value and game.clerk.lan.server) or (value and not game.touch_profile and not game.clerk.lan.server)):
 		game.clerk.lan.toggle_host()
 	if bridge and bridge.has_method("setDiscoveryEnabled"):bridge.setDiscoveryEnabled(available)
 	if available:
@@ -79,6 +79,13 @@ func set_available(value:bool):
 		outgoing.clear()
 	if socket:announce_network()
 	status="Visible sur le Wi-Fi." if available and socket else ("Wi-Fi indisponible." if available else "Invisible sur le Wi-Fi.")
+	changed.emit()
+
+func toggle_mobile_host():
+	if not available or not game.touch_profile:return
+	game.clerk.lan.toggle_host()
+	status=game.clerk.lan.host_status()
+	announce_network()
 	changed.emit()
 
 func refresh_network_routes():
@@ -108,12 +115,12 @@ func announce_network():
 		if peer.ready:announce(peer.ip,true)
 
 func probe_subnet(delta:float):
-	if not available or probe_hosts.is_empty() or not list_players().is_empty():return
+	if not available or probe_hosts.is_empty():return
 	probe_in-=delta
 	if probe_in>0:return
 	if probe_index>=probe_hosts.size():
 		probe_index=0
-		probe_in=4.0
+		probe_in=4.0 if list_players().is_empty() else 15.0
 		return
 	var finish:=mini(probe_index+12,probe_hosts.size())
 	for index in range(probe_index,finish):announce(probe_hosts[index])
@@ -187,7 +194,7 @@ func receive(packet:Variant,ip:String,now:int):
 			var grant:String=game.clerk.lan.permit(ip)
 			send({"type":"reply","to":sender,"ticket":ticket,"accepted":not grant.is_empty(),"grant":grant},ip)
 		"invite":
-			if not available or not game.touch_profile or not incoming.is_empty():return
+			if not available or not game.touch_profile or game.clerk.lan.server or not incoming.is_empty():return
 			var grant:=str(packet.get("grant",""))
 			if grant.length()!=24:return
 			incoming={"from":sender,"ticket":ticket,"grant":grant,"time":now}
@@ -218,7 +225,7 @@ func request(index:int,invite:bool):
 		if grant.is_empty():return
 		send({"type":"invite","to":player.id,"ticket":ticket,"grant":grant},player.ip)
 	else:
-		if not game.touch_profile or not player.hosting:return
+		if not game.touch_profile or game.clerk.lan.server or not player.hosting:return
 		outgoing={"to":player.id,"ticket":ticket,"time":Time.get_ticks_msec()}
 		send({"type":"join","to":player.id,"ticket":ticket},player.ip)
 	status="Demande envoyée à "+player.name

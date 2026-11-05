@@ -11,6 +11,7 @@ var pages:Array=[]
 var info:Label
 var feedback:Label
 var join_button:Button
+var host_button:Button
 var cash_button:Button
 var payout_button:Button
 var denominations:GridContainer
@@ -51,7 +52,8 @@ func setup(owner_game):
 	players=VBoxContainer.new()
 	players.size_flags_horizontal=Control.SIZE_EXPAND_FILL
 	discovery.add_child(players)
-	join_button=button(layout,"Se rendre visible",join_or_leave)
+	join_button=button(layout,"Activer la coop",join_or_leave)
+	host_button=button(layout,"Héberger ma partie",game.lobby.toggle_mobile_host)
 	game.lobby.changed.connect(refresh_players)
 	game.lobby.join_granted.connect(connect_host)
 	feedback=Label.new()
@@ -93,7 +95,10 @@ func refresh_players():
 	for child in players.get_children():
 		players.remove_child(child)
 		child.queue_free()
+	host_button.visible=game.lobby.available and not socket
 	if socket:return
+	var hosting:bool=game.clerk.lan.server!=null
+	host_button.text="Arrêter d’héberger" if hosting else "Héberger ma partie"
 	join_button.text="Désactiver la coop" if game.lobby.available else "Activer la coop"
 	if not game.lobby.available:
 		var intro:=Label.new()
@@ -105,12 +110,19 @@ func refresh_players():
 		button(players,"Refuser",func():game.lobby.reply(false))
 	var listing:Array=game.lobby.list_players()
 	for index in range(listing.size()):
-		if not listing[index].hosting:continue
+		var player:Dictionary=listing[index]
 		var row:=index
-		button(players,"Rejoindre "+listing[index].name,func():game.lobby.request(row,false))
+		if player.hosting and not hosting:
+			button(players,"Rejoindre "+player.name,func():game.lobby.request(row,false))
+		elif hosting and not player.hosting:
+			button(players,"Inviter "+player.name,func():game.lobby.request(row,true))
+		else:
+			var peer_label:=Label.new()
+			peer_label.text=player.name+(" · Héberge une partie" if player.hosting else " · Disponible")
+			players.add_child(peer_label)
 	if players.get_child_count()==0:
 		var empty:=Label.new()
-		empty.text="Recherche de parties sur le Wi-Fi…"
+		empty.text="Partie visible sur le Wi-Fi. Tu peux retourner jouer." if hosting else "Recherche de joueurs sur le Wi-Fi…"
 		players.add_child(empty)
 
 func join_or_leave():
@@ -120,7 +132,7 @@ func join_or_leave():
 	game.lobby.toggle_available()
 
 func connect_host(ip:String,access:String):
-	if socket:return
+	if socket or game.clerk.lan.server:return
 	if game.held or game.touch_controls.basket_carried:
 		feedback.text="Dépose le boîtier et le panier avant de rejoindre."
 		return

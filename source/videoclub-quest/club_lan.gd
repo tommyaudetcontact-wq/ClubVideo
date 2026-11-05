@@ -153,7 +153,7 @@ func remote_cash(action:String,coins:Variant)->String:
 		var visible_total:=0
 		for value in clerk.tender_parts:visible_total+=int(value)
 		if remaining<=0 or visible_total!=remaining or not clerk.tender_note.visible:
-			return "Le paiement doit être disponible sur le comptoir du Quest."
+			return "Le paiement doit être disponible sur le comptoir de l’hôte."
 		for value in clerk.tender_parts:clerk.till[value]+=1
 		clerk.tender_parts.clear()
 		clerk.active.cash_started=true
