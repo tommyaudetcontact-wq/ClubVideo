@@ -17,9 +17,11 @@ func setup(c):
 		roots.append(root)
 		var s:Skeleton3D=game.hand_visuals[i].skeleton
 		palm_bones.append([s.find_bone("wrist"),s.find_bone("middle-finger-phalanx-proximal"),s.find_bone("index-finger-phalanx-proximal"),s.find_bone("pinky-finger-phalanx-proximal")])
-		var label=clerk.Props.label(root,"",Vector3(0,.07,0),.0008,32)
+		var label=clerk.Props.label(root,"",Vector3(0,.07,0),.0008,44)
 		label.billboard=BaseMaterial3D.BILLBOARD_ENABLED
 		label.no_depth_test=true
+		label.modulate=Color.WHITE
+		label.outline_size=8
 		totals.append(label)
 func occupied(hand:int)->bool:return not palms[hand].is_empty()
 func total(hand:int)->int:

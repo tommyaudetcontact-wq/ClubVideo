@@ -105,6 +105,14 @@ func _initialize():
 	coop.send("case_pick",str(item.node.get_instance_id()))
 	await create_timer(.4).timeout
 	assert(coop.guest_case_id==str(item.node.get_instance_id()))
+	var blocked_point:=Vector3(.12,1.375,-6.085)
+	coop.send("surface_drop","",JSON.stringify([blocked_point.x,blocked_point.y,blocked_point.z]))
+	await create_timer(.35).timeout
+	assert(coop.guest_case_id.is_empty())
+	assert(load("res://club_drop_safety.gd").clear_at(item.node,item.node.global_transform))
+	coop.send("case_pick",str(item.node.get_instance_id()))
+	await create_timer(.4).timeout
+	assert(not coop.guest_case_id.is_empty())
 	host.clerk.pick_case(item,0,false)
 	assert(host.held!=item.node)
 	coop.send("case_flip")

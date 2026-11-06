@@ -6,7 +6,10 @@ static func hit(game,origin:Vector3,direction:Vector3)->Vector3:
 	if result.is_empty():return Vector3.INF
 	return result.position+result.normal*.035+Vector3.UP*.09
 
-static func release_body(body:RigidBody3D,parent:Node,position:Vector3):
+static func release_body(body:RigidBody3D,parent:Node,position:Vector3,eye:Vector3=Vector3.INF)->bool:
+	position=load("res://club_drop_safety.gd").position_for(body,position,Basis(Vector3.RIGHT,-PI/2),eye)
+	if not position.is_finite():return false
+	body.freeze=true
 	body.reparent(parent)
 	body.global_transform=Transform3D(Basis(Vector3.RIGHT,-PI/2),position)
 	body.freeze=false
@@ -16,6 +19,7 @@ static func release_body(body:RigidBody3D,parent:Node,position:Vector3):
 	body.sleeping=false
 	body.linear_velocity=Vector3.ZERO
 	body.angular_velocity=Vector3.ZERO
+	return true
 
 static func disc_body(inspection,node:MeshInstance3D,position:Vector3)->RigidBody3D:
 	var body:=RigidBody3D.new()

@@ -278,6 +278,7 @@ func receive(reply:Dictionary):
 		if checkout.get("customer",-2)!=reply.checkout.get("customer",-1) or reply.checkout.get("paid",false):
 			selected.clear()
 		checkout=reply.checkout
+		game.clerk.register_display.text="TOTAL %.2f $\nDONNÉ %.2f $"%[int(checkout.get("price",0))/100.0,int(checkout.get("tender",0))/100.0]
 		sync_cash(reply.get("guest_cash",[]))
 		var previous_case:=guest_case_id
 		guest_case_id=str(reply.get("guest_case",""))

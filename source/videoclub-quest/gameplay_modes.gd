@@ -317,6 +317,18 @@ func manual_release() -> bool:
 		visual.reparent(game,false)
 		record.loose_body=body
 		if not loose_dvds.has(record):loose_dvds.append(record)
+	var safe:Vector3=load("res://club_drop_safety.gd").position_for(body,body.global_position,body.global_basis,game.head.global_position)
+	if not safe.is_finite():safe=load("res://club_drop_safety.gd").position_for(body,Vector3(-.11,1.65,-6.2),body.global_basis)
+	if not safe.is_finite():
+		clone.reparent(game.dvd_grip_anchors[game.held_hand],false)
+		clone.transform=Transform3D.IDENTITY
+		clone.visible=true
+		if visual!=clone:visual.queue_free()
+		game.held=clone
+		body.freeze=true
+		game._message("Pas assez de place pour déposer ce boîtier.")
+		return true
+	body.global_position=safe
 	load("res://held_case.gd").set_detail(clone,false)
 	body.collision_mask=1|8
 	body.freeze=false

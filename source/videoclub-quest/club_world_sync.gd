@@ -48,7 +48,7 @@ static func capture(game,include_stock:bool=true)->String:
 			var follower:Node3D=n.get_node_or_null("Companion%d"%index)
 			if follower:
 				followers.append({"index":index,"transform":follower.global_transform,"clip":actor_clip(follower)})
-		clients.append({"id":str(customer.id),"transform":n.global_transform,"intent":load("res://club_visit_icons.gd").reason_mask(customer),"moving":customer.cursor<customer.path.size(),"companions":customer.get("companions",[]),"followers":followers,"clip":actor_clip(n),"carry":customer.get("movie",-1) if is_instance_valid(customer.get("carry")) and customer.carry.visible else -1})
+		clients.append({"id":str(customer.id),"transform":n.global_transform,"intent":load("res://club_visit_icons.gd").reason_mask(customer),"rental_count":int(customer.get("rental_count",1)),"moving":customer.cursor<customer.path.size(),"companions":customer.get("companions",[]),"followers":followers,"clip":actor_clip(n),"carry":customer.get("movie",-1) if is_instance_valid(customer.get("carry")) and customer.carry.visible else -1})
 	var discs:Array=[]
 	if c.inspection.opened and is_instance_valid(c.inspection.disc) and c.inspection.disc.visible:
 		var id:int=c.inspection.case_node.get_meta("disc_movie",-1)
@@ -193,7 +193,7 @@ func apply(encoded:String):
 				if not motion_targets.has(key):node.global_transform=entry.transform
 				motion_targets[key]=entry.transform
 			if category=="clients":
-				load("res://club_visit_icons.gd").update(node,int(entry.get("intent",2)))
+				load("res://club_visit_icons.gd").update(node,int(entry.get("intent",2)),int(entry.get("rental_count",1)))
 				Actor.animate(node,str(entry.get("clip","Walk" if entry.moving else "Idle")))
 				update_carry(node,int(entry.carry))
 				for follower in entry.get("followers",[]):

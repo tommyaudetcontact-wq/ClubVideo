@@ -8,6 +8,8 @@ var clerk
 var grid=AStarGrid2D.new()
 var customers:Array=[]
 var spawn_timer=3.0
+var arrival_cluster_left=0
+var last_arrival_kind=-1
 var next_id=0
 var clock=0.0
 var queue_gate=0.0
@@ -58,7 +60,7 @@ func spawn_customer():
 	c.visit_balance=int(clerk.accounts.ensure(c.account_id).balance)
 	c.return_and_rent=not c.return_job.is_empty() and randf()<.55
 	c.visit_mask=VisitIcons.reason_mask(c)
-	VisitIcons.update(n,c.visit_mask)
+	VisitIcons.update(n,c.visit_mask,int(c.get("rental_count",1)))
 	if not c.return_job.is_empty():
 		c.return_job.account_id=c.account_id
 		var carry=Node3D.new()
@@ -91,8 +93,7 @@ func _physics_process(dt):
 	if spawn_timer<=0 and customers.size()<clerk.shift.capacity() and population()<MAX_VISIBLE_PEOPLE and clerk.shift.can_spawn():
 		spawn_customer()
 		clerk.shift.spawned()
-		var window:=traffic_interval(1.0-clerk.shift.time_left/maxf(clerk.shift.duration,1.0),clerk.shift.day)
-		spawn_timer=randf_range(window.x,window.y)
+		spawn_timer=next_arrival_delay()
 	for c in customers.duplicate():
 		var moving=false
 		if c.cursor<c.path.size():
@@ -146,13 +147,16 @@ func _physics_process(dt):
 					clerk.refresh_terminal()
 				"return_drop":
 					var job:Dictionary=c.return_job
-					clerk.deliver_return(job,c)
+					var jobs:Array=[job]+job.get("others",[])
+					var refund:=0
+					for returned_job in jobs:
+						clerk.deliver_return(returned_job,c)
+						refund+=int(returned_job.get("refund",0))
 					c.return_job={}
-					if int(job.get("refund",0))>0:
+					if refund>0:
 						c.is_refund=true
-						c.refund_due=int(job.refund)
-						c.state="queue"
-						route(c,Vector3(-.6,0,-5.05))
+						c.refund_due=refund
+						join_queue(c)
 					elif c.get("return_and_rent",false):
 						c.return_and_rent=false
 						begin_browse(c)
@@ -174,8 +178,7 @@ func _physics_process(dt):
 						c.browse_index=index+1
 						if c.browse_index<c.reservations.size():browse_next(c)
 						else:
-							c.state="queue"
-							route(c,Vector3([-.6,.6,1.8,-1.8,3.0][customers.find(c)%5],0,-5.05))
+							join_queue(c)
 				"queue":
 					if clock<queue_gate:continue
 					if c.node.has_node("ActorVisual") and c.has("carry") and is_instance_valid(c.carry) and c.carry.visible:
@@ -317,4 +320,30 @@ func update_service_visual(c:Dictionary,dt:float):
 		if toward.length_squared()>.01:c.node.rotation.y=lerp_angle(c.node.rotation.y,atan2(-toward.x,-toward.z),minf(1,dt*6))
 	var bar=c.node.get_node_or_null("Patience")
 	if bar:bar.hide()
-	VisitIcons.update(c.node,VisitIcons.reason_mask(c))
+	VisitIcons.update(c.node,VisitIcons.reason_mask(c),int(c.get("rental_count",1)))
+
+func next_arrival_delay()->float:
+	if arrival_cluster_left>0:
+		arrival_cluster_left-=1
+		return randf_range(1.8,4.5)
+	var roll:=randf()
+	var kind:=0 if roll<.50 else 1 if roll<.80 else 2
+	if kind==last_arrival_kind:kind=(kind+1+randi_range(0,1))%3
+	last_arrival_kind=kind
+	var pressure:=clampf((clerk.shift.wave-1)*.06,0,.35)
+	if kind==1:
+		arrival_cluster_left=randi_range(1,2)
+		return randf_range(2,5)
+	if kind==2:return randf_range(30,55)*(1-pressure)
+	return randf_range(12,26)*(1-pressure)
+
+func join_queue(customer:Dictionary):
+	var occupied:Array=[] if clerk.active.is_empty() else [0]
+	for other in customers:
+		if other!=customer and other!=clerk.active and other.state in ["queue","service","approach_counter","replacement_browse","replacement_return"]:occupied.append(int(other.get("queue_slot",0)))
+	var slot:=0
+	while occupied.has(slot) and slot<7:slot+=1
+	customer.queue_slot=slot
+	customer.state="queue"
+	var x:Array=[-.6,.25,1.10,1.95,2.80,3.65,-1.45,-2.30]
+	route(customer,Vector3(x[slot],0,-5.05))

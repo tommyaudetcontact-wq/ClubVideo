@@ -107,6 +107,7 @@ func setup(g):
 	customers=load("res://clerk_customers.gd").new()
 	add_child(customers)
 	customers.setup(game,self)
+	load("res://club_drop_safety.gd").setup(self)
 	refresh_terminal()
 func target(node:Node3D,action:String,radius:float=.09,value:int=0):
 	targets.append({"node":node,"action":action,"radius":radius,"value":value})
@@ -185,7 +186,7 @@ func build_counter():
 			var caption=Props.label(key,str(row*3+col+1) if col<3 and row<3 else ("0" if col==1 else "="),Vector3(0,.011,0),.00032,24)
 			caption.rotation=Vector3(-PI/2,0,PI)
 	Props.box(register,Vector3(.04,.25,.12),Vector3(.34,.11,.07),"343a37")
-	register_display=Props.label(register,"TOTAL  0.00",Vector3(.04,.26,.077),.0005,28)
+	register_display=Props.label(register,"TOTAL  0.00",Vector3(.04,.26,.077),.0008,44)
 	register_display.rotation.y=PI
 	Props.box(register,Vector3(-.22,.20,.10),Vector3(.10,.01,.14),"ede8d6")
 	Props.box(drawer,Vector3.ZERO,Vector3(.74,.07,.44),"353a3a")
@@ -346,6 +347,7 @@ func select_film(c:Dictionary)->bool:
 		if id==c.movie:continue
 		var record=reserve_stock(id)
 		if not record.is_empty():c.reservations.append(record)
+	c.rental_count=c.reservations.size()
 	return true
 func new_case(id:int,position:Vector3,kind:String)->Dictionary:
 	var n=game.modes.create_case_body(float(game.layout.movies[id].get("caseHeight",.19)))
@@ -696,11 +698,12 @@ func handoff_item(item:Dictionary)->bool:
 	active.handed+=1
 	var account=int(active.get("account_id",active.id))
 	var cycle=accounts.rental(account,id,record.id)
-	returns_due.append({"movie":id,"time":elapsed+60,"record":record,"account_id":account,"rental_id":cycle,"refund":refund,"locked":locked})
+	returns_due.append({"movie":id,"time":elapsed+600,"record":record,"account_id":account,"rental_id":cycle,"refund":refund,"locked":locked,"batch":int(active.id)})
 	if not active.items.is_empty():
 		refresh_invoice()
 		game._message("Film remis sans scan. Perte enregistrée." if not was_scanned else "Remets les autres boîtiers au client.")
 		return true
+	finalize_return_batch(int(active.id))
 	shift.record_sale(price if paid else 0)
 	if paid:accounts.settle(account,int(active.get("account_due",0)))
 	clear_change()
@@ -748,11 +751,14 @@ func release()->bool:
 				refresh_terminal()
 				game._message("Boîtier rangé dans le bon rayon.")
 				return true
-	game.held.reparent(self)
 	# Keep releases out of the register body, then let ordinary physics take over.
-	var released=game.held.global_position
-	if released.x>-1.18 and released.x<-.38 and released.z>-6.76 and released.z< -6.15 and released.y<1.55:
-		game.held.global_position.y=1.56
+	var released:Vector3=load("res://club_drop_safety.gd").position_for(game.held,game.held.global_position,game.held.global_basis,game.head.global_position)
+	if not released.is_finite():
+		game._message("Pas assez de place pour déposer le boîtier ici.")
+		return true
+	game.held.reparent(self)
+	game.held.global_position=released
+	game.held.continuous_cd=true
 	game.held.collision_layer=8
 	game.held.collision_mask=1|8
 	game.held.freeze=false
@@ -802,6 +808,7 @@ func _physics_process(dt):
 	if shift_ui_clock>=1:
 		shift_ui_clock=0
 		refresh_terminal()
+		recover_blocked_cases()
 	tick_lock(dt)
 	scanner.tick(dt)
 	if game.held and not inspection.opened:
@@ -858,11 +865,19 @@ func take_due_return()->Dictionary:
 			if int(job.get("account_id",-1))>=0 and customer.get("account_id",-2)==job.get("account_id",-1):already_here=true
 		if elapsed>=job.time and not already_here:
 			returns_due.erase(job)
+			job.others=[]
+			if int(job.get("batch",-1))>=0:
+				for other in returns_due.duplicate():
+					if other.get("batch",-2)==job.batch and elapsed>=other.time:
+						job.others.append(other)
+						returns_due.erase(other)
 			return job
 	return {}
 func deliver_return(job:Dictionary,customer:Dictionary={},at_counter:bool=false):
 	if shift:shift.returned+=1
-	var destination=return_bin+Vector3(0,.15,0)
+	var slot:int=chute_serial%9
+	chute_serial+=1
+	var destination=return_bin+Vector3(-.17+.17*(slot%3),.15+.018*(slot/3),-.14+.14*(slot/3))
 	at_counter=false
 	var returned=new_case(job.movie,destination,"return")
 	returned.record=job.record
@@ -1153,3 +1168,38 @@ func complete_refund(amount:int):
 	else:customers.dismiss(customer)
 	refresh_terminal()
 	game._message("Remboursement remis au client.")
+
+func finalize_return_batch(batch:int,mix_chance:float=.20):
+	var jobs:Array=returns_due.filter(func(job):return int(job.get("batch",-1))==batch)
+	var due:float=elapsed+randf_range(300.0,600.0)
+	for job in jobs:job.time=due
+	if jobs.size()<2 or randf()>=mix_chance:return
+	var contents:Array=[]
+	for job in jobs:
+		contents.append({"movie":job.record.disc_movie,"uid":job.record.disc_uid,"dirty":job.record.get("dirty",false)})
+	for index in range(jobs.size()):
+		var content:Dictionary=contents[(index+1)%contents.size()]
+		jobs[index].record.disc_movie=content.movie
+		jobs[index].record.disc_uid=content.uid
+		jobs[index].record.dirty=content.dirty
+
+func recover_blocked_cases():
+	for item in cases:
+		var body:RigidBody3D=item.node
+		if body==game.held or item==secondary or body.get_meta("guest_held",false) or body.get_meta("customer_animating",false) or body.get_meta("in_basket",false) or body.get_meta("in_sort_tray",false) or int(body.get_meta("sort_slot",-1))>=0:continue
+		var point:=PhysicsPointQueryParameters3D.new()
+		point.position=body.global_position
+		point.collision_mask=1
+		var inside:bool=not body.get_world_3d().direct_space_state.intersect_point(point,1).is_empty()
+		if body.global_position.y>=-.35 and not inside:continue
+		var desired:Vector3=Vector3(-.11,1.65,-6.2) if body.global_position.y<-.35 else body.global_position
+		var safe:Vector3=load("res://club_drop_safety.gd").position_for(body,desired,body.global_basis)
+		if not safe.is_finite():continue
+		body.freeze=true
+		body.global_position=safe
+		body.freeze=false
+		body.collision_layer=8
+		body.collision_mask=1|8
+		body.continuous_cd=true
+		body.linear_velocity=Vector3.ZERO
+		body.sleeping=false

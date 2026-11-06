@@ -383,6 +383,10 @@ func drop_guest_case():
 		clerk.cases.erase(item)
 		node.queue_free()
 		return
+	var safe:Vector3=load("res://club_drop_safety.gd").position_for(node,node.global_position,node.global_basis,remote_avatar.targets[0].origin)
+	if not safe.is_finite():safe=Vector3(-.11,1.65,-6.2)
+	node.global_position=safe
+	node.continuous_cd=true
 	node.freeze=false
 	node.collision_layer=8
 	node.collision_mask=1|8
@@ -631,8 +635,8 @@ func drop_guest_on_surface(request:Dictionary)->String:
 	elif not guest_case.is_empty():
 		if guest_inspection.opened:guest_inspection.close_case()
 		var node:RigidBody3D=guest_case.node
+		if not dropper.release_body(node,clerk,point,remote_avatar.targets[0].origin):return "Pas assez de place pour déposer le boîtier ici."
 		node.remove_meta("guest_held")
-		dropper.release_body(node,clerk,point)
 		guest_case={}
 		guest_flipped=false
 	elif not guest_cash.is_empty():

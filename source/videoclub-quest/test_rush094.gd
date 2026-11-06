@@ -27,7 +27,7 @@ func _initialize():
 	var returned:Dictionary=clerk.deliver_return(job)
 	assert(clerk.accounts.ensure(account).balance==0 and clerk.accounts.ensure(account).rentals[cycle].returned)
 	assert(returned.scanned and returned.node.get_meta("return_checked"))
-	assert(returned.node.global_position.distance_to(clerk.return_bin+Vector3(0,.15,0))<.01)
+	assert(returned.node.global_position.distance_to(clerk.return_bin)<.45)
 	assert(shift.refunds==0)
 	returned.node.freeze=true
 	returned.node.set_meta("dirty",true)

@@ -32,7 +32,7 @@ func cash_in_till()->int:
 	var total=0
 	for value in clerk.till:total+=int(value)*int(clerk.till[value])
 	return total
-func capacity()->int:return mini(5,maxi(2,wave+1))
+func capacity()->int:return 8
 func can_spawn()->bool:return not enabled or (started and not closing and not summary and break_left<=0)
 func spawned():
 	pass
@@ -51,7 +51,7 @@ func tick(dt:float):
 				duration=rush_duration()
 				time_left=duration
 				closing=false
-				clerk.customers.spawn_timer=0
+				clerk.customers.spawn_timer=randf_range(2,10)
 				clerk.game._message("Rush %d : les clients arrivent."%wave)
 		else:
 			var work:=minf(remaining,time_left)

@@ -28,8 +28,9 @@ static func texture(kind:int)->Texture2D:
 	textures[kind]=result
 	return result
 
-static func update(parent:Node3D,mask:int):
-	if parent.get_meta("visit_icon_mask",-1)==mask:return
+static func update(parent:Node3D,mask:int,count:int=1):
+	if parent.get_meta("visit_icon_mask",-1)==mask and parent.get_meta("visit_icon_count",-1)==count:return
+	parent.set_meta("visit_icon_count",count)
 	parent.set_meta("visit_icon_mask",mask)
 	var root:=parent.get_node_or_null("VisitIcons") as Node3D
 	if not root:
@@ -49,5 +50,19 @@ static func update(parent:Node3D,mask:int):
 		icon.pixel_size=.0032
 		icon.billboard=BaseMaterial3D.BILLBOARD_ENABLED
 		icon.position.x=(index-(kinds.size()-1)*.5)*.23
+		if count>1 and mask&RENT:
+			icon.position.x-=.075
+			if kinds[index]==REFUND:icon.position.x+=.15
 		icon.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(icon)
+
+		if kinds[index]==RENT and count>1:
+			var amount:=Label3D.new()
+			amount.text="×%d"%count
+			amount.font_size=64
+			amount.pixel_size=.0014
+			amount.outline_size=12
+			amount.modulate=Color.WHITE
+			amount.billboard=BaseMaterial3D.BILLBOARD_ENABLED
+			amount.position=Vector3(icon.position.x+.17,0,.003)
+			root.add_child(amount)
