@@ -187,6 +187,7 @@ func drop_into_bin(item:Dictionary)->bool:
 			item.node.collision_layer=8
 			item.node.collision_mask=1|8
 			item.node.linear_velocity=Vector3.ZERO
+			clerk.note_case_set_aside(item)
 			clerk.clear_hand()
 			return true
 	return false

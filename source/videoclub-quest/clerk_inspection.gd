@@ -29,7 +29,7 @@ var loose_discs:Array=[]
 var source_case:Node3D
 func setup(g):game=g
 func input_tick(dt:float):
-	if opened and opening_amount>.45:label_seen=true
+	if opened and opening_amount>=.30:label_seen=true
 	if lid_hand>=0:
 		if game.hands[lid_hand].get_float("grip")<.6:
 			var opened_further:bool=lid.rotation.y<lid_start_angle-.22
@@ -267,11 +267,11 @@ func close_case():
 	var closed_node:=case_node
 	case_node=null
 	disc=null
-	if (label_seen or opening_amount>.45) and is_instance_valid(closed_node):
+	if (label_seen or opening_amount>=.30) and is_instance_valid(closed_node):
 		var mismatch:bool=int(closed_node.get_meta("disc_movie",-1))!=int(closed_node.get_meta("movie",game.movie_id))
 		closed_node.set_meta("disc_mismatch_seen",mismatch)
 		if mismatch:
-			game._message("Disque incorrect ou absent. Dépose le boîtier dans À DÉMÊLER pour chercher un remplacement.")
+			game._message("Disque incorrect ou absent. Mets ce boîtier de côté où tu veux, puis cherche un autre exemplaire.")
 			return
 	if game.clerk and not game.clerk.held_service.is_empty() and game.held and game.held.get_meta("inspected",false):
 		game._message("Inspection terminée : passe le dos du boîtier dans le faisceau rouge du scanner.")

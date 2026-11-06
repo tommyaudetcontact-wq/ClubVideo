@@ -44,6 +44,7 @@ func cash_in_till()->int:
 	var total=0
 	for value in clerk.till:total+=int(value)*int(clerk.till[value])
 	return total
+func loss_total()->int:return lost_sales+refunds
 func capacity()->int:return 8
 func can_spawn()->bool:return not enabled or (started and not closing and not summary and arrived_customers<target_customers)
 func spawned():
@@ -100,12 +101,12 @@ func finish()->bool:
 	week_cash_error+=absi(actual-expected)
 	report="BILAN · JOUR %d\nClients servis : %d · partis : %d\nVentes perdues : %.2f $ · oublis de scan : %d\nRetours reçus : %d · rangés : %d\nRéparations : %d · reste : %d\nPénalités / remboursements : %.2f $\nRésultat net : %.2f $ · cumul : %.2f $\nCaisse attendue : %.2f $\nCaisse comptée : %.2f $\nÉCART : %+.2f $\nClique l’écran pour la journée suivante."%[day,served,abandoned,lost_sales/100.0,missed_scans,returned,restocked,clerk.repairs.processed,clerk.cases.filter(func(i):return i.kind in ["return","sorting","shelve"]).size(),refunds/100.0,(revenue-refunds)/100.0,business_balance/100.0,expected/100.0,actual/100.0,(actual-expected)/100.0]
 	summary=true
-	report="%s · SEMAINE %d\n"%[weekday(),week_number()]+report
+	report="%s · SEMAINE %d\nPERTES TOTALES : %.2f $\n"%[weekday(),week_number(),loss_total()/100.0]+report
 	if (day-1)%5==4:
 		var scratched:int=remaining_scratches()
 		var untidy:int=clerk.cases.size()+clerk.inspection.loose_discs.size()
 		week_perfect=week_losses==0 and week_abandoned==0 and week_refunds==0 and week_cash_error==0 and scratched==0 and untidy==0
-		report+="\n\nSEMAINE %s\nPertes : %.2f $ · abandons : %d · remboursements : %.2f $\nÉcarts de caisse cumulés : %.2f $\nDisques abîmés restants : %d · éléments à ranger : %d\nClique pour commencer lundi."%["PARFAITE !" if week_perfect else "À AMÉLIORER",week_losses/100.0,week_abandoned,week_refunds/100.0,week_cash_error/100.0,scratched,untidy]
+		report+="\n\nSEMAINE %s\nPertes : %.2f $ · abandons : %d · remboursements : %.2f $\nÉcarts de caisse cumulés : %.2f $\nDisques abîmés restants : %d · éléments à ranger : %d\nClique pour commencer lundi."%["PARFAITE !" if week_perfect else "À AMÉLIORER",(week_losses+week_refunds)/100.0,week_abandoned,week_refunds/100.0,week_cash_error/100.0,scratched,untidy]
 	return true
 func next_day():
 	day+=1
@@ -151,4 +152,4 @@ func remaining_scratches()->int:
 func text()->String:
 	if summary:return report
 	if not started:return "JOUR %d · %s · PRÊT\n%d clients locataires, arrivées variées, puis retours et close.\nObjectif vendredi : semaine parfaite.\nLe bac À démêler reste à part."%[day,weekday(),target_customers]
-	return "JOUR %d · %s · %s\nClients arrivés : %d / %d\nRetours attendus : %d · reçus : %d · rangés : %d\nRéparations : %d\nClôture après le dernier client et les retours.\nÀ démêler peut attendre demain."%[day,weekday(),"FERMETURE" if closing else "OUVERT",arrived_customers,target_customers,clerk.returns_due.size(),returned,restocked,clerk.repairs.processed]
+	return ("PERTES : %.2f $\n"%(loss_total()/100.0))+"JOUR %d · %s · %s\nClients arrivés : %d / %d\nRetours attendus : %d · reçus : %d · rangés : %d\nRéparations : %d\nClôture après le dernier client et les retours.\nÀ démêler peut attendre demain."%[day,weekday(),"FERMETURE" if closing else "OUVERT",arrived_customers,target_customers,clerk.returns_due.size(),returned,restocked,clerk.repairs.processed]

@@ -373,6 +373,7 @@ func drop_guest_case():
 	if guest_case.is_empty():return
 	var item:=guest_case
 	if guest_inspection.opened:guest_inspection.close_case()
+	clerk.note_case_set_aside(item)
 	guest_case={}
 	guest_flipped=false
 	var node:RigidBody3D=item.node
@@ -395,7 +396,7 @@ func drop_guest_case():
 	node.sleeping=false
 
 func store_guest_case()->String:
-	if guest_case.is_empty() or guest_inspection.opened:return ""
+	if guest_case.is_empty():return ""
 	var basket:RigidBody3D=personal_basket().body
 	if basket.global_position.distance_to(remote_avatar.targets[0].origin)>2.0:return "Approche-toi du panier."
 	if personal_basket().items.size()>=personal_basket().CAPACITY:return "Le panier est plein."
@@ -651,6 +652,7 @@ func drop_guest_on_surface(request:Dictionary)->String:
 		if guest_inspection.opened:guest_inspection.close_case()
 		var node:RigidBody3D=guest_case.node
 		if not dropper.release_body(node,clerk,point,remote_avatar.targets[0].origin):return "Pas assez de place pour déposer le boîtier ici."
+		clerk.note_case_set_aside(guest_case)
 		node.remove_meta("guest_held")
 		guest_case={}
 		guest_flipped=false

@@ -59,6 +59,7 @@ func store(item:Dictionary)->bool:
 	item.node.collision_mask=0
 	item.node.reparent(body)
 	arrange()
+	clerk.note_case_set_aside(item)
 	if item==clerk.held_service:clerk.clear_hand()
 	return true
 func arrange():

@@ -706,7 +706,7 @@ func handoff_item(item:Dictionary)->bool:
 	active.rental_remaining=maxi(0,int(active.get("rental_count",active.handed+active.items.size()))-active.handed)
 	var account=int(active.get("account_id",active.id))
 	var cycle=accounts.rental(account,id,record.id)
-	returns_due.append({"movie":id,"time":1.0e20,"record":record,"account_id":account,"rental_id":cycle,"refund":refund,"locked":locked,"batch":int(active.id),"complaint":locked or defective,"charge":Pricing.unit(game.layout.movies[id])})
+	returns_due.append({"movie":id,"time":1.0e20,"record":record,"account_id":account,"rental_id":cycle,"refund":refund,"locked":locked,"batch":int(active.id),"complaint":locked or defective,"billed":was_scanned,"charge":Pricing.unit(game.layout.movies[id])})
 	if not active.items.is_empty():
 		refresh_invoice()
 		game._message("Film remis sans scan. Perte enregistrée." if not was_scanned else "Remets les autres boîtiers au client.")
@@ -764,12 +764,8 @@ func try_finish_checkout():
 
 func release()->bool:
 	if inspection.opened:
-		if game.held and (in_sort_tray(game.held.global_position) or repairs.is_case_surface(game.held.global_position)):
-			inspection.close_case()
-		else:
-			game._message("Referme le boîtier avant de le déposer.")
-			return true
-	if held_service.is_empty() and game.held and (repairs.is_case_surface(game.held.global_position) or basket.contains(game.held.global_position) or in_sort_tray(game.held.global_position)):adopt_held_case()
+		inspection.close_case()
+	if held_service.is_empty() and game.held and (has_identified_mismatch(game.held,int(game.held.get_meta("movie",-1))) or repairs.is_case_surface(game.held.global_position) or basket.contains(game.held.global_position) or in_sort_tray(game.held.global_position)):adopt_held_case()
 	if held_service.is_empty():return false
 	if basket.store(held_service):return true
 	if in_sort_tray(game.held.global_position):
@@ -780,9 +776,12 @@ func release()->bool:
 	if repairs.drop_into_bin(held_service):return true
 	var p:Vector3=game.held.global_position
 	if not game.touch_profile and held_service.kind=="rental" and not active.is_empty() and in_customer_zone(p):
-		action("handoff",game.held_hand)
-		return true
-	if held_service.kind in ["return","shelve","sorting"]:
+		# A known wrong case placed on the counter is being set aside. An
+		# intentional handoff remains possible directly into the receiving palm.
+		if not has_identified_mismatch(game.held,held_service.movie) or p.distance_to(customer_hand())<.16:
+			action("handoff",game.held_hand)
+			return true
+	if held_service.kind in ["return","shelve","sorting"] and not has_identified_mismatch(game.held,held_service.movie):
 		for record in game.dvd_records:
 			if record==held_service.record and p.distance_to(record.world.origin)<.25:
 				if active.get("is_return",false) and held_service in active.get("items",[]):
@@ -812,6 +811,7 @@ func release()->bool:
 	game.held.freeze=false
 	game.held.sleeping=false
 	game.held.linear_velocity=game.candy.hand_velocity(game.held_hand).limit_length(4)
+	note_case_set_aside(held_service)
 	clear_hand()
 	return true
 func clear_hand():
@@ -1096,6 +1096,7 @@ func flag_wrong_case(item:Dictionary):
 	if needs_replacement:
 		active.patience_bonus=float(active.get("patience_bonus",0))+30.0
 		var available:bool=game.dvd_records.any(func(record):return record.movie==item.movie and not record.get("clerk_reserved",false) and not record.get("loose",false))
+		available=available or cases.any(func(other):return other!=item and other.movie==item.movie and not has_identified_mismatch(other.node,other.movie))
 		if not available and not (active.get("state","") in ["replacement_browse","replacement_return"] and active.get("replace_title",-1)==item.movie):
 			customers.choose_alternative(active,item.movie)
 	item.kind="sorting"
@@ -1105,6 +1106,12 @@ func flag_wrong_case(item:Dictionary):
 	refresh_invoice()
 	refresh_terminal()
 	game._message("Boîtier mis de côté. Cherche un autre exemplaire pour le client." if needs_replacement else "Boîtier mis de côté pour le tri.")
+func note_case_set_aside(item:Dictionary):
+	if item.is_empty():return
+	for inspector in [inspection,lan.guest_inspection]:
+		if is_instance_valid(inspector) and inspector.opened and inspector.case_node==item.node:inspector.close_case()
+	if not item.is_empty() and has_identified_mismatch(item.node,int(item.movie)):
+		flag_wrong_case(item)
 func adopt_held_case()->Dictionary:
 	if not held_service.is_empty():return held_service
 	if not game.held or game.held_record.is_empty():return {}
@@ -1137,7 +1144,7 @@ func has_identified_mismatch(node:Node3D,title:int)->bool:
 
 func accept_replacement(item:Dictionary)->bool:
 	if active.is_empty() or active.get("is_return",false):return false
-	if item.record.is_empty() or item.movie not in active.missing or item.kind=="return":return false
+	if item.record.is_empty() or item.movie not in active.missing:return false
 	active.missing.erase(item.movie)
 	item.kind="rental"
 	if item.has("task"):
@@ -1145,6 +1152,12 @@ func accept_replacement(item:Dictionary)->bool:
 		item.erase("task")
 	item.scanned=true
 	if not active.items.has(item):active.items.append(item)
+	active.get("replacement_queue",[]).erase(item.movie)
+	if active.get("replace_title",-1)==item.movie and active.get("state","") in ["replacement_browse","replacement_return"]:
+		active.state="approach_counter"
+		active.erase("replace_title")
+		active.erase("replacement_movie")
+		customers.route(active,Vector3(-.6,0,-5.05))
 	refresh_terminal()
 	game._message("Exemplaire de remplacement scanné et ajouté au panier.")
 	return true
@@ -1159,6 +1172,7 @@ func build_sort_tray():
 	Props.box(self,center+Vector3(0,.07,.20),Vector3(.46,.14,.015),"53604d")
 	Props.label(self,"À DÉMÊLER",center+Vector3(0,.10,-.21),.0008,27).rotation.y=PI
 func store_sort_tray(item:Dictionary,clear_local_hand:bool=true):
+	note_case_set_aside(item)
 	var count=0
 	for other in cases:
 		if other!=item and other.node.get_meta("in_sort_tray",false):count+=1
@@ -1185,9 +1199,11 @@ func scan_held()->bool:
 
 func scan_item(item:Dictionary)->bool:
 	var node:Node3D=item.node
-	if active.get("missing",[]).has(item.movie) and has_identified_mismatch(node,item.movie):
-		game._message("Dépose cet exemplaire dans À DÉMÊLER et essaie un autre boîtier.")
-		return false
+	# Also recover a known wrong copy set down before this release, or held in
+	# the other hand. Unopened copies never reveal their disc contents here.
+	for original in active.get("items",[]).duplicate():
+		if original!=item and original.movie==item.movie and has_identified_mismatch(original.node,original.movie):
+			note_case_set_aside(original)
 	if node.get_meta("needs_relock",false) and not node.get_meta("return_checked",false):
 		var fee=accounts.scan_return(node)
 		game._message("Retour enregistré au dossier client. Frais de 2.00 $ à sa prochaine visite." if fee>0 else "Retour enregistré au bon dossier client.")
@@ -1252,12 +1268,24 @@ func complete_refund(amount:int):
 func finalize_return_batch(batch:int,mix_chance:float=.20):
 	var jobs:Array=returns_due.filter(func(job):return int(job.get("batch",-1))==batch)
 	var due:float=elapsed+randf_range(120.0,240.0)
-	var refund_budget:int=maxi(0,payment_collected()-change)
+	if int(active.get("id",-1))==batch:
+		for job in jobs:job.billed=job.movie in active.get("billed_titles",[])
+	var billed:Array=jobs.filter(func(job):return job.get("billed",true))
+	var titles:Array=billed.map(func(job):return job.movie)
+	var invoice:int=Pricing.quote(game.layout.movies,titles).total
+	var received:int=maxi(0,payment_collected()-change-int(active.get("account_due",0)))
+	var charged:int=mini(invoice,received)
+	var weight:int=0
+	for job in billed:weight+=Pricing.unit(game.layout.movies[job.movie])
+	var left:int=charged
+	for index in range(billed.size()):
+		var job:Dictionary=billed[index]
+		job.charge=left if index==billed.size()-1 else floori(float(charged)*Pricing.unit(game.layout.movies[job.movie])/maxi(weight,1))
+		left-=int(job.charge)
 	for job in jobs:
 		job.time=due
-		if job.get("complaint",false):
-			job.refund=mini(int(job.get("charge",0)),refund_budget)
-			refund_budget-=int(job.refund)
+		if not job.get("billed",true):job.charge=0
+		if job.get("complaint",false):job.refund=int(job.charge)
 	if jobs.size()<2 or randf()>=mix_chance:return
 	var contents:Array=[]
 	for job in jobs:

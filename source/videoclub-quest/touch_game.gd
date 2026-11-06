@@ -737,9 +737,6 @@ func open_basket():
 		open_coop_basket()
 		return
 	if action_busy() or not basket_accessible():return
-	if clerk.inspection.opened:
-		game._message("Referme le boîtier avant d’utiliser le panier.")
-		return
 	motion=Vector2.ZERO
 	move_touch=-1
 	look_touch=-1
@@ -1253,14 +1250,13 @@ func on_checkout_surface(point:Vector3)->bool:
 	return point.x>-.36 and point.x<.52 and point.z>-6.53 and point.z<-6.06 and point.y>=1.17 and point.y<=1.21
 
 func place_held_case(destination:Vector3):
-	if clerk.inspection.opened and not (clerk.in_sort_tray(destination) or clerk.repairs.is_case_surface(destination)):
-		game._message("Referme le boîtier avant de le déposer.")
-		return
+	if clerk.inspection.opened:clerk.inspection.close_case()
 	if on_checkout_surface(destination) and not clerk.held_service.is_empty():
 		var item:RigidBody3D=game.held
 		if not load("res://club_surface_drop.gd").release_body(item,clerk,destination,game.head.global_position):
 			game._message("Ce dépôt est bloqué.")
 			return
+		clerk.note_case_set_aside(clerk.held_service)
 		clerk.clear_hand()
 		game._message("Boîtier posé sur le comptoir.")
 		sync_hands()
@@ -1589,9 +1585,6 @@ func animate_coop_cash(action:String,target:String,destination:Vector3):
 
 func open_coop_basket():
 	if action_busy() or not basket_accessible():return
-	if coop_panel.guest_open:
-		game._message("Referme le boîtier avant d’utiliser le panier.")
-		return
 	operations.get_parent().hide()
 	checkout_popup.hide()
 	motion=Vector2.ZERO
@@ -1771,6 +1764,7 @@ func drop_on_surface()->bool:
 		if not dropper.release_body(item.node,clerk,point,game.head.global_position):
 			game._message("Pas assez de place pour déposer le boîtier ici.")
 			return true
+		clerk.note_case_set_aside(item)
 		clerk.clear_hand()
 	elif clerk.wallet.occupied(CASH_HAND):
 		var entries:Array=clerk.wallet.palms[CASH_HAND]

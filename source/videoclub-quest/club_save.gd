@@ -63,10 +63,10 @@ func _notification(what):
 func record_id(record:Dictionary)->int:return int(record.get("id",-1))
 func pack_job(job:Dictionary)->Dictionary:
 	if job.is_empty():return {}
-	return {"movie":job.movie,"time":job.get("time",0.0),"record":record_id(job.record),"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0)),"locked":bool(job.get("locked",false)),"batch":int(job.get("batch",-1)),"complaint":bool(job.get("complaint",false)),"charge":int(job.get("charge",0)),"others":job.get("others",[]).map(func(other):return pack_job(other))}
+	return {"movie":job.movie,"time":job.get("time",0.0),"record":record_id(job.record),"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0)),"locked":bool(job.get("locked",false)),"batch":int(job.get("batch",-1)),"billed":bool(job.get("billed",true)),"complaint":bool(job.get("complaint",false)),"charge":int(job.get("charge",0)),"others":job.get("others",[]).map(func(other):return pack_job(other))}
 func unpack_job(job:Dictionary)->Dictionary:
 	if job.is_empty():return {}
-	return {"movie":job.movie,"time":job.time,"record":game.dvd_records[job.record],"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0)),"locked":bool(job.get("locked",false)),"batch":int(job.get("batch",-1)),"complaint":bool(job.get("complaint",false)),"charge":int(job.get("charge",0)),"others":job.get("others",[]).map(func(other):return unpack_job(other))}
+	return {"movie":job.movie,"time":job.time,"record":game.dvd_records[job.record],"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0)),"locked":bool(job.get("locked",false)),"batch":int(job.get("batch",-1)),"billed":bool(job.get("billed",true)),"complaint":bool(job.get("complaint",false)),"charge":int(job.get("charge",0)),"others":job.get("others",[]).map(func(other):return unpack_job(other))}
 
 func pack_case(item:Dictionary,node:Node3D)->Dictionary:
 	var result={"movie":item.movie,"kind":item.kind,"scanned":item.get("scanned",false),"task":item.get("task",""),"record":record_id(item.get("record",{})),"transform":node.global_transform,"meta":{}}
