@@ -142,6 +142,7 @@ func take_disc(inspection,hand:int,p:Vector3)->bool:
 		return true
 	inspection.carried=disc
 	inspection.carried_data=data.duplicate()
+	inspection.carried_data.just_repaired=true
 	inspection.source_case=source
 	inspection.finger=hand
 	disc.reparent(inspection)

@@ -10,6 +10,7 @@ var basket_carried:=false
 var spare_carried:=false
 var guest_disc:=""
 var guest_disc_back:=false
+var guest_disc_repaired:=false
 var customer_pos:=Vector3.INF
 var guest_shelf:=Vector3.INF
 var guest_shelf_key:=""
@@ -292,6 +293,7 @@ func receive(reply:Dictionary):
 		spare_carried=bool(reply.get("guest_spare",false))
 		guest_disc=str(reply.get("guest_disc",""))
 		guest_disc_back=bool(reply.get("guest_disc_back",false))
+		guest_disc_repaired=bool(reply.get("guest_disc_repaired",false))
 		customer_pos=decode_position(reply.get("customer_pos"))
 		guest_shelf=decode_position(reply.get("guest_shelf"))
 		guest_shelf_key=str(reply.get("guest_shelf_key",""))

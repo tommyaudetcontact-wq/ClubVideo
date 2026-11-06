@@ -206,6 +206,7 @@ func handle_request(request:Variant):
 		response["guest_open"]=is_instance_valid(guest_inspection) and guest_inspection.opened
 		response["guest_disc"]=str(guest_inspection.carried.get_instance_id()) if is_instance_valid(guest_inspection) and is_instance_valid(guest_inspection.carried) else ""
 		response["guest_disc_back"]=guest_disc_back
+		response["guest_disc_repaired"]=is_instance_valid(guest_inspection) and bool(guest_inspection.carried_data.get("just_repaired",false))
 		if not clerk.active.is_empty():
 			var p:Vector3=clerk.customer_hand()
 			response["customer_pos"]=[p.x,p.y,p.z]

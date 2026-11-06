@@ -613,6 +613,9 @@ func use_target():
 		return
 	clerk.shift.started=true
 	if not tap_aim:sync_hands()
+	if near(clerk.repairs.station) and aimed(clerk.repairs.station,.25)<INF:
+		use_disc("repair")
+		return
 	if basket_aimed() and not clerk.inspection.opened:
 		if game.held:put_in_basket()
 		else:open_basket()
@@ -630,7 +633,7 @@ func use_target():
 	if not cash.is_empty():
 		use_cash(cash)
 		return
-	if clerk.inspection.opened and is_instance_valid(clerk.inspection.disc) and aimed(clerk.inspection.disc.global_position,.085)<INF:
+	if clerk.inspection.opened and is_instance_valid(clerk.inspection.disc) and clerk.inspection.disc.visible and aimed(clerk.inspection.disc.global_position,.085)<INF:
 		use_disc()
 		return
 	if game.held:
@@ -859,7 +862,7 @@ func coop_interaction()->Dictionary:
 		return coop_marked({"action":"drawer_toggle","label":label},target.node.global_transform,Vector3(.26,.09,.12))
 	var holding:bool=not coop_panel.guest_case_id.is_empty()
 	if near(clerk.repairs.station) and aimed(clerk.repairs.station,.23)<INF:
-		return coop_marked({"action":"disc_use","target":"repair","label":"Surfaceuse"},Transform3D(Basis.IDENTITY,clerk.repairs.station),Vector3(.20,.16,.20))
+		return coop_marked({"action":"disc_use","target":"repair","label":repair_action_label()},Transform3D(Basis.IDENTITY,clerk.repairs.station),Vector3(.20,.16,.20))
 	if holding:
 		if coop_panel.guest_open:
 			if tap_aim and aimed(coop_panel.guest_held_pose().origin,.17)==INF and surface_drop_point().is_finite():return {"action":"surface_drop","label":"Déposer ici"}
@@ -965,6 +968,7 @@ func refresh_action(over_desktop:bool):
 	var cash:=cash_target()
 	mark_touch_target(cash,item,over_desktop)
 	if inspection.finger>=0:label=inspection_disc_action().label
+	elif near(clerk.repairs.station) and aimed(clerk.repairs.station,.25)<INF:label=repair_action_label()
 	elif target_customer() and clerk.tender_received and clerk.wallet.occupied(CASH_HAND):label="Rendre la monnaie"
 	elif target_customer() and can_handoff():label="Remettre le film"
 	elif basket_aimed():label="Mettre au panier" if game.held else "Ouvrir le panier"
@@ -1055,7 +1059,10 @@ func use_disc(target:String=""):
 	if clerk.wallet.occupied(CASH_HAND):
 		game._message("Libère ta main gauche pour prendre le disque.")
 		return
-	if inspection.opened and is_instance_valid(inspection.disc):
+	if target=="repair":
+		if near(clerk.repairs.station):clerk.repairs.take_disc(inspection,CASH_HAND,clerk.repairs.station)
+		return
+	if inspection.opened and is_instance_valid(inspection.disc) and inspection.disc.visible:
 		inspection.take_open_disc(CASH_HAND)
 	elif near(clerk.repairs.station) and aimed(clerk.repairs.station,.25)<INF:
 		clerk.repairs.take_disc(inspection,CASH_HAND,clerk.repairs.station)
@@ -1836,6 +1843,17 @@ func inspection_disc_action()->Dictionary:
 		case_position=coop_panel.guest_held_pose().origin if not coop_panel.guest_case_id.is_empty() else Vector3.INF
 	if tap_aim and disc and aimed(disc.global_position,.09)<INF:return {"action":"disc_flip","label":"Retourner le disque"}
 	if tap_aim and case_position.is_finite() and aimed(case_position,.18)<INF:return {"action":"disc_use","label":"Remettre le disque"}
-	if near(clerk.repairs.station) and aimed(clerk.repairs.station,.23)<INF:return {"action":"disc_use","target":"repair","label":"Surfaceuse"}
+	var just_repaired:bool=coop_panel.guest_disc_repaired if coop_panel.connected else bool(clerk.inspection.carried_data.get("just_repaired",false))
+	if not just_repaired and near(clerk.repairs.station) and aimed(clerk.repairs.station,.23)<INF:return {"action":"disc_use","target":"repair","label":"Surfaceuse"}
 	if disc_sorting_point().is_finite():return {"action":"disc_use","target":"table","label":"Déposer au tri"}
 	return {"action":"disc_use","label":"Remettre le disque"}
+
+func repair_action_label()->String:
+	var remaining:float=clerk.repairs.remaining
+	var busy:bool=is_instance_valid(clerk.repairs.disc)
+	if coop_panel.connected and is_instance_valid(coop_panel.mirror):
+		var repair:Dictionary=coop_panel.mirror.state.get("repair",{})
+		remaining=float(repair.get("remaining",0))
+		busy=bool(repair.get("busy",false))
+	if remaining>0:return "Réparation · %d s"%ceili(remaining)
+	return "Reprendre le disque" if busy else "Surfaceuse"

@@ -197,11 +197,17 @@ func _initialize():
 	await create_timer(.45).timeout
 	assert(host.clerk.repairs.remaining==0 and not host.clerk.repairs.data.dirty)
 	assert(not coop.mirror.state.repair.remaining>0)
-	coop.send("disc_use","","repair")
+	guest.touch_controls.tap_aim=true
+	guest.aim_hands[0].global_position=guest.head.global_position
+	guest.aim_hands[0].look_at(host.clerk.repairs.station)
+	paused=false
+	guest.touch_controls.use_target()
+	paused=true
+	guest.touch_controls.tap_aim=false
 	await create_timer(.45).timeout
-	assert(not coop.guest_disc.is_empty() and not host.clerk.lan.guest_inspection.carried_data.dirty)
+	assert(not coop.guest_disc.is_empty() and not host.clerk.lan.guest_inspection.carried_data.dirty and coop.guest_disc_repaired)
 	guest.head.global_position=Vector3(.72,1.45,-6.15)
-	guest.touch_controls.use_disc()
+	guest.touch_controls.case_action()
 	await create_timer(.55).timeout
 	assert(coop.guest_disc.is_empty() and item.node.get_meta("inspected",false))
 	coop.send("case_open")
