@@ -3,6 +3,9 @@ extends Node3D
 const GAME := "res://main.tscn"
 const ART := ["res://assets/loading/checkout.png", "res://assets/loading/games.png"]
 const TIPS := [
+	"Du lundi au vendredi : vise une semaine sans pertes, avec les disques réparés et tout rangé au dernier close.",
+	"La patience commence dans la file : 1, 2 ou 3 minutes selon le client. La barre est sous ses intentions.",
+	"Au premier scan, le client sort son argent pour tous ses films. Calcule sa monnaie de tête.",
 	"La journée dure 6 minutes. Termine les clients puis range le club avant de clôturer; À démêler peut attendre.",
 	"Sur mobile, glisse le pouce dans la partie gauche : le joystick apparaît sous ton doigt.",
 	"Les retours arrivent dans la chute. À toi de décider quand vérifier et réparer les disques.",
@@ -30,6 +33,7 @@ func _ready():
 	var xr:=XRServer.find_interface("OpenXR")
 	var touch:=OS.has_feature("touchgame") or "--touch-profile" in OS.get_cmdline_user_args()
 	if not touch and xr and xr.is_initialized():
+		if not OS.has_feature("pcvr"):preload("res://quest_image_quality.gd").apply(get_viewport(),xr)
 		build_xr_surface()
 	else:
 		var layer:=CanvasLayer.new()

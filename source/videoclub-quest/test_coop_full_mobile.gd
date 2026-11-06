@@ -18,10 +18,9 @@ func _initialize():
 	host.clerk.select_film(shopper)
 	host.clerk.customer_ready(shopper)
 	var item:Dictionary=shopper.items[0]
-	assert(host.clerk.tender>0 and host.clerk.tender_note.visible and not item.scanned and host.clerk.price==0)
-	var offered:int=host.clerk.tender
+	assert(host.clerk.tender==0 and not host.clerk.tender_note.visible and not item.scanned and host.clerk.price==0)
 	host.clerk.pick_case(item,0,false)
-	assert(host.clerk.scan_held() and host.clerk.tender==offered and host.clerk.price>0)
+	assert(host.clerk.scan_held() and host.clerk.tender>0 and host.clerk.price>0)
 	var origin:Vector3=Vector3(-1.4,1.36,-5.95)
 	host.clerk.clear_hand()
 	item.node.reparent(host.clerk)
@@ -292,5 +291,5 @@ func _initialize():
 	var compressed_delta:String=world.capture(host,false)
 	assert(compressed_delta.length()<compressed_full.length()/2)
 	print("WORLD_PAYLOAD full=",compressed_full.length()," delta=",compressed_delta.length())
-	print("COOP_FULL_MOBILE_OK: early cash, no-code grant, mirrored inventory and day, personal baskets, repaired guest disc, shared cash, local restore")
+	print("COOP_FULL_MOBILE_OK: first-scan cash, no-code grant, mirrored inventory and day, personal baskets, repaired guest disc, shared cash, local restore")
 	quit()

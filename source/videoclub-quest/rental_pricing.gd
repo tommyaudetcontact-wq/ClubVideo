@@ -22,12 +22,11 @@ static func quote(movies:Array,ids:Array)->Dictionary:
 static func payment(amount:int)->Array:
 	if amount<=0:return []
 	var choices:Array=[]
-	# Notes are the common offer; coins are either exact or the smallest practical rounding.
+	# Plausible early-2000s Canadian tender: exact, notes, toonies, or a small mix.
 	for note in [500,1000,2000]:
 		if note>=amount:
 			choices.append([note])
-			if note==500:choices.append([note])
-			if note>=1000 or amount>1000:break
+			if note==500 or note==1000:choices.append([note])
 	var exact:Array=[]
 	var remaining=amount
 	for value in [1000,500,200,100,25,10,5,1]:
@@ -36,11 +35,11 @@ static func payment(amount:int)->Array:
 			remaining-=value
 	choices.append(exact)
 	var rounded=ceili(amount/200.0)*200
-	if rounded<=1000:
+	if rounded<=1200:
 		var toonies=[]
 		for i in range(rounded/200):toonies.append(200)
 		choices.append(toonies)
-	if amount>500:
+	if amount>500 and amount<=2500:
 		var mixed=[]
 		var rest=amount
 		while rest>500:
@@ -48,4 +47,12 @@ static func payment(amount:int)->Array:
 			rest-=500
 		for i in range(ceili(rest/100.0)):mixed.append(100)
 		choices.append(mixed)
+		# A five-dollar note plus enough loonies/toonies, rather than many coins.
+		var short_mix:Array=[]
+		var left:int=amount
+		while left>500:
+			short_mix.append(500)
+			left-=500
+		for i in range(ceili(left/200.0)):short_mix.append(200)
+		choices.append(short_mix)
 	return choices.pick_random().duplicate()

@@ -1,9 +1,9 @@
 extends Node
 const VERSION=2
 const CASE_META=["basket_owner","disc_movie","disc_uid","disc_mismatch_seen","dirty","inspected","antitheft","sort_slot","in_basket","in_sort_tray","barcode_scanned","needs_relock","return_account","return_cycle","return_checked","returned_damage"]
-const SHIFT_FIELDS=["day_model","rush_model","day","duration","time_left","closing","summary","started","served","abandoned","lost_sales","missed_scans","revenue","refunds","returned","restocked","damaged","initial_cash","wave","break_left","report","business_balance"]
+const SHIFT_FIELDS=["week_losses","week_abandoned","week_refunds","week_cash_error","week_perfect","day_model","rush_model","day","duration","time_left","closing","summary","started","served","abandoned","lost_sales","missed_scans","revenue","refunds","returned","restocked","damaged","initial_cash","wave","break_left","report","business_balance"]
 const COUNTER_FIELDS=["price","tender","tender_parts","tender_received","tender_deposited","paid","change","drawer_open","page","rentals","elapsed","customer_delay","chute_serial","tasks","reminders"]
-const CLIENT_FIELDS=["rental_remaining","queue_slot","rental_count","visit_mask","is_refund","refund_due","children_mess_count","children_mess_delay","id","state","cursor","wait","messy","movie","patience","patience_bonus","missing","handed","is_return","replace_title","replacement_movie","replacement_queue","family","companions","children_played","handoff_wait","return_and_rent","browse_index","price_titles","discount","cash_started","next_mess","mess_done","account_id","visit_balance","account_due","offer_ready","subtotal","gst","qst","billed_titles"]
+const CLIENT_FIELDS=["patience_limit","patience_started","rental_remaining","queue_slot","rental_count","visit_mask","is_refund","refund_due","children_mess_count","children_mess_delay","id","state","cursor","wait","messy","movie","patience","patience_bonus","missing","handed","is_return","replace_title","replacement_movie","replacement_queue","family","companions","children_played","handoff_wait","return_and_rent","browse_index","price_titles","discount","cash_started","next_mess","mess_done","account_id","visit_balance","account_due","offer_ready","subtotal","gst","qst","billed_titles"]
 var game
 var save_path="user://club-save.dat"
 var autosave_clock=0.0
@@ -280,6 +280,7 @@ func restore(s:Dictionary)->bool:
 		var customer={"node":node,"record":{} if saved.record<0 else game.dvd_records[saved.record],"reservations":[],"items":[],"return_job":unpack_job(saved.return_job),"path":saved.path}
 		for key in CLIENT_FIELDS:
 			if saved.has(key):customer[key]=saved[key]
+		if not customer.has("patience_limit") and customer.get("state","") in ["queue","service","approach_counter","replacement_browse","replacement_return"]:c.customers.activate_patience(customer)
 		if not customer.has("account_id"):customer.account_id=c.accounts.create_account()
 		for index in saved.reservations:customer.reservations.append(game.dvd_records[index])
 		for index in saved.items:customer.items.append(c.cases[index])

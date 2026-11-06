@@ -370,13 +370,12 @@ func new_case(id:int,position:Vector3,kind:String)->Dictionary:
 	cases.append(data)
 	return data
 func customer_ready(c:Dictionary):
-	c.patience=0.0
+	customers.activate_patience(c)
 	waiting.append(c)
 	start_next()
 func start_next():
 	if not active.is_empty() or waiting.is_empty() or customer_delay>0:return
 	active=waiting.pop_front()
-	active.patience=0.0
 	if active.node.position.distance_to(Vector3(-.6,0,-5.05))>.15:
 		active.state="approach_counter"
 		customers.route(active,Vector3(-.6,0,-5.05))
@@ -950,13 +949,26 @@ func replace_requested_title(old_title:int,record:Dictionary):
 	refresh_terminal()
 
 func abandon_customer(c:Dictionary):
+	if c.state=="exit":return
 	shift.abandoned+=1
-	shift.lost_sales+=Pricing.quote(game.layout.movies,c.get("reservations",[]).map(func(r):return r.movie)).total
+	var unserved:Array=c.get("reservations",[]).map(func(r):return r.movie)
+	if c==active:unserved=active.items.map(func(item):return item.movie)+active.get("missing",[])
+	shift.lost_sales+=Pricing.quote(game.layout.movies,unserved).total
 	waiting.erase(c)
 	if c==active:
 		for item in active.items:
 			item.kind="shelve"
-			if item!=held_service and item!=secondary and not item.node.get_meta("guest_held",false):send_to_chute(item)
+			if item==held_service:
+				if inspection.opened:inspection.close_case()
+				clear_hand()
+			if item==secondary:
+				secondary={}
+				secondary_hand=-1
+			if item==lan.guest_case:
+				if is_instance_valid(lan.guest_inspection) and lan.guest_inspection.opened:lan.guest_inspection.close_case()
+				lan.guest_case={}
+				item.node.set_meta("guest_held",false)
+			send_to_chute(item)
 			item.task="Ranger après abandon : "+str(game.layout.movies[item.movie].title)
 			if not tasks.has(item.task):tasks.append(item.task)
 		active={}
@@ -1130,6 +1142,8 @@ func scan_item(item:Dictionary)->bool:
 	return true
 func offer_rental_payment():
 	if active.is_empty() or active.get("is_refund",false) or active.get("is_return",false) or active.get("offer_ready",false) or active.get("cash_started",false):return
+	# The first scanned rental triggers the offer for the entire intended basket.
+	if active.get("billed_titles",[]).is_empty() and not active.items.any(func(item):return item.scanned):return
 	var titles:Array=active.get("price_titles",active.items.map(func(item):return item.movie))
 	var expected:int=Pricing.quote(game.layout.movies,titles).total+int(active.get("account_due",0))
 	if expected<=0:return

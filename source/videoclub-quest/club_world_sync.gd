@@ -48,7 +48,7 @@ static func capture(game,include_stock:bool=true)->String:
 			var follower:Node3D=n.get_node_or_null("Companion%d"%index)
 			if follower:
 				followers.append({"index":index,"transform":follower.global_transform,"clip":actor_clip(follower)})
-		clients.append({"id":str(customer.id),"transform":n.global_transform,"intent":load("res://club_visit_icons.gd").reason_mask(customer),"rental_count":load("res://club_visit_icons.gd").remaining_count(customer),"moving":customer.cursor<customer.path.size(),"companions":customer.get("companions",[]),"followers":followers,"clip":actor_clip(n),"carry":customer.get("movie",-1) if is_instance_valid(customer.get("carry")) and customer.carry.visible else -1})
+		clients.append({"id":str(customer.id),"transform":n.global_transform,"patience":float(customer.get("patience",0)),"patience_limit":float(customer.get("patience_limit",120)),"patience_active":customer.get("patience_started",false) and customer.state!="exit","intent":load("res://club_visit_icons.gd").reason_mask(customer),"rental_count":load("res://club_visit_icons.gd").remaining_count(customer),"moving":customer.cursor<customer.path.size(),"companions":customer.get("companions",[]),"followers":followers,"clip":actor_clip(n),"carry":customer.get("movie",-1) if is_instance_valid(customer.get("carry")) and customer.carry.visible else -1})
 	var discs:Array=[]
 	if c.inspection.opened and is_instance_valid(c.inspection.disc) and c.inspection.disc.visible:
 		var id:int=c.inspection.case_node.get_meta("disc_movie",-1)
@@ -194,6 +194,7 @@ func apply(encoded:String):
 				motion_targets[key]=entry.transform
 			if category=="clients":
 				load("res://club_visit_icons.gd").update(node,int(entry.get("intent",2)),int(entry.get("rental_count",1)))
+				load("res://club_visit_icons.gd").update_patience(node,float(entry.get("patience",0)),float(entry.get("patience_limit",120)),entry.get("patience_active",false))
 				Actor.animate(node,str(entry.get("clip","Walk" if entry.moving else "Idle")))
 				update_carry(node,int(entry.carry))
 				for follower in entry.get("followers",[]):

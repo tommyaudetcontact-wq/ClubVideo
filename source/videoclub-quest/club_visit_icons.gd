@@ -3,6 +3,30 @@ const RETURN := 1
 const RENT := 2
 const REFUND := 4
 static var textures:Dictionary={}
+static var patience_shader:Shader
+
+static func update_patience(parent:Node3D,remaining:float,limit:float,active:bool):
+	var bar:=parent.get_node_or_null("PatienceBar") as MeshInstance3D
+	if not bar:
+		bar=MeshInstance3D.new()
+		bar.name="PatienceBar"
+		var quad:=QuadMesh.new()
+		quad.size=Vector2(.72,.065)
+		bar.mesh=quad
+		bar.position.y=2.04
+		bar.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if not patience_shader:
+			patience_shader=Shader.new()
+			patience_shader.code="shader_type spatial; render_mode unshaded; uniform float ratio=1.0; void fragment(){ bool border=UV.x<.012||UV.x>.988||UV.y<.12||UV.y>.88; vec3 fill=mix(vec3(.95,.13,.09),vec3(.16,.85,.35),ratio); ALBEDO=border?vec3(.04,.055,.08):(UV.x<ratio?fill:vec3(.17,.19,.22)); }"
+		var material:=ShaderMaterial.new()
+		material.shader=patience_shader
+		bar.material_override=material
+		parent.add_child(bar)
+	bar.visible=active and remaining>0
+	if not bar.visible:return
+	var camera:=parent.get_viewport().get_camera_3d()
+	if camera and camera.global_position.distance_to(bar.global_position)>.01:bar.look_at(camera.global_position,Vector3.UP,true)
+	bar.material_override.set_shader_parameter("ratio",clampf(remaining/maxf(1,limit),0,1))
 
 static func reason_mask(customer:Dictionary)->int:
 	if customer.get("state","")=="exit":return 0
@@ -42,7 +66,7 @@ static func update(parent:Node3D,mask:int,count:int=1):
 	if not root:
 		root=Node3D.new()
 		root.name="VisitIcons"
-		root.position.y=2.10
+		root.position.y=2.36
 		parent.add_child(root)
 	root.visible=mask!=0
 	var camera:=parent.get_viewport().get_camera_3d()

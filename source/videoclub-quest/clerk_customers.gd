@@ -42,6 +42,9 @@ func spawn_customer():
 	var c={"node":n,"id":next_id,"state":"enter","path":PackedVector2Array(),"cursor":0,"wait":0.0,"messy":randf()<minf(.40,.18+.02*clerk.shift.day),"movie":randi_range(0,game.layout.movies.size()-1)}
 	next_id+=1
 	customers.append(c)
+	c.patience_limit=float([60,120,180].pick_random())
+	c.patience=c.patience_limit
+	c.patience_started=false
 	var remaining:=MAX_VISIBLE_PEOPLE-population()
 	var group:=randf()
 	c.companions=[]
@@ -96,6 +99,11 @@ func _physics_process(dt):
 		spawn_timer=next_arrival_delay()
 	for c in customers.duplicate():
 		var moving=false
+		if c.get("patience_started",false) and c.state!="exit":
+			c.patience=maxf(0,float(c.get("patience",120))-dt)
+			if c.patience<=0:
+				clerk.abandon_customer(c)
+				continue
 		if c.has("yield_target"):
 			moving=move_yielding(c,dt)
 			update_children(c,dt)
@@ -132,7 +140,6 @@ func _physics_process(dt):
 			match c.state:
 				"approach_counter":
 					c.state="service"
-					c.patience=0.0
 				"enter":
 					if not c.return_job.is_empty():
 						c.state="return_drop"
@@ -335,6 +342,7 @@ func update_service_visual(c:Dictionary,dt:float):
 	var bar=c.node.get_node_or_null("Patience")
 	if bar:bar.hide()
 	VisitIcons.update(c.node,VisitIcons.reason_mask(c),VisitIcons.remaining_count(c))
+	VisitIcons.update_patience(c.node,float(c.get("patience",0)),float(c.get("patience_limit",120)),c.get("patience_started",false) and c.state!="exit")
 
 func next_arrival_delay()->float:
 	if arrival_cluster_left>0:
@@ -352,6 +360,7 @@ func next_arrival_delay()->float:
 	return randf_range(12,26)*(1-pressure)
 
 func join_queue(customer:Dictionary):
+	activate_patience(customer)
 	var occupied:Array=[] if clerk.active.is_empty() else [0]
 	for other in customers:
 		if other!=customer and other!=clerk.active and other.state in ["queue","service","approach_counter","replacement_browse","replacement_return"]:occupied.append(int(other.get("queue_slot",0)))
@@ -361,6 +370,12 @@ func join_queue(customer:Dictionary):
 	customer.state="queue"
 	var x:Array=[-.6,.25,1.10,1.95,2.80,3.65,-1.45,-2.30]
 	route(customer,Vector3(x[slot],0,-5.05))
+
+func activate_patience(customer:Dictionary):
+	if customer.get("patience_started",false):return
+	if not customer.has("patience_limit"):customer.patience_limit=float([60,120,180].pick_random())
+	customer.patience=float(customer.patience_limit)
+	customer.patience_started=true
 
 func nearby_people(except:Dictionary)->Array[Vector3]:
 	var points:Array[Vector3]=[]

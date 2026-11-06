@@ -80,6 +80,7 @@ var lod_last_examined := 0
 var lod_groups: Dictionary = {}
 var lod_timer := 0.0
 var lod_selected: Dictionary = {}
+var diagnostics_worker:Thread
 var xr_interface: XRInterface
 var lod_update_usec := 0
 var lod_occlusion_tests := 0
@@ -172,7 +173,7 @@ func _ready() -> void:
 	if not touch_profile:call_deferred("_play_ambient_trailer")
 	if xr_active:
 		call_deferred("_recenter_entry")
-		call_deferred("_diagnostic_capture")
+		if "--capture-diagnostic" in OS.get_cmdline_user_args():call_deferred("_diagnostic_capture")
 	if startup:startup.finish(self)
 
 func _request_refresh_rate() -> void:
@@ -300,6 +301,7 @@ func _prepare_player() -> void:
 	xr_interface = xr
 	if not touch_profile and xr and xr.is_initialized():
 		xr_active = true
+		if not pc_vr:preload("res://quest_image_quality.gd").apply(get_viewport(),xr)
 		get_viewport().use_xr = true
 		xr.render_target_size_multiplier = 1.0 if pc_vr else 1.4
 		if not pc_vr and xr.has_method("set_foveation_level"):
@@ -794,6 +796,9 @@ func _recenter_entry(force := false) -> void:
 func _write_diagnostics() -> void:
 	var state := {"xr_active":xr_active,"tracking":xr_interface.get_tracking_status() if xr_interface else -1,"spawn_centered":spawn_centered,"head_local":[head.position.x,head.position.y,head.position.z],"head_world":[head.global_position.x,head.global_position.y,head.global_position.z],"origin":[origin.position.x,origin.position.y,origin.position.z],"viewport_xr":get_viewport().use_xr,"viewport_size":str(get_viewport().get_visible_rect().size),"xr_target_size":str(xr_interface.get_render_target_size()) if xr_interface else "none","msaa":get_viewport().msaa_3d,"camera_current":head.current,"fps":Engine.get_frames_per_second(),"dvd_count":dvd_records.size(),"near_covers":lod_selected.size(),"lod_candidates":lod_last_examined,"build":"PC-0.8.6" if pc_vr else (Updater.ANDROID_VERSION if touch_profile else Updater.QUEST_VERSION),"teleport_mode":teleportation.enabled,"baked_lighting":baked_lighting_active,"active_trailer":active_trailer,"trailer_playing":trailer_player.is_playing(),"video_position":trailer_player.stream_position,"screens":screens.size(),"draw_calls":Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)}
 	state["texture_mip_bias"]=ProjectSettings.get_setting("rendering/textures/default_filters/texture_mipmap_bias",0.0)
+	state["viewport_mip_bias"]=get_viewport().texture_mipmap_bias
+	state["render_scale"]=get_viewport().scaling_3d_scale
+	state["taa"]=get_viewport().use_taa
 	state["foveation_level"]=xr_interface.call("get_foveation_level") if xr_interface and xr_interface.has_method("get_foveation_level") else -1
 	if Engine.has_singleton("OpenXRFbCompositionLayerSettingsExtension"):
 		var layer_settings=Engine.get_singleton("OpenXRFbCompositionLayerSettingsExtension")
@@ -810,26 +815,18 @@ func _write_diagnostics() -> void:
 	state["catalogue_entries"]=layout.movies.size()
 	state["unique_games"]=layout.movies.filter(func(item):return item.get("kind","")=="game").size()
 	state["active_candy"]=candy.balls.size() if candy else 0
-	if not frame_times.is_empty():
-		var sorted := frame_times.duplicate()
-		sorted.sort()
-		state["frame_sample_count"] = sorted.size()
-		state["frame_ms_p99"] = sorted[mini(sorted.size()-1,int(sorted.size()*0.99))]
-		state["frame_ms_worst"] = sorted.back()
-		state["frame_ms_median"] = sorted[int(sorted.size()*.5)]
-		state["frame_ms_p95"] = sorted[mini(sorted.size()-1,int(sorted.size()*.95))]
-		state["target_frame_ms"] = 1000.0/72.0
-	var file := FileAccess.open("user://diagnostics.json",FileAccess.WRITE)
-	if file:
-		file.store_string(JSON.stringify(state))
+	if diagnostics_worker:
+		if diagnostics_worker.is_alive():return
+		diagnostics_worker.wait_to_finish()
+	var samples:Array=frame_times.duplicate()
+	diagnostics_worker=Thread.new()
+	diagnostics_worker.start(preload("res://club_diagnostics.gd").write_report.bind(state,samples,pc_vr))
 	if pc_vr:
-		var history=FileAccess.open("user://performance-history.jsonl",FileAccess.READ_WRITE if FileAccess.file_exists("user://performance-history.jsonl") else FileAccess.WRITE)
-		if history:
-			history.seek_end()
-			state["unix_time"]=Time.get_unix_time_from_system()
-			history.store_line(JSON.stringify(state))
 		frame_times.clear()
 		frame_ring_cursor=0
+
+func _exit_tree():
+	if diagnostics_worker:diagnostics_worker.wait_to_finish()
 
 func _diagnostic_capture() -> void:
 	if pc_vr:return # Avoid a stereo GPU readback and PNG encode during gameplay.

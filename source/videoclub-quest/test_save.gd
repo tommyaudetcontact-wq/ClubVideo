@@ -54,6 +54,8 @@ func _initialize():
 	c.returns_due.append({"movie":7,"record":rented,"time":580.0})
 	c.shift.day=2
 	c.shift.wave=3
+	c.shift.week_losses=123
+	c.shift.week_abandoned=1
 	c.shift.duration=360.0
 	c.shift.time_left=112.0
 	c.shift.started=true
@@ -96,6 +98,7 @@ func _initialize():
 	check(count==g.dvd_records.size() and unique.size()==count,"Inventory plus loose and repairing discs conserves every unique disc")
 	check(c.inspection.loose_discs.size()==1 and c.inspection.loose_discs[0].data.uid==state.loose_discs[0].data.uid,"Sorted loose disc remains on table with original identity")
 	check(c.repairs.remaining==17.5 and c.repairs.data.uid==state.repair.data.uid,"Repair resumes with exact remaining time and disc")
+	check(c.shift.week_losses==123 and c.shift.week_abandoned==1,"Weekly counters survive save and restore")
 	check(c.shift.day==2 and c.shift.time_left==112 and c.shift.duration==360 and c.shift.wave==3,"Save preserves the six-minute day and exact remaining time")
 	check(c.active.id==customer.get("id",0) and c.active.patience==31,"Active customer, basket and patience persist")
 	check(c.returns_due.size()==1 and c.returns_due[0].record.id==state.returns[0].record,"Outstanding rental returns preserve their actual copy")

@@ -1,0 +1,13 @@
+# Vidéo Club 0.9.9 — patience, semaine et paiement
+
+Même logique sur Quest, Android et pour les deux joueurs coop.
+
+- Argent présenté au premier scan, pour le panier complet. Le deuxième/troisième scan ne change pas l'offre déjà présentée. Paiements exacts, billets de 5/10/20 $, pièces de 2 $ et mélanges plausibles; pour 6,25 $, un 20 $ et quatre pièces de 2 $ sont possibles.
+- Patience attribuée à 60, 120 ou 180 secondes. Le compteur démarre à l'entrée dans la file et continue au comptoir, sans remise à zéro. Une barre indique le temps restant, avec les intentions au-dessus.
+- À expiration, les boîtiers non remis reviennent verrouillés dans la chute; le client sort et la vente non réalisée compte comme perte. Cela fonctionne également lorsqu'un boîtier est tenu par un joueur.
+- Chaque journée = six minutes d'ouverture + clôture. Progression lundi–vendredi, bilan de semaine après la clôture du vendredi, puis nouveau lundi. La semaine parfaite exige zéro perte/abandon/remboursement/écart de caisse, aucun disque abîmé présent au club et aucun boîtier/disque restant sur la table ou dans le bac de tri. Le bac de tri reste autorisé aux clôtures quotidiennes, mais empêche une semaine parfaite tant qu'il reste du travail.
+- Sauvegarde et réplication des compteurs hebdomadaires, de la patience et des barres coop.
+- Quest : garde-fou de qualité dès l'écran de chargement et à la transition vers le jeu (échelle 3D 100 %, cible XR 1,4, MSAA 4×, fovéation désactivée, léger biais mipmap -0,35, sans TAA/FXAA). Textures originales en main conservées à leur résolution source. Aucun nouveau scan haute résolution n'est inclus; les petits scans restent limités par leur source.
+- Optimisations sans retrait du décor : capture GPU/PNG de diagnostic réservée à une commande explicite; tri et écriture des mesures sur un fil de travail; calcul de pluie évité dans les couloirs sans goutte mobile. Comparaison Vulkan avant/après du shader à temps fixe : images identiques pixel par pixel pour la vue testée.
+
+Validation : paiements variés et panier complet au premier scan; abandon avec boîtier tenu; progression hebdomadaire et conditions de réussite/échec; sauvegarde; simulations coop Quest/Android et Android/Android. Les dernières mesures de la 0.9.8 atteignaient 72 FPS avec des chutes ponctuelles (p95 15,68 ms, GPU 13,16 ms); elles ne constituent pas une mesure de la nouvelle version. Un test porté de la 0.9.9 reste nécessaire pour confirmer netteté et stabilité dans plusieurs situations, notamment avec huit personnes. Aucun minimum absolu de 72 FPS n'est revendiqué sans cette validation.
