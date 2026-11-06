@@ -169,9 +169,22 @@ func _initialize():
 	var disc_point:Vector3=guest.head.global_position+Vector3(0,-.4,-.3)
 	coop.send("surface_drop","",JSON.stringify([disc_point.x,disc_point.y,disc_point.z]))
 	await create_timer(.35).timeout
+	assert(not coop.guest_disc.is_empty() and host.clerk.inspection.loose_discs.is_empty())
+	coop.send("case_open")
+	await create_timer(.3).timeout
+	assert(not coop.guest_open)
+	guest.touch_controls.case_action()
+	await create_timer(.4).timeout
+	assert(coop.guest_disc.is_empty() and coop.guest_open)
+	guest.touch_controls.use_disc()
+	await create_timer(.4).timeout
+	coop.send("disc_flip")
+	await create_timer(.3).timeout
+	guest.head.global_position=Vector3(2.1,1.5,-8.3)
+	coop.send("disc_use","","table")
+	await create_timer(.35).timeout
 	assert(coop.guest_disc.is_empty() and host.clerk.inspection.loose_discs.size()==1)
 	var dropped_disc:Dictionary=host.clerk.inspection.loose_discs[0]
-	assert(is_instance_valid(dropped_disc.body))
 	coop.send("disc_use","",str(dropped_disc.node.get_instance_id()))
 	await create_timer(.35).timeout
 	assert(not coop.guest_disc.is_empty() and host.clerk.inspection.loose_discs.is_empty())

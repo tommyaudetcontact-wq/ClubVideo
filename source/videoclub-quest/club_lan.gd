@@ -505,7 +505,15 @@ func use_guest_disc(p:Vector3,target:String)->String:
 	elif is_instance_valid(guest_inspection.carried):
 		if target=="table" and p.distance_to(Vector3(2.1,.93,-8.7))<1.9:
 			repairs.place_disc(guest_inspection,Vector3(clampf(p.x,1.25,3.0),.93,-8.7))
-		elif target.is_empty() and not guest_inspection.put_carried_in_case():return "Ouvre un boîtier vide pour y remettre le disque."
+		elif target.is_empty():
+			if guest_case.is_empty() and is_instance_valid(guest_inspection.source_case):
+				pick_guest_case("case_pick",str(guest_inspection.source_case.get_instance_id()))
+			if guest_case.is_empty():return "Prends un boîtier vide pour y remettre le disque."
+			if not guest_inspection.opened:
+				if guest_case.node.get_meta("antitheft",false):return "Retire l’antivol avant de remettre le disque."
+				guest_inspection.open_case(guest_case.node)
+				guest_inspection.finish_lid(true)
+			if not guest_inspection.put_carried_in_case():return "Ce boîtier contient déjà un disque. Choisis un boîtier vide."
 	elif target.is_empty():
 		if not guest_cash.is_empty():return "Dépose d’abord l’argent pour libérer ta main gauche."
 		guest_inspection.take_open_disc(0)
@@ -631,7 +639,8 @@ func drop_guest_on_surface(request:Dictionary)->String:
 	if point.distance_to(remote_avatar.targets[0].origin)>3.3 or absf(point.x)>20 or absf(point.z)>30 or point.y<-.1 or point.y>8:return "Approche-toi de la surface."
 	var dropper=load("res://club_surface_drop.gd")
 	if is_instance_valid(guest_inspection) and is_instance_valid(guest_inspection.carried):
-		dropper.drop_disc(guest_inspection,point)
+		if not clerk.repairs.is_sorting_surface(point):return "Le disque reste en main : vise la table à démêler ou remets-le dans son boîtier."
+		clerk.repairs.place_disc(guest_inspection,Vector3(point.x,.916,point.z))
 	elif not guest_case.is_empty():
 		if guest_inspection.opened:guest_inspection.close_case()
 		var node:RigidBody3D=guest_case.node

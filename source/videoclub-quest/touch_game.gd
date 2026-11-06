@@ -581,6 +581,12 @@ func use_target():
 	if tapped_empty_lid():
 		toggle_case()
 		return
+	if has_inspection_disc():
+		if not tap_aim:sync_hands()
+		var intent:=inspection_disc_action()
+		if intent.action=="disc_flip":flip_item()
+		else:use_disc(str(intent.get("target","")))
+		return
 	if coop_panel.connected:
 		if not tap_aim:sync_hands()
 		var target:=coop_interaction()
@@ -623,12 +629,6 @@ func use_target():
 	var cash:=cash_target()
 	if not cash.is_empty():
 		use_cash(cash)
-		return
-	if clerk.inspection.finger>=0:
-		if near(clerk.repairs.station) and aimed(clerk.repairs.station,.23)<INF:use_disc()
-		elif aimed(clerk.inspection.carried.global_position,.083)<INF:flip_item()
-		elif clerk.inspection.opened and game.held and aimed(game.held.global_position,.14)<INF:use_disc()
-		elif not drop_on_surface():use_disc()
 		return
 	if clerk.inspection.opened and is_instance_valid(clerk.inspection.disc) and aimed(clerk.inspection.disc.global_position,.085)<INF:
 		use_disc()
@@ -847,6 +847,7 @@ func coop_marked(target:Dictionary,pose:Transform3D,bounds:Vector3)->Dictionary:
 	return target
 
 func coop_interaction()->Dictionary:
+	if not coop_panel.guest_disc.is_empty():return inspection_disc_action()
 	if clerk.desktop.project_ray(game.aim_hands[0]).x>=0:
 		var screen_size:Vector2=clerk.screen.mesh.size
 		return coop_marked({"action":"computer","label":"Ouvrir l’ordi"},clerk.screen.global_transform,Vector3(screen_size.x+.012,screen_size.y+.012,.018))
@@ -859,11 +860,6 @@ func coop_interaction()->Dictionary:
 	var holding:bool=not coop_panel.guest_case_id.is_empty()
 	if near(clerk.repairs.station) and aimed(clerk.repairs.station,.23)<INF:
 		return coop_marked({"action":"disc_use","target":"repair","label":"Surfaceuse"},Transform3D(Basis.IDENTITY,clerk.repairs.station),Vector3(.20,.16,.20))
-	if not coop_panel.guest_disc.is_empty():
-		if clerk.repairs.is_sorting_surface(table_point(.93)):return {"action":"disc_use","target":"table","label":"Déposer le disque"}
-		if coop_panel.guest_open and (not tap_aim or aimed(coop_panel.guest_held_pose().origin,.17)<INF):return {"action":"disc_use","label":"Remettre le disque"}
-		if tap_aim and surface_drop_point().is_finite():return {"action":"surface_drop","label":"Déposer ici"}
-		return {"action":"disc_flip","label":"Retourner le disque"}
 	if holding:
 		if coop_panel.guest_open:
 			if tap_aim and aimed(coop_panel.guest_held_pose().origin,.17)==INF and surface_drop_point().is_finite():return {"action":"surface_drop","label":"Déposer ici"}
@@ -955,10 +951,10 @@ func refresh_action(over_desktop:bool):
 		if target.has("pose"):glow.mark(target.pose,target.bounds)
 		else:glow.hide()
 		coop_panel.update_shelf_marker(true)
-		case_button.text="Fermer" if coop_panel.guest_open else "Ouvrir"
+		case_button.text="Ranger le disque" if not coop_panel.guest_disc.is_empty() else ("Fermer" if coop_panel.guest_open else "Ouvrir")
 		flip_button.visible=not coop_panel.guest_disc.is_empty() or (holding and not coop_panel.guest_open)
 		flip_button.text="Retourner le disque" if not coop_panel.guest_disc.is_empty() else ("Voir la couverture" if coop_panel.guest_flipped else "Voir le dos")
-		case_button.disabled=not holding
+		case_button.disabled=not holding and coop_panel.guest_disc.is_empty()
 		drop_button.disabled=not holding and coop_panel.guest_disc.is_empty() and not clerk.wallet.occupied(CASH_HAND)
 		action_hint.text=""
 		return
@@ -968,14 +964,15 @@ func refresh_action(over_desktop:bool):
 	var item:Dictionary=pointed_item() if not game.held else {}
 	var cash:=cash_target()
 	mark_touch_target(cash,item,over_desktop)
-	if target_customer() and clerk.tender_received and clerk.wallet.occupied(CASH_HAND):label="Rendre la monnaie"
+	if inspection.finger>=0:label=inspection_disc_action().label
+	elif target_customer() and clerk.tender_received and clerk.wallet.occupied(CASH_HAND):label="Rendre la monnaie"
 	elif target_customer() and can_handoff():label="Remettre le film"
 	elif basket_aimed():label="Mettre au panier" if game.held else "Ouvrir le panier"
 	elif over_desktop:label="Ouvrir l’ordi"
 	elif not cash.is_empty():
 		label={"tender":"Prendre l’argent","money":"Prendre","drawer":"Tiroir","give_change":"Rendre la monnaie","deposit":"Déposer en caisse","loose_money":"Ramasser","select_cash":"Choisir"}.get(cash.action,"Utiliser")
 	elif inspection.finger>=0:
-		label="Retourner" if aimed(inspection.carried.global_position,.083)<INF else ("Déposer le disque" if not inspection.opened else "Remettre le disque")
+		label="Retourner" if aimed(inspection.carried.global_position,.083)<INF else ("Déposer au tri" if disc_sorting_point().is_finite() else "Remettre le disque")
 	elif game.held:
 		if aimed(clerk.scanner.global_position,.24)<INF:label="Scanner"
 		elif aimed(DETACHER,.20)<INF:label="Antivol"
@@ -996,7 +993,8 @@ func refresh_action(over_desktop:bool):
 
 func case_action():
 	if coop_panel.connected:
-		coop_panel.toggle_guest_case()
+		if not coop_panel.guest_disc.is_empty():use_disc()
+		else:coop_panel.toggle_guest_case()
 		return
 	if clerk.inspection.finger>=0:use_disc()
 	else:toggle_case()
@@ -1020,28 +1018,39 @@ func flip_item():
 	if clerk.inspection.finger>=0:disc_back=not disc_back
 	elif not clerk.inspection.opened:game._flip_held()
 
-func use_disc():
+func use_disc(target:String=""):
 	if action_busy():return
 	if coop_panel.connected:
-		var target:=""
-		if near(clerk.repairs.station) and aimed(clerk.repairs.station,.23)<INF:target="repair"
-		elif not coop_panel.guest_disc.is_empty() and clerk.repairs.is_sorting_surface(table_point(.93)):target="table"
 		coop_panel.send("disc_use","",target)
 		return
 	var inspection=clerk.inspection
 	if inspection.finger>=0:
-		var station:Vector3=clerk.repairs.station
-		if near(station) and aimed(station,.23)<INF:
-			inspection.carried.global_position=station
-			inspection.interact(inspection.finger,false)
-		elif clerk.repairs.is_sorting_surface(table_point(.93)):
-			clerk.repairs.place_disc(inspection,table_point(.93))
-		elif inspection.opened:
-			inspection.carried.global_position=inspection.interior.to_global(Vector3(0,-.012,.004))
-			inspection.interact(inspection.finger,false)
+		if target=="repair":
+			if near(clerk.repairs.station):
+				inspection.carried.global_position=clerk.repairs.station
+				clerk.repairs.insert_disc(inspection)
+		elif target=="table":
+			var point:=disc_sorting_point()
+			if point.is_finite():clerk.repairs.place_disc(inspection,point)
 		else:
-			var p:=table_point(.93)
-			clerk.repairs.place_disc(inspection,p)
+			if not game.held and is_instance_valid(inspection.source_case):
+				for item in clerk.cases:
+					if item.node==inspection.source_case and near(item.node.global_position,2.0):
+						clerk.pick_case(item,CASE_HAND,false)
+						break
+			if not game.held:
+				game._message("Prends un boîtier vide pour y remettre le disque.")
+				return
+			if not inspection.opened:
+				if game.held.get_meta("antitheft",false):
+					game._message("Retire l’antivol avant de remettre le disque.")
+					return
+				inspection.open_case(game.held)
+				inspection.finish_lid(true)
+			if inspection.put_carried_in_case():
+				disc_back=false
+				game._message("Disque remis dans le boîtier. Tu peux le refermer.")
+			else:game._message("Ce boîtier contient déjà un disque. Choisis un boîtier vide.")
 		return
 	if clerk.wallet.occupied(CASH_HAND):
 		game._message("Libère ta main gauche pour prendre le disque.")
@@ -1186,6 +1195,10 @@ func handoff():
 	clerk.action("handoff",game.held_hand)
 
 func drop():
+	if (coop_panel.connected and not coop_panel.guest_disc.is_empty()) or (not coop_panel.connected and is_instance_valid(clerk.inspection.carried)):
+		if disc_sorting_point().is_finite():use_disc("table")
+		else:game._message("Vise la table à démêler pour déposer le disque, ou touche Ranger le disque.")
+		return
 	if coop_panel.connected:
 		if clerk.wallet.occupied(CASH_HAND) and coop_panel.guest_case_id.is_empty():
 			if coop_panel.checkout.get("drawer_open",false):deposit_payment()
@@ -1748,7 +1761,10 @@ func drop_on_surface()->bool:
 		coop_panel.send("surface_drop",str(selected_cash.get_meta("remote_cash_id","")) if is_instance_valid(selected_cash) else "",JSON.stringify([point.x,point.y,point.z]))
 		return true
 	var dropper=load("res://club_surface_drop.gd")
-	if is_instance_valid(clerk.inspection.carried):dropper.drop_disc(clerk.inspection,point)
+	if is_instance_valid(clerk.inspection.carried):
+		if disc_sorting_point().is_finite():use_disc("table")
+		else:game._message("Le disque reste en main : remets-le dans son boîtier ou vise la table à démêler.")
+		return true
 	elif game.held:
 		if clerk.inspection.opened:clerk.inspection.close_case()
 		var item:Dictionary=clerk.adopt_held_case() if clerk.held_service.is_empty() else clerk.held_service
@@ -1803,3 +1819,23 @@ func resize_checkout():
 	checkout_popup.offset_top=-height*.5
 	checkout_popup.offset_bottom=height*.5
 	checkout_scroll.scroll_vertical=0
+
+func disc_sorting_point()->Vector3:
+	var point:=surface_drop_point()
+	if not point.is_finite() or not clerk.repairs.is_sorting_surface(point) or point.y>1.08:return Vector3.INF
+	return Vector3(point.x,.916,point.z)
+
+func has_inspection_disc()->bool:
+	return not coop_panel.guest_disc.is_empty() if coop_panel.connected else is_instance_valid(clerk.inspection.carried)
+
+func inspection_disc_action()->Dictionary:
+	var disc:Node3D=clerk.inspection.carried
+	var case_position:Vector3=game.held.global_position if game.held else Vector3.INF
+	if coop_panel.connected:
+		disc=coop_panel.mirror.nodes.get("discs"+coop_panel.guest_disc) if is_instance_valid(coop_panel.mirror) else null
+		case_position=coop_panel.guest_held_pose().origin if not coop_panel.guest_case_id.is_empty() else Vector3.INF
+	if tap_aim and disc and aimed(disc.global_position,.09)<INF:return {"action":"disc_flip","label":"Retourner le disque"}
+	if tap_aim and case_position.is_finite() and aimed(case_position,.18)<INF:return {"action":"disc_use","label":"Remettre le disque"}
+	if near(clerk.repairs.station) and aimed(clerk.repairs.station,.23)<INF:return {"action":"disc_use","target":"repair","label":"Surfaceuse"}
+	if disc_sorting_point().is_finite():return {"action":"disc_use","target":"table","label":"Déposer au tri"}
+	return {"action":"disc_use","label":"Remettre le disque"}
