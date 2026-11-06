@@ -32,7 +32,10 @@ func _initialize():
 	inspection.carried_data={"movie":0,"uid":42,"dirty":true,"inspected":true}
 	inspection.finger=0
 	assert(ui.drop_on_surface())
-	assert(inspection.carried==null and inspection.loose_discs.size()==1)
+	assert(is_instance_valid(inspection.carried) and inspection.loose_discs.is_empty())
+	# Existing saved loose discs still retain working physical pickup.
+	load("res://club_surface_drop.gd").drop_disc(inspection,point)
+	assert(inspection.loose_discs.size()==1)
 	var loose:Dictionary=inspection.loose_discs[0]
 	assert(is_instance_valid(loose.body) and not loose.body.freeze)
 	await create_timer(.5).timeout
