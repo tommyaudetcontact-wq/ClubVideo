@@ -4,7 +4,7 @@ const GAME := "res://main.tscn"
 const ART := ["res://assets/loading/checkout.png", "res://assets/loading/games.png"]
 const TIPS := [
 	"Chaque jour se termine après les clients, leurs retours et le close. Vise une semaine sans pertes et un club rangé.",
-	"La patience commence quand le client rejoint la file : entre 2 et 3 minutes. La barre est sous ses intentions.",
+	"La patience commence au dépôt des films sur le comptoir : entre 1 et 3 minutes. La barre est sous ses intentions.",
 	"Au premier scan, le client sort son argent pour tous ses films. Calcule sa monnaie de tête.",
 	"Jour 1 : quatre clients locataires, puis leurs retours et le close. Chaque jour ajoute un ou deux clients.",
 	"Sur mobile, glisse le pouce dans la partie gauche : le joystick apparaît sous ton doigt.",

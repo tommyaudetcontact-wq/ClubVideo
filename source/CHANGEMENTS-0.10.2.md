@@ -1,0 +1,1 @@
+Patience aléatoire de 60 à 180 secondes, déclenchée au dépôt des films sur le comptoir. Aucun décompte en rayon ni dans la file. Conseil de chargement corrigé et sauvegardes de clients en attente adaptées. Test quotidien headless validé, incluant attente sans chronomètre puis activation au comptoir. Règle commune Quest, Android et coop.

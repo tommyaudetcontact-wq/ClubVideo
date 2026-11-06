@@ -9,6 +9,7 @@ func rental()->Dictionary:
 	c.select_film(shopper)
 	shopper.node.position=Vector3(-.6,0,-5.05)
 	c.customer_ready(shopper)
+	assert(shopper.patience_started and shopper.patience==shopper.patience_limit)
 	return shopper
 func paid_tender():
 	c.tender=1000
@@ -45,7 +46,10 @@ func _initialize():
 		c.customers.spawn_customer()
 		var visitor:Dictionary=c.customers.customers.back()
 		assert(visitor.selection_left>=30 and visitor.selection_left<=180)
-		assert(visitor.patience_limit>=120 and visitor.patience_limit<=180)
+		assert(visitor.patience_limit>=60 and visitor.patience_limit<=180)
+		assert(not visitor.patience_started)
+		c.customers.join_queue(visitor)
+		assert(not visitor.patience_started)
 	assert(not c.shift.can_spawn() and c.shift.arrived_customers==4)
 	c.shift.tick(9999)
 	assert(not c.shift.closing)

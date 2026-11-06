@@ -281,10 +281,10 @@ func restore(s:Dictionary)->bool:
 		var customer={"node":node,"record":{} if saved.record<0 else game.dvd_records[saved.record],"reservations":[],"items":[],"return_job":unpack_job(saved.return_job),"path":saved.path}
 		for key in CLIENT_FIELDS:
 			if saved.has(key):customer[key]=saved[key]
-		if not customer.has("patience_limit") and customer.get("state","") in ["queue","service","approach_counter","replacement_browse","replacement_return"]:c.customers.activate_patience(customer)
-		if float(customer.get("patience_limit",120))<120:
-			customer.patience=maxf(0,float(customer.get("patience",0))+120-float(customer.get("patience_limit",120)))
-			customer.patience_limit=120.0
+		if not customer.has("patience_limit"):customer.patience_limit=randf_range(60,180)
+		if customer.get("state","") in ["enter","browse","queue","approach_counter"]:
+			customer.patience_started=false
+			customer.patience=float(customer.patience_limit)
 		if customer.state in ["enter","browse"] and not customer.has("selection_left"):customer.selection_left=randf_range(30,180)
 		if not customer.has("account_id"):customer.account_id=c.accounts.create_account()
 		for index in saved.reservations:customer.reservations.append(game.dvd_records[index])

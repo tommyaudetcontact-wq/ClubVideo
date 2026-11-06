@@ -46,7 +46,7 @@ func spawn_customer(return_only:bool=false):
 	var c={"node":n,"id":next_id,"state":"enter","path":PackedVector2Array(),"cursor":0,"wait":0.0,"messy":randf()<minf(.40,.18+.02*clerk.shift.day),"movie":randi_range(0,game.layout.movies.size()-1)}
 	next_id+=1
 	customers.append(c)
-	c.patience_limit=randf_range(120,180)
+	c.patience_limit=randf_range(60,180)
 	c.patience=c.patience_limit
 	c.patience_started=false
 	c.selection_left=randf_range(30,180)
@@ -364,7 +364,6 @@ func next_arrival_delay()->float:
 	return randf_range(25,65)*(1-pressure)
 
 func join_queue(customer:Dictionary):
-	activate_patience(customer)
 	if not customer.has("queue_joined"):customer.queue_joined=clerk.elapsed
 	customer.state="queue"
 	reflow_queue()
@@ -396,7 +395,7 @@ func reflow_queue():
 
 func activate_patience(customer:Dictionary):
 	if customer.get("patience_started",false):return
-	if not customer.has("patience_limit"):customer.patience_limit=randf_range(120,180)
+	if not customer.has("patience_limit"):customer.patience_limit=randf_range(60,180)
 	customer.patience=float(customer.patience_limit)
 	customer.patience_started=true
 

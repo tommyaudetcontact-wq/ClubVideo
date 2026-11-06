@@ -370,7 +370,6 @@ func new_case(id:int,position:Vector3,kind:String)->Dictionary:
 	cases.append(data)
 	return data
 func customer_ready(c:Dictionary):
-	customers.activate_patience(c)
 	waiting.append(c)
 	start_next()
 func start_next():
@@ -408,6 +407,7 @@ func start_next():
 	else:
 		for record in active.get("reservations",[active.record]):add_basket_case(record)
 		active.price_titles=active.items.map(func(item):return item.movie)
+	customers.activate_patience(active)
 	price=int(active.account_due)
 	tender_parts=[]
 	tender=0
