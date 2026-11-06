@@ -22,7 +22,11 @@ func give_amount(amount:int):
 		while amount>=value:
 			c.wallet.take(0,value)
 			amount-=value
-	assert(c.wallet.give_customer(0))
+	g.hands[1].global_position=Vector3(4,1,-7)
+	g.hands[0].global_position=c.customer_hand()
+	assert(c.in_customer_zone(g.hands[0].global_position))
+	c.wallet.release_grip(0)
+	assert(not c.wallet.occupied(0))
 func remove_shopper(shopper:Dictionary):
 	c.customers.customers.erase(shopper)
 	shopper.node.queue_free()
@@ -88,6 +92,7 @@ func _initialize():
 	item=shopper.items[0]
 	c.scan_item(item)
 	paid_tender()
+	c.paid=true # Exact-payment state must not block a subsequent VR refund.
 	c.pick_case(item,1,false)
 	c.abandon_customer(shopper)
 	assert(c.active==shopper and shopper.await_cash and item.node.get_meta("antitheft",false))

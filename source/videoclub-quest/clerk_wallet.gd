@@ -179,7 +179,7 @@ func release_grip(hand:int):
 		arrange(hand)
 		arrange(other)
 		if not occupied(hand):return
-	if clerk.in_customer_zone(p) and not clerk.paid:
+	if clerk.in_customer_zone(p):
 		if give_customer(hand):return
 	if clerk.drawer_open and inside_drawer(p):
 		while occupied(hand):remove_one(hand,palms[hand].size()-1,true)

@@ -1068,6 +1068,7 @@ func send_to_chute(item:Dictionary):
 
 func in_customer_zone(p:Vector3)->bool:
 	if active.is_empty():return false
+	if p.distance_to(customer_hand())<.24:return true
 	return absf(p.x-active.node.global_position.x)<.7 and p.y>.95 and p.y<1.65 and p.z> -6.42 and p.z< -5.15
 
 
