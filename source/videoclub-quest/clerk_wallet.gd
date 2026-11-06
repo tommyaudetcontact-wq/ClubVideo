@@ -7,6 +7,7 @@ var totals:Array=[]
 var loose:Array=[]
 var supported=[false,false]
 var palm_bones:Array=[]
+var safety_timer=0.0
 func setup(c):
 	clerk=c
 	game=c.game
@@ -54,7 +55,7 @@ func take(hand:int,value:int,tender:bool=false):
 			clerk.refresh_tender_visual()
 		else:clerk.tender_note.visible=false
 	else:
-		if not clerk.drawer_open or not clerk.tender_received or clerk.till[value]<=0:return
+		if not clerk.drawer_open or not (clerk.tender_received or clerk.active.get("await_cash",false)) or clerk.till[value]<=0:return
 		clerk.till[value]-=1
 	var n=clerk.make_money(value)
 	roots[hand].add_child(n)
@@ -82,15 +83,27 @@ func record_change(amount:int):
 	clerk.paid=true
 	clerk.refresh_terminal()
 
+func can_return_tender(hand:int)->bool:
+	return not clerk.active.is_empty() and occupied(hand) and palms[hand].all(func(entry):return entry.get("tender",false) and int(entry.get("customer_id",-1))==int(clerk.active.id))
+
 func give_customer(hand:int)->bool:
-	if clerk.active.is_empty() or not clerk.tender_received:return false
+	if clerk.active.is_empty() or not occupied(hand):return false
+	if can_return_tender(hand):
+		while occupied(hand):remove_one(hand,0,false)
+		clerk.try_finish_checkout()
+		clerk.refresh_terminal()
+		game._message("Son argent est rendu au client.")
+		return true
+	if not (clerk.tender_received or clerk.active.get("await_cash",false)):return false
 	for entry in palms[hand]:
 		if entry.tender:return false
 	record_change(total(hand))
 	while occupied(hand):remove_one(hand,0,false)
+	clerk.try_finish_checkout()
 	clerk.refresh_terminal()
-	game._message("Monnaie remise dans la main du client. Tu peux lui donner le film.")
+	game._message("Monnaie remise dans la main du client.")
 	return true
+
 func interact(hand:int,grip:bool)->bool:
 	var p:Vector3=game.hands[hand].global_position
 	if grip:
@@ -178,27 +191,36 @@ func inside_drawer(p:Vector3)->bool:
 	return absf(local.x)<.39 and absf(local.z)<.24 and local.y>-.03 and local.y<.22
 func drop_all(hand:int):
 	for entry in palms[hand].duplicate():
-		var body=RigidBody3D.new()
-		body.mass=.004 if entry.value>=500 else .007
-		body.collision_layer=8
-		body.collision_mask=1|8
-		body.continuous_cd=true
-		var shape=CollisionShape3D.new()
-		var box=BoxShape3D.new()
-		box.size=Vector3(.145,.003,.065) if entry.value>=500 else Vector3(.027,.004,.027)
-		shape.shape=box
-		body.add_child(shape)
-		add_child(body)
-		body.global_transform=entry.node.global_transform
-		entry.node.reparent(body,false)
-		entry.node.transform=Transform3D.IDENTITY
-		body.linear_velocity=game.candy.hand_velocity(hand).limit_length(3)
-		entry.body=body
-		loose.append(entry)
-	palms[hand].clear()
+		if load("res://club_surface_drop.gd").release_cash_entry(self,entry,entry.node.global_transform,game.head.global_position):
+			palms[hand].erase(entry)
+			entry.body.linear_velocity=game.candy.hand_velocity(hand).limit_length(3)
 	supported[hand]=false
 	arrange(hand)
+
+func recover_cash():
+	for entry in loose:
+		if not is_instance_valid(entry.get("body")):continue
+		var body:RigidBody3D=entry.body
+		var point:=PhysicsPointQueryParameters3D.new()
+		point.position=body.global_position
+		point.collision_mask=1
+		var inside:bool=not body.get_world_3d().direct_space_state.intersect_point(point,1).is_empty()
+		if body.global_position.y>=-.1 and not inside:continue
+		var desired:Transform3D=entry.get("last_safe",Transform3D(Basis.IDENTITY,Vector3(-.1,1.8,-6.2)))
+		var safe:Vector3=load("res://club_drop_safety.gd").position_for(body,desired.origin,desired.basis)
+		if not safe.is_finite():continue
+		body.freeze=true
+		body.global_transform=Transform3D(desired.basis,safe)
+		body.linear_velocity=Vector3.ZERO
+		body.angular_velocity=Vector3.ZERO
+		body.freeze=false
+		body.sleeping=false
+
 func _physics_process(_dt):
+	safety_timer-=_dt
+	if safety_timer<=0:
+		safety_timer=.5
+		recover_cash()
 	for hand in range(2):
 		var s:Skeleton3D=game.hand_visuals[hand].skeleton
 		var bones:Array=palm_bones[hand]

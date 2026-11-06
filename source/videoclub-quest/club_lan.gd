@@ -192,7 +192,7 @@ func handle_request(request:Variant):
 		var inventory:Dictionary={}
 		for denomination in clerk.till:
 			inventory[str(denomination)]=clerk.till[denomination]
-		response["checkout"]={"customer":clerk.active.get("id",-1),"missing":clerk.active.get("missing",[]),"price":clerk.price,"tender":clerk.tender,"received":clerk.tender_received,"paid":clerk.paid,"cash_visible":clerk.tender_note.visible,"drawer_open":clerk.drawer_open,"till":inventory}
+		response["checkout"]={"customer":clerk.active.get("id",-1),"missing":clerk.active.get("missing",[]),"price":clerk.price,"tender":clerk.tender,"await_cash":clerk.active.get("await_cash",false),"received":clerk.tender_received,"paid":clerk.paid,"cash_visible":clerk.tender_note.visible,"drawer_open":clerk.drawer_open,"till":inventory}
 		response["notice"]=receipt
 		response["guest_case"]=str(guest_case.node.get_instance_id()) if not guest_case.is_empty() else ""
 		if not guest_case.is_empty() and not guest_case.record.is_empty() and guest_case.kind in ["return","sorting","shelve"]:
@@ -549,7 +549,7 @@ func guest_money(action:String,request:Dictionary)->String:
 			clerk.refresh_tender_visual()
 		elif id.is_valid_int():
 			var value:=int(id)
-			if not clerk.drawer_open or not clerk.tender_received or p.distance_to(clerk.drawer.global_position)>1.8:return "Ouvre le tiroir et encaisse le paiement."
+			if not clerk.drawer_open or not (clerk.tender_received or clerk.active.get("await_cash",false)) or p.distance_to(clerk.drawer.global_position)>1.8:return "Ouvre le tiroir et encaisse le paiement."
 			if not clerk.till.has(value) or int(clerk.till[value])<=0:return "Cette pièce ou ce billet n’est plus disponible."
 			clerk.till[value]-=1
 			add_guest_money(value,false,clerk.active.get("id",-1))
@@ -573,15 +573,19 @@ func guest_money(action:String,request:Dictionary)->String:
 			entry.node.queue_free()
 	elif action=="cash_give":
 		if clerk.active.is_empty() or int(request.get("customer",-2))!=int(clerk.active.get("id",-1)):return "Le client a changé."
-		if p.distance_to(clerk.customer_hand())>1.8 or not clerk.tender_received:return "Encaisse d’abord le paiement."
+		if p.distance_to(clerk.customer_hand())>1.8:return "Approche-toi du client."
 		if guest_cash.is_empty():return "Prends la monnaie à remettre."
-		if guest_cash.any(func(entry):return entry.tender):return "Dépose d’abord le paiement dans le tiroir."
+		var returning:bool=guest_cash.all(func(entry):return entry.tender and int(entry.get("customer_id",-1))==int(clerk.active.id))
+		if not returning and guest_cash.any(func(entry):return entry.tender):return "Sépare son paiement de la monnaie du tiroir."
+		if not returning and not (clerk.tender_received or clerk.active.get("await_cash",false)):return "Encaisse d’abord le paiement."
 		var amount:=0
 		for entry in guest_cash:
 			amount+=int(entry.value)
 			entry.node.queue_free()
 		guest_cash.clear()
-		clerk.wallet.record_change(amount)
+		if not returning:clerk.wallet.record_change(amount)
+		clerk.try_finish_checkout()
+
 	clerk.refresh_terminal()
 	update_guest_case_pose()
 	return ""
@@ -654,8 +658,10 @@ func drop_guest_on_surface(request:Dictionary)->String:
 		var selected:=str(request.get("case",""))
 		if not selected.is_empty():
 			var pieces:Array=guest_cash.filter(func(entry):return str(entry.node.get_instance_id())==selected)
-			for entry in pieces:guest_cash.erase(entry)
+			var attempted:Array=pieces.duplicate()
 			dropper.drop_cash(clerk.wallet,pieces,point)
+			for entry in attempted:
+				if entry not in pieces:guest_cash.erase(entry)
 		else:dropper.drop_cash(clerk.wallet,guest_cash,point)
 	elif guest_basket:
 		release_guest_basket()

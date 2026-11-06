@@ -403,7 +403,4 @@ func refresh():
 	info.text="●  Vidéo Club Messenger · Wi-Fi"
 	if connected and is_instance_valid(mirror):
 		var shift:Dictionary=mirror.state.get("shift",{})
-		var rest:float=float(shift.get("break_left",0))
-		var seconds:=int(rest if rest>0 else shift.get("time_left",0))
-		info.text+="
-Jour %d · %s · %d:%02d"%[int(shift.get("day",1)),"Fermeture" if shift.get("closing",false) else "Ouvert",seconds/60,seconds%60]
+		info.text+="\nJour %d · %s · clients %d / %d"%[int(shift.get("day",1)),"Close" if shift.get("closing",false) else "Ouvert",int(shift.get("arrived_customers",0)),int(shift.get("target_customers",4))]

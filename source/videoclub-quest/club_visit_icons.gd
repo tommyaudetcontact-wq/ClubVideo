@@ -2,6 +2,7 @@ extends RefCounted
 const RETURN := 1
 const RENT := 2
 const REFUND := 4
+const CASH := 8
 static var textures:Dictionary={}
 static var patience_shader:Shader
 
@@ -32,6 +33,7 @@ static func reason_mask(customer:Dictionary)->int:
 	if customer.get("state","")=="exit":return 0
 	var job:Dictionary=customer.get("return_job",{})
 	var mask:int=int(customer.get("visit_mask",RENT))
+	if customer.get("await_cash",false):mask|=CASH
 	if not job.is_empty():
 		mask|=RETURN
 		if int(job.get("refund",0))>0:mask|=REFUND
@@ -47,11 +49,12 @@ static func remaining_count(customer:Dictionary)->int:
 
 static func texture(kind:int)->Texture2D:
 	if textures.has(kind):return textures[kind]
-	var colors={RETURN:"#269b62",RENT:"#267bc8",REFUND:"#d88420"}
+	var colors={RETURN:"#269b62",RENT:"#267bc8",REFUND:"#d88420",CASH:"#c5961c"}
 	var marks={
 		RETURN:'<path d="M45 19H26a12 12 0 0 0 0 24h17M26 13l-9 9 9 9" fill="none" stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>',
 		RENT:'<rect x="17" y="13" width="25" height="36" rx="3" fill="none" stroke="white" stroke-width="4"/><circle cx="30" cy="31" r="8" fill="none" stroke="white" stroke-width="3"/><path d="M44 35v17m-8-8h17" stroke="white" stroke-width="4"/>',
-		REFUND:'<path d="M43 18H25c-10 0-10 13 0 13h12c10 0 10 14 0 14H19M32 10v44" fill="none" stroke="white" stroke-width="5" stroke-linecap="round"/>'
+		REFUND:'<path d="M43 18H25c-10 0-10 13 0 13h12c10 0 10 14 0 14H19M32 10v44" fill="none" stroke="white" stroke-width="5" stroke-linecap="round"/>',
+		CASH:'<rect x="12" y="20" width="40" height="25" rx="3" fill="none" stroke="white" stroke-width="4"/><circle cx="32" cy="32" r="7" fill="none" stroke="white" stroke-width="3"/>'
 	}
 	var svg='<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><circle cx="32" cy="32" r="30" fill="%s" stroke="white" stroke-width="2"/>%s</svg>'%[colors[kind],marks[kind]]
 	var image:=Image.new()
@@ -78,9 +81,9 @@ static func update(parent:Node3D,mask:int,count:int=1):
 		root.remove_child(child)
 		child.queue_free()
 	var kinds:Array=[]
-	for kind in [RETURN,RENT,REFUND]:
+	for kind in [RETURN,RENT,REFUND,CASH]:
 		if mask&kind:kinds.append(kind)
-	var captions:Dictionary={RETURN:"RETOUR",RENT:"LOCATION",REFUND:"REMBOURSEMENT"}
+	var captions:Dictionary={RETURN:"RETOUR",RENT:"LOCATION",REFUND:"REMBOURSEMENT",CASH:"ARGENT / MONNAIE"}
 	for index in range(kinds.size()):
 		var y:float=((kinds.size()-1)*.5-index)*.20
 		var background:=MeshInstance3D.new()

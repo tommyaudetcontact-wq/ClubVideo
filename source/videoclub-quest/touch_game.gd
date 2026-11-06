@@ -620,7 +620,7 @@ func use_target():
 		if game.held:put_in_basket()
 		else:open_basket()
 		return
-	if target_customer() and clerk.tender_received and clerk.wallet.occupied(CASH_HAND):
+	if target_customer() and (clerk.tender_received or clerk.wallet.can_return_tender(CASH_HAND) or clerk.active.get("await_cash",false)) and clerk.wallet.occupied(CASH_HAND):
 		give_change()
 		return
 	if target_customer() and can_handoff():
@@ -907,7 +907,7 @@ func coop_cash_target()->Dictionary:
 			if aimed(entry.node.global_position,.04)<INF:
 				return coop_marked({"action":"select_cash","node":entry.node,"label":"Choisir cette pièce"},entry.node.global_transform,Vector3(.08,.025,.065))
 	if not entries.is_empty():
-		if coop_panel.customer_pos.is_finite() and not has_tender_in_hand() and near(coop_panel.customer_pos) and aimed(coop_panel.customer_pos,.42)<INF:
+		if coop_panel.customer_pos.is_finite() and near(coop_panel.customer_pos) and aimed(coop_panel.customer_pos,.42)<INF:
 			return coop_marked({"action":"cash_give","label":"Rendre la monnaie"},Transform3D(Basis.IDENTITY,coop_panel.customer_pos),Vector3(.24,.19,.20))
 		if coop_panel.checkout.get("drawer_open",false) and near(clerk.drawer.global_position) and aimed(clerk.drawer.global_position,.28)<INF and (is_instance_valid(selected_cash) or has_tender_in_hand()):
 			return coop_marked({"action":"cash_put","label":"Déposer en caisse"},clerk.drawer.global_transform,Vector3(.56,.10,.36))
@@ -916,7 +916,7 @@ func coop_cash_target()->Dictionary:
 			if entry.get("owner","")=="guest" or not near(entry.transform.origin) or aimed(entry.transform.origin,.07)==INF:continue
 			var tender:bool=str(entry.id).begins_with("tender")
 			return coop_marked({"action":"cash_take" if tender else "cash_pick","target":"tender" if tender else entry.id,"label":"Prendre le paiement" if tender else "Ramasser l’argent"},entry.transform,Vector3(.14,.025,.08))
-	if coop_panel.checkout.get("drawer_open",false) and coop_panel.checkout.get("received",false):
+	if coop_panel.checkout.get("drawer_open",false) and (coop_panel.checkout.get("received",false) or coop_panel.checkout.get("await_cash",false)):
 		var nearest:=INF
 		var result:Dictionary={}
 		for target in clerk.targets:
@@ -969,7 +969,7 @@ func refresh_action(over_desktop:bool):
 	mark_touch_target(cash,item,over_desktop)
 	if inspection.finger>=0:label=inspection_disc_action().label
 	elif near(clerk.repairs.station) and aimed(clerk.repairs.station,.25)<INF:label=repair_action_label()
-	elif target_customer() and clerk.tender_received and clerk.wallet.occupied(CASH_HAND):label="Rendre la monnaie"
+	elif target_customer() and (clerk.tender_received or clerk.wallet.can_return_tender(CASH_HAND) or clerk.active.get("await_cash",false)) and clerk.wallet.occupied(CASH_HAND):label="Rendre la monnaie"
 	elif target_customer() and can_handoff():label="Remettre le film"
 	elif basket_aimed():label="Mettre au panier" if game.held else "Ouvrir le panier"
 	elif over_desktop:label="Ouvrir l’ordi"
@@ -1315,7 +1315,7 @@ func cash_target()->Dictionary:
 	for target in clerk.targets:
 		if target.action not in ["tender","money","drawer"]:continue
 		if target.action=="tender" and not clerk.tender_note.visible:continue
-		if target.action=="money" and (not clerk.drawer_open or not clerk.tender_received or int(clerk.till.get(target.value,0))<=0):continue
+		if target.action=="money" and (not clerk.drawer_open or not (clerk.tender_received or clerk.active.get("await_cash",false)) or int(clerk.till.get(target.value,0))<=0):continue
 		var position:Vector3=target.node.global_position
 		if not near(position):continue
 		var depth:=aimed(position,minf(target.radius+.022,.14))
@@ -1491,7 +1491,7 @@ func open_change():
 	if coop_panel.connected:
 		open_coop_change()
 		return
-	if not can_serve_customer() or not clerk.tender_received:return
+	if not can_serve_customer() or not (clerk.tender_received or clerk.active.get("await_cash",false)):return
 	if not clerk.drawer_open:clerk.action("drawer",CASH_HAND)
 	checkout_popup.hide()
 	operations.get_parent().hide()
@@ -1537,7 +1537,8 @@ func open_checkout():
 			if not clerk.drawer_open:clerk.action("drawer",CASH_HAND)
 			deposit_payment(true)
 		)
-	if clerk.tender_received:
+	if clerk.wallet.can_return_tender(CASH_HAND):add_button(checkout_panel,"Rendre son paiement au client",give_change)
+	if clerk.tender_received or clerk.active.get("await_cash",false):
 		add_button(checkout_panel,"Choisir les pièces et billets",open_change)
 		if clerk.wallet.occupied(CASH_HAND) and not has_tender_in_hand():
 			add_button(checkout_panel,"Rendre la monnaie au client",give_change)
@@ -1560,16 +1561,12 @@ func give_change():
 		if not action_busy() and coop_panel.customer_pos.is_finite():animate_coop_cash("cash_give","",coop_panel.customer_pos+Vector3.UP*.06)
 		return
 	if action_busy() or not can_serve_customer():return
-	if not clerk.tender_received:
+	if not (clerk.tender_received or clerk.wallet.can_return_tender(CASH_HAND) or clerk.active.get("await_cash",false)):
 		open_checkout()
 		game._message("Encaisse le paiement avant de rendre la monnaie.")
 		return
 	if not clerk.wallet.occupied(CASH_HAND):
 		if clerk.tender>clerk.price and not clerk.paid:open_change()
-		return
-	if has_tender_in_hand():
-		open_checkout()
-		game._message("Dépose le paiement dans le tiroir avant de rendre la monnaie.")
 		return
 	var customer_id:int=clerk.active.id
 	var rest:=hand_rest(CASH_HAND)
@@ -1779,8 +1776,10 @@ func drop_on_surface()->bool:
 		var entries:Array=clerk.wallet.palms[CASH_HAND]
 		if is_instance_valid(selected_cash):
 			var selected:Array=entries.filter(func(entry):return entry.node==selected_cash)
-			for entry in selected:entries.erase(entry)
+			var attempted:Array=selected.duplicate()
 			dropper.drop_cash(clerk.wallet,selected,point)
+			for entry in attempted:
+				if entry not in selected:entries.erase(entry)
 		else:dropper.drop_cash(clerk.wallet,entries,point)
 		selected_cash=null
 		clerk.wallet.arrange(CASH_HAND)

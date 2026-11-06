@@ -14,6 +14,9 @@ var next_id=0
 var clock=0.0
 var queue_gate=0.0
 var walk_cache={}
+var queue_positions:Array[Vector3]=[]
+var queue_timer=0.0
+var entry_cooldown=0.0
 func setup(g,c):
 	game=g
 	clerk=c
@@ -29,22 +32,24 @@ func setup(g,c):
 					grid.set_point_solid(Vector2i(x,z))
 					break
 func route(c:Dictionary,target:Vector3)->bool:
+	c.nav_goal=target
 	var start=Vector2i(roundi(c.node.global_position.x/.25),roundi(c.node.global_position.z/.25))
 	var end=Vector2i(roundi(target.x/.25),roundi(target.z/.25))
 	if not grid.is_in_boundsv(start) or not grid.is_in_boundsv(end) or grid.is_point_solid(end):return false
 	c.path=grid.get_point_path(start,end)
 	c.cursor=1
 	return not c.path.is_empty()
-func spawn_customer():
+func spawn_customer(return_only:bool=false):
 	if customers.size()>=clerk.shift.capacity() or population()>=MAX_VISIBLE_PEOPLE:return
 	var n=Props.customer(self,next_id%6)
 	n.position=Vector3(-4.0,0,9.0)
 	var c={"node":n,"id":next_id,"state":"enter","path":PackedVector2Array(),"cursor":0,"wait":0.0,"messy":randf()<minf(.40,.18+.02*clerk.shift.day),"movie":randi_range(0,game.layout.movies.size()-1)}
 	next_id+=1
 	customers.append(c)
-	c.patience_limit=float([60,120,180].pick_random())
+	c.patience_limit=randf_range(120,180)
 	c.patience=c.patience_limit
 	c.patience_started=false
+	c.selection_left=randf_range(30,180)
 	var remaining:=MAX_VISIBLE_PEOPLE-population()
 	var group:=randf()
 	c.companions=[]
@@ -57,11 +62,12 @@ func spawn_customer():
 	elif remaining>=1 and group<.44:
 		c.companions.append((int(c.id)%6+randi_range(1,5))%6)
 	attach_companions(c)
-	c.return_job=clerk.take_due_return()
+	c.return_job=clerk.take_due_return() if return_only else {}
 	c.account_id=int(c.return_job.get("account_id",-1))
 	if c.account_id<0:c.account_id=clerk.accounts.choose_account(customers.map(func(customer):return int(customer.get("account_id",-1))))
 	c.visit_balance=int(clerk.accounts.ensure(c.account_id).balance)
-	c.return_and_rent=not c.return_job.is_empty() and randf()<.55
+	c.return_and_rent=false
+	if c.return_job.is_empty():clerk.shift.spawned()
 	c.visit_mask=VisitIcons.reason_mask(c)
 	VisitIcons.update(n,c.visit_mask,VisitIcons.remaining_count(c))
 	if not c.return_job.is_empty():
@@ -93,13 +99,28 @@ func _physics_process(dt):
 	if not game:return
 	clock+=dt
 	spawn_timer-=dt
-	if spawn_timer<=0 and customers.size()<clerk.shift.capacity() and population()<MAX_VISIBLE_PEOPLE and clerk.shift.can_spawn():
-		spawn_customer()
-		clerk.shift.spawned()
-		spawn_timer=next_arrival_delay()
+	entry_cooldown=maxf(0,entry_cooldown-dt)
+	var due:bool=clerk.returns_due.any(func(job):return float(job.time)<=clerk.elapsed)
+	var open:bool=clerk.shift.started and not clerk.shift.closing and not clerk.shift.summary
+	if population()<MAX_VISIBLE_PEOPLE and open and entry_cooldown<=0:
+		if due:
+			spawn_customer(true)
+			entry_cooldown=1.5
+		elif spawn_timer<=0 and clerk.shift.can_spawn():
+			spawn_customer(false)
+			entry_cooldown=1.5
+			spawn_timer=next_arrival_delay()
+	queue_timer-=dt
+	if queue_timer<=0:
+		queue_timer=.25
+		reflow_queue()
 	for c in customers.duplicate():
 		var moving=false
-		if c.get("patience_started",false) and c.state!="exit":
+		if c.get("selection_left",-1)>0 and c.state in ["enter","browse"]:c.selection_left=maxf(0,c.selection_left-dt)
+		if c.state=="browse" and c.get("selection_left",-1)==0:
+			if is_instance_valid(c.get("carry")):c.carry.visible=true
+			join_queue(c)
+		if c.get("patience_started",false) and c.state!="exit" and not c.get("await_cash",false):
 			c.patience=maxf(0,float(c.get("patience",120))-dt)
 			if c.patience<=0:
 				clerk.abandon_customer(c)
@@ -116,26 +137,8 @@ func _physics_process(dt):
 				c.node.queue_free()
 				continue
 			moving=move_exiting(c,dt)
-		elif c.cursor<c.path.size():
-			var p:Vector2=c.path[c.cursor]
-			var target=Vector3(p.x,0,p.y)
-			var offset=target-c.node.position
-			var blocked=false
-			for other in customers:
-				if other.id<c.id and c.node.position.distance_to(other.node.position)<.65:blocked=true
-			var player=game.head.global_position
-			player.y=0
-			if c.node.position.distance_to(player)<.48:blocked=true
-			var remote:Node3D=clerk.lan.remote_avatar
-			if is_instance_valid(remote) and remote.valid_pose:
-				var guest:Vector3=remote.targets[0].origin
-				guest.y=0
-				if c.node.position.distance_to(guest)<.48:blocked=true
-			if offset.length()<.07:c.cursor+=1
-			elif not blocked:
-				c.node.position+=offset.normalized()*minf(dt*.95,offset.length())
-				c.node.rotation.y=lerp_angle(c.node.rotation.y,atan2(-offset.x,-offset.z),minf(1,dt*8))
-				moving=true
+		elif c.cursor<c.path.size() or (c.state!="service" and c.has("nav_goal") and c.node.position.distance_to(c.nav_goal)>.20):
+			moving=move_routed(c,dt)
 		else:
 			match c.state:
 				"approach_counter":
@@ -200,15 +203,15 @@ func _physics_process(dt):
 						else:
 							join_queue(c)
 				"queue":
-					if clock<queue_gate:continue
+					if int(c.get("queue_slot",0))!=0 or not clerk.active.is_empty():continue
 					if c.node.has_node("ActorVisual") and c.has("carry") and is_instance_valid(c.carry) and c.carry.visible:
 						if not c.has("handoff_wait"):
-							c.handoff_wait=1.70
+							c.handoff_wait=.65
 							Actor.animate(c.node,"HandOff")
 						c.handoff_wait-=dt
 						if c.handoff_wait>0:continue
 					c.erase("handoff_wait")
-					queue_gate=clock+12.0
+					queue_gate=clock+.20
 					c.state="service"
 					c.node.rotation.y=0
 					clerk.customer_ready(c)
@@ -316,6 +319,7 @@ func aisle_for(shelf:Vector3)->Vector3:
 	walk_cache[key]=best
 	return best
 func begin_browse(c:Dictionary):
+	if not c.has("selection_left"):c.selection_left=randf_range(30,180)
 	if not clerk.select_film(c):
 		dismiss(c)
 		return
@@ -326,7 +330,7 @@ func begin_browse(c:Dictionary):
 	browse_next(c)
 func browse_next(c:Dictionary):
 	c.state="browse"
-	c.wait=randf_range(6,12)
+	c.wait=maxf(.2,float(c.get("selection_left",60))/maxi(1,c.reservations.size()-c.browse_index))
 	var record:Dictionary=c.reservations[c.browse_index]
 	if not route(c,aisle_for(record.world.origin)):
 		# A blocked shelf never creates a permanently stuck customer.
@@ -354,26 +358,45 @@ func next_arrival_delay()->float:
 	last_arrival_kind=kind
 	var pressure:=clampf((clerk.shift.day-1)*.06,0,.35)
 	if kind==1:
-		arrival_cluster_left=randi_range(1,2)
+		arrival_cluster_left=0
 		return randf_range(2,5)
-	if kind==2:return randf_range(30,55)*(1-pressure)
-	return randf_range(12,26)*(1-pressure)
+	if kind==2:return randf_range(45,85)*(1-pressure)
+	return randf_range(25,65)*(1-pressure)
 
 func join_queue(customer:Dictionary):
 	activate_patience(customer)
-	var occupied:Array=[] if clerk.active.is_empty() else [0]
-	for other in customers:
-		if other!=customer and other!=clerk.active and other.state in ["queue","service","approach_counter","replacement_browse","replacement_return"]:occupied.append(int(other.get("queue_slot",0)))
-	var slot:=0
-	while occupied.has(slot) and slot<7:slot+=1
-	customer.queue_slot=slot
+	if not customer.has("queue_joined"):customer.queue_joined=clerk.elapsed
 	customer.state="queue"
-	var x:Array=[-.6,.25,1.10,1.95,2.80,3.65,-1.45,-2.30]
-	route(customer,Vector3(x[slot],0,-5.05))
+	reflow_queue()
+
+func prepare_queue_positions():
+	if not queue_positions.is_empty():return
+	queue_positions.append(Vector3(-.6,0,-5.05))
+	var points:=grid.get_point_path(Vector2i(-2,-20),Vector2i(-16,18))
+	for p in points:
+		var next:=Vector3(p.x,0,p.y)
+		if next.distance_to(queue_positions.back())>=.85:queue_positions.append(next)
+		if queue_positions.size()>=8:break
+
+func reflow_queue():
+	prepare_queue_positions()
+	var line:Array=customers.filter(func(c):return c!=clerk.active and c.state=="queue")
+	line.sort_custom(func(a,b):return int(a.id)<int(b.id) if float(a.get("queue_joined",a.id))==float(b.get("queue_joined",b.id)) else float(a.get("queue_joined",a.id))<float(b.get("queue_joined",b.id)))
+	var position_index:int=0 if clerk.active.is_empty() else 1+clerk.active.get("companions",[]).size()
+	for index in range(line.size()):
+		var c:Dictionary=line[index]
+		var slot:int=mini(position_index,queue_positions.size()-1)
+		position_index+=1+c.get("companions",[]).size()
+		var target:Vector3=queue_positions[slot]
+		var changed:bool=int(c.get("queue_slot",-1))!=slot or not c.has("nav_goal") or c.nav_goal.distance_to(target)>.01
+		c.queue_slot=slot
+		if changed:
+			if c.has("yield_origin"):c.yield_origin=target
+			route(c,target)
 
 func activate_patience(customer:Dictionary):
 	if customer.get("patience_started",false):return
-	if not customer.has("patience_limit"):customer.patience_limit=float([60,120,180].pick_random())
+	if not customer.has("patience_limit"):customer.patience_limit=randf_range(120,180)
 	customer.patience=float(customer.patience_limit)
 	customer.patience_started=true
 
@@ -396,6 +419,7 @@ func walkable_segment(start:Vector3,end:Vector3)->bool:
 	return true
 
 func crowd_route(c:Dictionary,target:Vector3)->bool:
+	c.nav_goal=target
 	var start:=Vector2i(roundi(c.node.position.x/.25),roundi(c.node.position.z/.25))
 	var end:=Vector2i(roundi(target.x/.25),roundi(target.z/.25))
 	if not grid.is_in_boundsv(start) or not grid.is_in_boundsv(end):return false
@@ -431,6 +455,42 @@ func exit_step_clear(c:Dictionary,next:Vector3)->bool:
 		if Vector2(next.x-guest.x,next.z-guest.z).length()<.45:return false
 	return true
 
+func move_routed(c:Dictionary,dt:float)->bool:
+	c.nav_repath=maxf(0,float(c.get("nav_repath",0))-dt)
+	if not c.has("nav_goal"):
+		if c.path.is_empty():return false
+		c.nav_goal=Vector3(c.path[-1].x,0,c.path[-1].y)
+	if c.cursor>=c.path.size():
+		if c.node.position.distance_to(c.nav_goal)<.20:return false
+		if c.nav_repath<=0:
+			crowd_route(c,c.nav_goal)
+			c.nav_repath=.8+float(int(c.id)%4)*.07
+		if c.cursor>=c.path.size():
+			c.nav_stuck=float(c.get("nav_stuck",0))+dt
+			if c.nav_stuck>2.5:
+				ask_for_space(c)
+				c.nav_stuck=1.5
+			return false
+	var p:Vector2=c.path[c.cursor]
+	var offset:Vector3=Vector3(p.x,0,p.y)-c.node.position
+	if offset.length()<.06:
+		c.cursor+=1
+		return false
+	var next:Vector3=c.node.position+offset.normalized()*minf(dt*.95,offset.length())
+	if exit_step_clear(c,next):
+		c.node.position=next
+		c.node.rotation.y=lerp_angle(c.node.rotation.y,atan2(-offset.x,-offset.z),minf(1,dt*8))
+		c.nav_stuck=0.0
+		return true
+	c.nav_stuck=float(c.get("nav_stuck",0))+dt
+	if c.nav_repath<=0:
+		crowd_route(c,c.nav_goal)
+		c.nav_repath=.8+float(int(c.id)%4)*.07
+	if c.nav_stuck>2.5:
+		ask_for_space(c)
+		c.nav_stuck=1.5
+	return false
+
 func move_exiting(c:Dictionary,dt:float)->bool:
 	c.exit_repath=maxf(0,float(c.get("exit_repath",0))-dt)
 	if c.cursor>=c.path.size() and c.exit_repath<=0:
@@ -462,7 +522,7 @@ func move_exiting(c:Dictionary,dt:float)->bool:
 func ask_for_space(exiting:Dictionary):
 	exiting.exit_stuck=1.5
 	for other in customers:
-		if other==exiting or other.state=="exit" or other.has("yield_target") or other.cursor<other.path.size():continue
+		if other==exiting or other.state=="exit" or other.has("yield_target") or other==clerk.active:continue
 		var away:Vector3=other.node.position-exiting.node.position
 		away.y=0
 		if away.length()>1.8:continue
@@ -471,7 +531,7 @@ func ask_for_space(exiting:Dictionary):
 		for direction in [side,-side,Vector3.RIGHT,Vector3.LEFT,Vector3(.95,0,.95),Vector3(-.95,0,.95),Vector3(.95,0,-.95),Vector3(-.95,0,-.95)]:
 			var destination:Vector3=other.node.position+direction*.80
 			var segment_start:=Vector2(exiting.node.position.x,exiting.node.position.z)
-			var nearest:=Geometry2D.get_closest_point_to_segment(Vector2(destination.x,destination.z),segment_start,Vector2(-4,9))
+			var nearest:=Geometry2D.get_closest_point_to_segment(Vector2(destination.x,destination.z),segment_start,Vector2(exiting.get("nav_goal",Vector3(-4,0,9)).x,exiting.get("nav_goal",Vector3(-4,0,9)).z))
 			if nearest.distance_to(Vector2(destination.x,destination.z))<.70:continue
 			var detour:Dictionary={"node":other.node}
 			if not route(detour,destination):continue
@@ -500,6 +560,10 @@ func move_yielding(c:Dictionary,dt:float)->bool:
 	if cursor>=path.size():
 		if c.get("yield_return",false):
 			for key in ["yield_target","yield_origin","yield_until","yield_path","yield_cursor","yield_return"]:c.erase(key)
+			if c.has("nav_goal") and c.node.position.distance_to(c.nav_goal)>.20:route(c,c.nav_goal)
+			else:
+				c.path=PackedVector2Array()
+				c.cursor=0
 		return false
 	var target:=Vector3(path[cursor].x,0,path[cursor].y)
 	var offset:Vector3=target-c.node.position

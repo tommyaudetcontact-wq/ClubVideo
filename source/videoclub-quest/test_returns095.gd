@@ -43,6 +43,7 @@ func _initialize():
 	customer.state="return_drop"
 	customer.path=PackedVector2Array()
 	customer.cursor=0
+	customer.nav_goal=customer.node.position
 	clerk.customers._physics_process(.01)
 	assert(clerk.shift.returned==2 and clerk.cases.size()==2 and customer.state=="exit")
 	assert(clerk.accounts.ensure(account).balance==0)

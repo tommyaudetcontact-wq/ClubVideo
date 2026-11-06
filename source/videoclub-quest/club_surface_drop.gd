@@ -47,23 +47,36 @@ static func drop_disc(inspection,position:Vector3):
 	inspection.carried=null
 	inspection.finger=-1
 
+static func release_cash_entry(wallet,entry:Dictionary,pose:Transform3D,eye:Vector3)->bool:
+	var body:=RigidBody3D.new()
+	body.freeze=true
+	body.mass=.004 if entry.value>=500 else .007
+	body.collision_layer=8
+	body.collision_mask=1|8
+	body.continuous_cd=true
+	var collider:=CollisionShape3D.new()
+	var shape:=BoxShape3D.new()
+	shape.size=Vector3(.145,.006,.065) if entry.value>=500 else Vector3(.027,.006,.027)
+	collider.shape=shape
+	body.add_child(collider)
+	wallet.add_child(body)
+	var safe:Vector3=load("res://club_drop_safety.gd").position_for(body,pose.origin,pose.basis,eye)
+	if not safe.is_finite():
+		body.queue_free()
+		return false
+	body.global_transform=Transform3D(pose.basis,safe)
+	entry.node.reparent(body)
+	entry.node.transform=Transform3D.IDENTITY
+	entry.body=body
+	entry.last_safe=body.global_transform
+	wallet.loose.append(entry)
+	body.freeze=false
+	body.sleeping=false
+	return true
+
 static func drop_cash(wallet,entries:Array,position:Vector3):
-	for index in range(entries.size()):
-		var entry:Dictionary=entries[index]
-		var body:=RigidBody3D.new()
-		body.mass=.004 if entry.value>=500 else .007
-		body.collision_layer=8
-		body.collision_mask=1|8
-		body.continuous_cd=true
-		var collider:=CollisionShape3D.new()
-		var shape:=BoxShape3D.new()
-		shape.size=Vector3(.145,.004,.065) if entry.value>=500 else Vector3(.027,.004,.027)
-		collider.shape=shape
-		body.add_child(collider)
-		wallet.add_child(body)
-		body.global_position=position+Vector3((index%3-1)*.035,index*.008,0)
-		entry.node.reparent(body)
-		entry.node.transform=Transform3D.IDENTITY
-		entry.body=body
-		wallet.loose.append(entry)
-	entries.clear()
+	var snapshot:Array=entries.duplicate()
+	for index in range(snapshot.size()):
+		var entry:Dictionary=snapshot[index]
+		var pose:=Transform3D(Basis.IDENTITY,position+Vector3((index%3-1)*.035,index*.008,0))
+		if release_cash_entry(wallet,entry,pose,wallet.game.head.global_position):entries.erase(entry)

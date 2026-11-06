@@ -390,6 +390,9 @@ func start_next():
 	active.missing=[]
 	active.handed=0
 	active.billed_titles=[]
+	active.pending_finish=false
+	active.await_cash=false
+	active.abandon_wait_cash=false
 	active.cash_started=false
 	active.offer_ready=false
 	if not active.has("account_id"):active.account_id=accounts.create_account()
@@ -461,6 +464,7 @@ func refresh_terminal():
 		if shift and shift.summary and desktop.app!=3:desktop.open_program(3)
 		else:desktop.refresh()
 
+
 func terminal_content(tab:int)->String:
 	var title="VIDÉO CLUB — POSTE COMMIS\n"
 	if shift and shift.summary:title=shift.report
@@ -484,6 +488,7 @@ func terminal_content(tab:int)->String:
 			if not active.missing.is_empty():title+="Vérifie un autre exemplaire."
 			elif active.get("is_return",false):title+="Utilise le bouton Terminer le retour."
 			else:title+="Utilise le bouton Ouvrir le tiroir."
+
 
 	elif tab==1:
 		title+="TÂCHES DU QUART\n"+"\n".join(tasks)
@@ -627,6 +632,7 @@ func set_drawer_open(open:bool):
 	drawer_motion=create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
 	drawer_motion.tween_property(drawer,"position:z",-6.82 if open else -6.6,.25)
 
+
 func action(which:String,hand:int,value:int=0):
 	match which:
 		"page":desktop.open_program(value)
@@ -671,6 +677,7 @@ func handoff_rental():
 	if inspection.opened:inspection.close_case()
 	handoff_item(held_service)
 
+
 func handoff_item(item:Dictionary)->bool:
 	if active.is_empty() or item.is_empty():return false
 	if item.movie in active.get("missing",[]) and item.kind in ["sorting","shelve"]:
@@ -699,25 +706,61 @@ func handoff_item(item:Dictionary)->bool:
 	active.rental_remaining=maxi(0,int(active.get("rental_count",active.handed+active.items.size()))-active.handed)
 	var account=int(active.get("account_id",active.id))
 	var cycle=accounts.rental(account,id,record.id)
-	returns_due.append({"movie":id,"time":elapsed+240,"record":record,"account_id":account,"rental_id":cycle,"refund":refund,"locked":locked,"batch":int(active.id),"complaint":locked or defective,"charge":Pricing.unit(game.layout.movies[id])})
+	returns_due.append({"movie":id,"time":1.0e20,"record":record,"account_id":account,"rental_id":cycle,"refund":refund,"locked":locked,"batch":int(active.id),"complaint":locked or defective,"charge":Pricing.unit(game.layout.movies[id])})
 	if not active.items.is_empty():
 		refresh_invoice()
 		game._message("Film remis sans scan. Perte enregistrée." if not was_scanned else "Remets les autres boîtiers au client.")
 		return true
+	active.pending_finish=true
+	try_finish_checkout()
+	return true
+
+
+func customer_cash_outside()->bool:
+	if active.is_empty():return false
+	var pieces:Array=wallet.loose.duplicate()
+	for palm in wallet.palms:pieces.append_array(palm)
+	pieces.append_array(lan.guest_cash)
+	return pieces.any(func(entry):return entry.get("tender",false) and int(entry.get("customer_id",-1))==int(active.id))
+
+
+func cash_is_settled()->bool:
+	if active.is_empty():return true
+	if customer_cash_outside():return false
 	var collected:int=payment_collected()
-	var earned:int=mini(price,collected)
-	shift.lost_sales+=maxi(0,price-collected)
-	for missing in active.missing:shift.lost_sales+=Pricing.unit(game.layout.movies[missing])
+	if collected<=0:return true
+	if change>=collected:return true # Original payment has been fully returned.
+	if active.get("abandon_wait_cash",false):return false
+	return tender_received and paid
+
+
+func try_finish_checkout():
+	if active.is_empty() or not active.get("pending_finish",false):return
+	if not cash_is_settled():
+		active.await_cash=true
+		active.patience_started=false
+		game._message("Le client attend son argent ou sa monnaie avant de repartir.")
+		return
+	var collected:int=maxi(0,payment_collected()-change)
+	var account:int=int(active.get("account_id",active.id))
+	if active.get("abandon_wait_cash",false):
+		shift.lost_sales+=Pricing.quote(game.layout.movies,active.get("billed_titles",[])).total
+	else:
+		var earned:int=mini(price,collected)
+		shift.lost_sales+=maxi(0,price-collected)
+		for missing in active.get("missing",[]):shift.lost_sales+=Pricing.unit(game.layout.movies[missing])
+		shift.record_sale(earned)
+		if collected>0:accounts.settle(account,mini(collected,int(active.get("account_due",0))))
+		rentals+=1
 	finalize_return_batch(int(active.id))
-	shift.record_sale(earned)
-	if collected>0:accounts.settle(account,mini(collected,int(active.get("account_due",0))))
 	clear_change()
+	tender_parts=[] # The client takes any untouched remainder back.
+	refresh_tender_visual()
 	customers.dismiss(active)
 	active={}
-	rentals+=1
-	customer_delay=8
-	game._message("Client servi. Les oublis de scan ou de paiement sont inscrits aux pertes." if not was_scanned or collected<price else "Panier remis. Le client repart.")
-	return true
+	customer_delay=.35
+	game._message("Le client repart avec ses films et son argent réglé.")
+
 
 func release()->bool:
 	if inspection.opened:
@@ -808,6 +851,7 @@ func consume_case():
 func _physics_process(dt):
 	if not game:return
 	elapsed+=dt
+	if not active.is_empty() and active.get("pending_finish",false) and cash_is_settled():try_finish_checkout()
 	shift.tick(dt)
 	shift_ui_clock+=dt
 	if shift_ui_clock>=1:
@@ -917,13 +961,14 @@ func deliver_return(job:Dictionary,customer:Dictionary={},at_counter:bool=false)
 	refresh_terminal()
 	return returned
 
+
 func complete_return():
 	shift.record_sale(price)
 	var customer=active
 	active={}
 	tender_parts=[]
 	refresh_tender_visual()
-	customer_delay=8
+	customer_delay=.35
 	if customer.get("return_and_rent",false):
 		customer.return_and_rent=false
 		customer.is_return=false
@@ -937,6 +982,7 @@ func complete_return():
 		customers.dismiss(customer)
 		game._message("Retour enregistré : inspecte, remets l'antivol puis range le boîtier.")
 
+
 func replace_requested_title(old_title:int,record:Dictionary):
 	active.missing.erase(old_title)
 	var ids:Array=active.get("price_titles",active.items.map(func(item):return item.movie))
@@ -947,6 +993,7 @@ func replace_requested_title(old_title:int,record:Dictionary):
 	add_basket_case(record)
 	refresh_invoice()
 	refresh_terminal()
+
 
 func abandon_customer(c:Dictionary):
 	if c.state=="exit":return
@@ -971,10 +1018,8 @@ func abandon_customer(c:Dictionary):
 			send_to_chute(item)
 			item.task="Ranger après abandon : "+str(game.layout.movies[item.movie].title)
 			if not tasks.has(item.task):tasks.append(item.task)
-		active={}
-		tender_parts=[]
-		refresh_tender_visual()
-		customer_delay=8
+		c.items=[]
+		customer_delay=.35
 	else:
 		for record in c.get("reservations",[]):
 			var item=new_case(record.movie,c.node.global_position+Vector3(0,1,0),"shelve")
@@ -984,8 +1029,14 @@ func abandon_customer(c:Dictionary):
 			tasks.append(item.task)
 			send_to_chute(item)
 	if c.has("carry") and is_instance_valid(c.carry):c.carry.visible=false
-	customers.dismiss(c)
-	game._message("Un client est parti après son délai d'attente.")
+	if c==active:
+		c.pending_finish=true
+		c.abandon_wait_cash=true
+		c.rental_remaining=0
+		try_finish_checkout()
+	else:customers.dismiss(c)
+	game._message("Le client abandonne ses locations. Son paiement doit être rendu avant son départ." if c==active else "Un client est parti après son délai d’attente.")
+
 
 func send_to_chute(item:Dictionary):
 	var n:RigidBody3D=item.node
@@ -1014,9 +1065,11 @@ func send_to_chute(item:Dictionary):
 		n.collision_mask=1|8
 		n.freeze=false)
 
+
 func in_customer_zone(p:Vector3)->bool:
 	if active.is_empty():return false
 	return absf(p.x-active.node.global_position.x)<.7 and p.y>.95 and p.y<1.65 and p.z> -6.42 and p.z< -5.15
+
 
 func add_basket_case(record:Dictionary):
 	var item=new_case(int(record.movie),Vector3(-.83,1.14+active.items.size()*.022,-5.85),"rental")
@@ -1076,8 +1129,10 @@ func adopt_held_case()->Dictionary:
 	pick_case(item,hand,grip)
 	return item
 
+
 func has_identified_mismatch(node:Node3D,title:int)->bool:
 	return int(node.get_meta("disc_movie",-1))!=title and (node.get_meta("disc_mismatch_seen",false) or node.get_meta("inspected",false))
+
 
 func accept_replacement(item:Dictionary)->bool:
 	if active.is_empty() or active.get("is_return",false):return false
@@ -1092,6 +1147,7 @@ func accept_replacement(item:Dictionary)->bool:
 	refresh_terminal()
 	game._message("Exemplaire de remplacement scanné et ajouté au panier.")
 	return true
+
 
 func in_sort_tray(p:Vector3)->bool:
 	return absf(p.x-1.75)<.25 and absf(p.z+5.92)<.23 and p.y>1.08 and p.y<1.6
@@ -1114,6 +1170,7 @@ func store_sort_tray(item:Dictionary,clear_local_hand:bool=true):
 	item.node.set_meta("in_sort_tray",true)
 	if clear_local_hand:clear_hand()
 
+
 func scan_held()->bool:
 	if not game.held:
 		game._message("Présente un boîtier au scanner.")
@@ -1123,6 +1180,7 @@ func scan_held()->bool:
 		return false
 	if held_service.is_empty() and adopt_held_case().is_empty():return false
 	return scan_item(held_service)
+
 
 func scan_item(item:Dictionary)->bool:
 	var node:Node3D=item.node
@@ -1152,6 +1210,7 @@ func offer_rental_payment():
 	tender=0
 	for value in tender_parts:tender+=value
 
+
 func refresh_invoice():
 	if active.is_empty() or active.get("is_refund",false) or active.get("is_return",false):return
 	var ids:Array=active.get("billed_titles",[]).duplicate()
@@ -1168,6 +1227,8 @@ func refresh_invoice():
 	refresh_tender_visual()
 
 
+
+
 func complete_refund(amount:int):
 	if active.is_empty() or not active.get("is_refund",false):return
 	shift.refunds+=amount
@@ -1175,7 +1236,7 @@ func complete_refund(amount:int):
 	active={}
 	tender_parts=[]
 	refresh_tender_visual()
-	customer_delay=2
+	customer_delay=.25
 	if customer.get("return_and_rent",false):
 		customer.return_and_rent=false
 		customer.is_refund=false
@@ -1186,10 +1247,11 @@ func complete_refund(amount:int):
 	refresh_terminal()
 	game._message("Remboursement remis au client.")
 
+
 func finalize_return_batch(batch:int,mix_chance:float=.20):
 	var jobs:Array=returns_due.filter(func(job):return int(job.get("batch",-1))==batch)
 	var due:float=elapsed+randf_range(120.0,240.0)
-	var refund_budget:int=payment_collected()
+	var refund_budget:int=maxi(0,payment_collected()-change)
 	for job in jobs:
 		job.time=due
 		if job.get("complaint",false):
@@ -1204,6 +1266,7 @@ func finalize_return_batch(batch:int,mix_chance:float=.20):
 		jobs[index].record.disc_movie=content.movie
 		jobs[index].record.disc_uid=content.uid
 		jobs[index].record.dirty=content.dirty
+
 
 func recover_blocked_cases():
 	for item in cases:
@@ -1225,6 +1288,7 @@ func recover_blocked_cases():
 		body.continuous_cd=true
 		body.linear_velocity=Vector3.ZERO
 		body.sleeping=false
+
 
 func payment_collected()->int:
 	if active.is_empty():return 0

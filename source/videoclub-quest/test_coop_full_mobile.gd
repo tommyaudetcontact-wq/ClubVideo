@@ -216,6 +216,11 @@ func _initialize():
 	guest.touch_controls.scan()
 	await create_timer(.85).timeout
 	assert(item.scanned and coop.mirror.state.audio.scan==host.clerk.scan_serial)
+	guest.head.global_position=host.clerk.customer_hand()+Vector3(0,.25,.3)
+	guest.touch_controls.handoff()
+	await create_timer(.85).timeout
+	assert(host.clerk.active==shopper and shopper.get("await_cash",false) and coop.guest_case_id.is_empty())
+
 	guest.head.global_position=host.clerk.drawer.global_position+Vector3(0,.3,.3)
 	var change_due:int=host.clerk.tender-host.clerk.price
 	for denomination in [5000,2000,1000,500,200,100,25,10,5,1]:

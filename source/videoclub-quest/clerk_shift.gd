@@ -10,6 +10,9 @@ var closing=false
 var summary=false
 var enabled=true
 var started=false
+var quota_model=1
+var target_customers=4
+var arrived_customers=0
 var served=0
 var abandoned=0
 var lost_sales=0
@@ -42,19 +45,16 @@ func cash_in_till()->int:
 	for value in clerk.till:total+=int(value)*int(clerk.till[value])
 	return total
 func capacity()->int:return 8
-func can_spawn()->bool:return not enabled or (started and not closing and not summary and break_left<=0)
+func can_spawn()->bool:return not enabled or (started and not closing and not summary and arrived_customers<target_customers)
 func spawned():
-	pass
+	arrived_customers+=1
 func rush_duration()->float:
 	return OPEN_SECONDS+maxi(0,wave-1)*RUSH_INCREMENT
 func tick(dt:float):
 	if not enabled or not started or summary:return
-	if not closing:
-		time_left=maxf(0,time_left-dt)
-		if time_left<=0:
-			closing=true
-			break_left=0
-			clerk.game._message("Fermeture : termine les clients, range le club et clôture la caisse.")
+	if not closing and arrived_customers>=target_customers and clerk.customers.customers.is_empty() and clerk.active.is_empty() and clerk.waiting.is_empty() and clerk.returns_due.is_empty():
+		closing=true
+		clerk.game._message("Les clients de la journée sont repartis. Fais maintenant le close.")
 
 func record_sale(total:int):
 	served+=1
@@ -109,6 +109,8 @@ func finish()->bool:
 	return true
 func next_day():
 	day+=1
+	target_customers+=randi_range(1,2)
+	arrived_customers=0
 	if (day-1)%5==0:
 		week_losses=0
 		week_abandoned=0
@@ -148,5 +150,5 @@ func remaining_scratches()->int:
 
 func text()->String:
 	if summary:return report
-	if not started:return "%s · SEMAINE %d · PRÊT\nOuverture de 6 minutes, puis clôture complète.\nObjectif vendredi : semaine parfaite.\nLe bac À démêler reste à part."%[weekday(),week_number()]
-	return "%s · SEMAINE %d · %s\nTemps restant : %d:%02d\nRetours : %d · rangés : %d\nRéparations : %d\nClôture : servir, ramasser, ranger et rentrer l’argent.\nÀ démêler peut attendre demain."%[weekday(),week_number(),"FERMETURE" if closing else "OUVERT",int(time_left)/60,int(time_left)%60,returned,restocked,clerk.repairs.processed]
+	if not started:return "JOUR %d · %s · PRÊT\n%d clients locataires, arrivées variées, puis retours et close.\nObjectif vendredi : semaine parfaite.\nLe bac À démêler reste à part."%[day,weekday(),target_customers]
+	return "JOUR %d · %s · %s\nClients arrivés : %d / %d\nRetours attendus : %d · reçus : %d · rangés : %d\nRéparations : %d\nClôture après le dernier client et les retours.\nÀ démêler peut attendre demain."%[day,weekday(),"FERMETURE" if closing else "OUVERT",arrived_customers,target_customers,clerk.returns_due.size(),returned,restocked,clerk.repairs.processed]

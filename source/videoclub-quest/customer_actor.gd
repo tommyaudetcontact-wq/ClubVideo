@@ -68,4 +68,4 @@ static func animate(parent:Node3D,key:String):
 		return
 	if not player.has_animation(key):return
 	visual.set_meta("clip",key)
-	player.play(key,.17,1.43 if key in ["Walk","CarryWalk"] else 1.0)
+	player.play(key,.17,1.43 if key in ["Walk","CarryWalk"] else (2.4 if key=="HandOff" else 1.0))

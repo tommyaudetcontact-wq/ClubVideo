@@ -3,10 +3,10 @@ extends Node3D
 const GAME := "res://main.tscn"
 const ART := ["res://assets/loading/checkout.png", "res://assets/loading/games.png"]
 const TIPS := [
-	"Du lundi au vendredi : vise une semaine sans pertes, avec les disques réparés et tout rangé au dernier close.",
-	"La patience commence dans la file : 1, 2 ou 3 minutes selon le client. La barre est sous ses intentions.",
+	"Chaque jour se termine après les clients, leurs retours et le close. Vise une semaine sans pertes et un club rangé.",
+	"La patience commence quand le client rejoint la file : entre 2 et 3 minutes. La barre est sous ses intentions.",
 	"Au premier scan, le client sort son argent pour tous ses films. Calcule sa monnaie de tête.",
-	"La journée dure 6 minutes. Termine les clients puis range le club avant de clôturer; À démêler peut attendre.",
+	"Jour 1 : quatre clients locataires, puis leurs retours et le close. Chaque jour ajoute un ou deux clients.",
 	"Sur mobile, glisse le pouce dans la partie gauche : le joystick apparaît sous ton doigt.",
 	"Les retours arrivent dans la chute. À toi de décider quand vérifier et réparer les disques.",
 	"Scanne le dos du boîtier, puis retire la barre jaune avant de le remettre au client.",
