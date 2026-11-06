@@ -1174,8 +1174,8 @@ func can_serve_customer()->bool:
 func can_handoff()->bool:
 	if coop_panel.connected:
 		if coop_panel.guest_case_id.is_empty() or not is_instance_valid(coop_panel.mirror):return false
-		return coop_panel.mirror.state.get("cases",[]).any(func(item):return item.id==coop_panel.guest_case_id and item.kind=="rental")
-	return game.held!=null and not clerk.active.is_empty() and clerk.held_service.get("kind","")=="rental"
+		return coop_panel.mirror.state.get("cases",[]).any(func(item):return item.id==coop_panel.guest_case_id and (item.kind=="rental" or item.movie in coop_panel.checkout.get("missing",[])))
+	return game.held!=null and not clerk.active.is_empty() and (clerk.held_service.get("kind","")=="rental" or clerk.held_service.get("movie",-1) in clerk.active.get("missing",[]))
 
 func target_customer()->bool:
 	if not can_serve_customer():return false
@@ -1185,16 +1185,11 @@ func target_customer()->bool:
 func handoff():
 	if coop_panel.connected:
 		if action_busy() or not can_serve_customer() or not can_handoff():return
-		if coop_panel.guest_open:
-			game._message("Referme le boîtier avant de le donner.")
-			return
 		checkout_popup.hide()
 		animate_coop_counter_action({"action":"case_handoff","pose":Transform3D(coop_panel.guest_held_pose().basis,coop_panel.customer_pos)})
 		return
 	if action_busy() or not can_serve_customer():return
-	if clerk.inspection.opened:
-		game._message("Remets le disque et referme le boîtier avant de le donner.")
-		return
+	if clerk.inspection.opened:clerk.inspection.close_case()
 	if not can_handoff():
 		game._message("Prends en main un film ou un jeu de ce client.")
 		return

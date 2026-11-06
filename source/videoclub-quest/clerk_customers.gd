@@ -60,7 +60,7 @@ func spawn_customer():
 	c.visit_balance=int(clerk.accounts.ensure(c.account_id).balance)
 	c.return_and_rent=not c.return_job.is_empty() and randf()<.55
 	c.visit_mask=VisitIcons.reason_mask(c)
-	VisitIcons.update(n,c.visit_mask,int(c.get("rental_count",1)))
+	VisitIcons.update(n,c.visit_mask,VisitIcons.remaining_count(c))
 	if not c.return_job.is_empty():
 		c.return_job.account_id=c.account_id
 		var carry=Node3D.new()
@@ -96,7 +96,19 @@ func _physics_process(dt):
 		spawn_timer=next_arrival_delay()
 	for c in customers.duplicate():
 		var moving=false
-		if c.cursor<c.path.size():
+		if c.has("yield_target"):
+			moving=move_yielding(c,dt)
+			update_children(c,dt)
+			update_service_visual(c,dt)
+			Actor.animate(c.node,"Walk" if moving else "Idle")
+			continue
+		if c.state=="exit":
+			if c.node.position.distance_to(Vector3(-4,0,9.0))<.25:
+				customers.erase(c)
+				c.node.queue_free()
+				continue
+			moving=move_exiting(c,dt)
+		elif c.cursor<c.path.size():
 			var p:Vector2=c.path[c.cursor]
 			var target=Vector3(p.x,0,p.y)
 			var offset=target-c.node.position
@@ -153,6 +165,7 @@ func _physics_process(dt):
 						clerk.deliver_return(returned_job,c)
 						refund+=int(returned_job.get("refund",0))
 					c.return_job={}
+					c.visit_mask=int(c.get("visit_mask",0))&~1
 					if refund>0:
 						c.is_refund=true
 						c.refund_due=refund
@@ -192,10 +205,6 @@ func _physics_process(dt):
 					c.state="service"
 					c.node.rotation.y=0
 					clerk.customer_ready(c)
-				"exit":
-					customers.erase(c)
-					c.node.queue_free()
-					continue
 		update_children(c,dt)
 		update_service_visual(c,dt)
 		var holding:bool=c.has("carry") and is_instance_valid(c.carry) and c.carry.visible
@@ -257,7 +266,12 @@ func update_children(c:Dictionary,dt:float):
 
 func dismiss(c:Dictionary):
 	c.state="exit"
-	route(c,Vector3(-4,0,9.0))
+	for key in ["yield_target","yield_origin","yield_until","yield_path","yield_cursor","yield_return"]:c.erase(key)
+	c.exit_repath=0.0
+	c.exit_stuck=0.0
+	if not crowd_route(c,Vector3(-4,0,9.0)):
+		c.path=PackedVector2Array()
+		c.cursor=0
 
 func choose_alternative(c:Dictionary,title:int,retry:bool=false):
 	if not retry and c.state in ["replacement_browse","replacement_return"]:
@@ -320,7 +334,7 @@ func update_service_visual(c:Dictionary,dt:float):
 		if toward.length_squared()>.01:c.node.rotation.y=lerp_angle(c.node.rotation.y,atan2(-toward.x,-toward.z),minf(1,dt*6))
 	var bar=c.node.get_node_or_null("Patience")
 	if bar:bar.hide()
-	VisitIcons.update(c.node,VisitIcons.reason_mask(c),int(c.get("rental_count",1)))
+	VisitIcons.update(c.node,VisitIcons.reason_mask(c),VisitIcons.remaining_count(c))
 
 func next_arrival_delay()->float:
 	if arrival_cluster_left>0:
@@ -330,7 +344,7 @@ func next_arrival_delay()->float:
 	var kind:=0 if roll<.50 else 1 if roll<.80 else 2
 	if kind==last_arrival_kind:kind=(kind+1+randi_range(0,1))%3
 	last_arrival_kind=kind
-	var pressure:=clampf((clerk.shift.wave-1)*.06,0,.35)
+	var pressure:=clampf((clerk.shift.day-1)*.06,0,.35)
 	if kind==1:
 		arrival_cluster_left=randi_range(1,2)
 		return randf_range(2,5)
@@ -347,3 +361,138 @@ func join_queue(customer:Dictionary):
 	customer.state="queue"
 	var x:Array=[-.6,.25,1.10,1.95,2.80,3.65,-1.45,-2.30]
 	route(customer,Vector3(x[slot],0,-5.05))
+
+func nearby_people(except:Dictionary)->Array[Vector3]:
+	var points:Array[Vector3]=[]
+	for other in customers:
+		if other==except:continue
+		points.append(other.node.global_position)
+		for index in range(other.get("companions",[]).size()):
+			var child:Node3D=other.node.get_node_or_null("Companion%d"%index)
+			if child:points.append(child.global_position)
+	return points
+
+func walkable_segment(start:Vector3,end:Vector3)->bool:
+	var steps:int=maxi(1,ceili(start.distance_to(end)/.10))
+	for index in range(steps+1):
+		var p:=start.lerp(end,float(index)/steps)
+		var cell:=Vector2i(roundi(p.x/.25),roundi(p.z/.25))
+		if not grid.is_in_boundsv(cell) or grid.is_point_solid(cell):return false
+	return true
+
+func crowd_route(c:Dictionary,target:Vector3)->bool:
+	var start:=Vector2i(roundi(c.node.position.x/.25),roundi(c.node.position.z/.25))
+	var end:=Vector2i(roundi(target.x/.25),roundi(target.z/.25))
+	if not grid.is_in_boundsv(start) or not grid.is_in_boundsv(end):return false
+	var changed:Array[Vector2i]=[]
+	for person in nearby_people(c):
+		var center:=Vector2i(roundi(person.x/.25),roundi(person.z/.25))
+		for x in range(center.x-3,center.x+4):
+			for z in range(center.y-3,center.y+4):
+				var cell:=Vector2i(x,z)
+				if cell==start or not grid.is_in_boundsv(cell) or grid.is_point_solid(cell):continue
+				if Vector2(x*.25-person.x,z*.25-person.z).length()>.66:continue
+				grid.set_point_solid(cell,true)
+				changed.append(cell)
+	var path:=grid.get_point_path(start,end) if not grid.is_point_solid(end) else PackedVector2Array()
+	for cell in changed:grid.set_point_solid(cell,false)
+	if path.is_empty():return false
+	c.path=path
+	c.cursor=1
+	return true
+
+func exit_step_clear(c:Dictionary,next:Vector3)->bool:
+	if not walkable_segment(c.node.position,next):return false
+	for person in nearby_people(c):
+		var before:float=Vector2(c.node.position.x-person.x,c.node.position.z-person.z).length()
+		var after:=Vector2(next.x-person.x,next.z-person.z).length()
+		# Allow separating from a pre-existing overlap, never moving deeper into it.
+		if after<.57 and after<before-.0001:return false
+	var player:Vector3=game.head.global_position
+	if Vector2(next.x-player.x,next.z-player.z).length()<.45:return false
+	var remote:Node3D=clerk.lan.remote_avatar
+	if is_instance_valid(remote) and remote.valid_pose:
+		var guest:Vector3=remote.targets[0].origin
+		if Vector2(next.x-guest.x,next.z-guest.z).length()<.45:return false
+	return true
+
+func move_exiting(c:Dictionary,dt:float)->bool:
+	c.exit_repath=maxf(0,float(c.get("exit_repath",0))-dt)
+	if c.cursor>=c.path.size() and c.exit_repath<=0:
+		crowd_route(c,Vector3(-4,0,9))
+		c.exit_repath=.8+float(int(c.id)%4)*.08
+	if c.cursor>=c.path.size():
+		c.exit_stuck=float(c.get("exit_stuck",0))+dt
+		if c.exit_stuck>2.5:ask_for_space(c)
+		return false
+	var point:Vector2=c.path[c.cursor]
+	var target:=Vector3(point.x,0,point.y)
+	var offset:Vector3=target-c.node.position
+	if offset.length()<.07:
+		c.cursor+=1
+		return false
+	var next:Vector3=c.node.position+offset.normalized()*minf(dt*.95,offset.length())
+	if exit_step_clear(c,next):
+		c.node.position=next
+		c.node.rotation.y=lerp_angle(c.node.rotation.y,atan2(-offset.x,-offset.z),minf(1,dt*8))
+		c.exit_stuck=0.0
+		return true
+	c.exit_stuck=float(c.get("exit_stuck",0))+dt
+	if c.exit_repath<=0:
+		crowd_route(c,Vector3(-4,0,9))
+		c.exit_repath=.8+float(int(c.id)%4)*.08
+	if c.exit_stuck>2.5:ask_for_space(c)
+	return false
+
+func ask_for_space(exiting:Dictionary):
+	exiting.exit_stuck=1.5
+	for other in customers:
+		if other==exiting or other.state=="exit" or other.has("yield_target") or other.cursor<other.path.size():continue
+		var away:Vector3=other.node.position-exiting.node.position
+		away.y=0
+		if away.length()>1.8:continue
+		var side:=Vector3(-away.z,0,away.x).normalized()
+		if side.length_squared()<.1:side=Vector3.RIGHT
+		for direction in [side,-side,Vector3.RIGHT,Vector3.LEFT,Vector3(.95,0,.95),Vector3(-.95,0,.95),Vector3(.95,0,-.95),Vector3(-.95,0,-.95)]:
+			var destination:Vector3=other.node.position+direction*.80
+			var segment_start:=Vector2(exiting.node.position.x,exiting.node.position.z)
+			var nearest:=Geometry2D.get_closest_point_to_segment(Vector2(destination.x,destination.z),segment_start,Vector2(-4,9))
+			if nearest.distance_to(Vector2(destination.x,destination.z))<.70:continue
+			var detour:Dictionary={"node":other.node}
+			if not route(detour,destination):continue
+			if destination.distance_to(exiting.node.position)<.70:continue
+			var free:=true
+			for person in nearby_people(other):
+				if Vector2(destination.x-person.x,destination.z-person.z).length()<.62:free=false
+			if not free:continue
+			other.yield_origin=other.node.position
+			other.yield_target=destination
+			other.yield_until=clock+8.0
+			other.yield_path=detour.path
+			other.yield_cursor=1
+			other.yield_return=false
+			return
+
+func move_yielding(c:Dictionary,dt:float)->bool:
+	if clock>=float(c.yield_until) and not c.get("yield_return",false):
+		var back:Dictionary={"node":c.node}
+		if not route(back,c.yield_origin):return false
+		c.yield_path=back.path
+		c.yield_cursor=1
+		c.yield_return=true
+	var path:PackedVector2Array=c.get("yield_path",PackedVector2Array())
+	var cursor:int=int(c.get("yield_cursor",path.size()))
+	if cursor>=path.size():
+		if c.get("yield_return",false):
+			for key in ["yield_target","yield_origin","yield_until","yield_path","yield_cursor","yield_return"]:c.erase(key)
+		return false
+	var target:=Vector3(path[cursor].x,0,path[cursor].y)
+	var offset:Vector3=target-c.node.position
+	if offset.length()<.05:
+		c.yield_cursor=cursor+1
+		return false
+	var next:Vector3=c.node.position+offset.normalized()*minf(dt*.8,offset.length())
+	if not exit_step_clear(c,next):return false
+	c.node.position=next
+	c.node.rotation.y=lerp_angle(c.node.rotation.y,atan2(-offset.x,-offset.z),minf(1,dt*8))
+	return true

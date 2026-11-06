@@ -192,7 +192,7 @@ func handle_request(request:Variant):
 		var inventory:Dictionary={}
 		for denomination in clerk.till:
 			inventory[str(denomination)]=clerk.till[denomination]
-		response["checkout"]={"customer":clerk.active.get("id",-1),"price":clerk.price,"tender":clerk.tender,"received":clerk.tender_received,"paid":clerk.paid,"cash_visible":clerk.tender_note.visible,"drawer_open":clerk.drawer_open,"till":inventory}
+		response["checkout"]={"customer":clerk.active.get("id",-1),"missing":clerk.active.get("missing",[]),"price":clerk.price,"tender":clerk.tender,"received":clerk.tender_received,"paid":clerk.paid,"cash_visible":clerk.tender_note.visible,"drawer_open":clerk.drawer_open,"till":inventory}
 		response["notice"]=receipt
 		response["guest_case"]=str(guest_case.node.get_instance_id()) if not guest_case.is_empty() else ""
 		if not guest_case.is_empty() and not guest_case.record.is_empty() and guest_case.kind in ["return","sorting","shelve"]:
@@ -448,7 +448,7 @@ func guest_action(action:String,request:Dictionary)->String:
 			guest_inspection.open_case(node)
 			guest_inspection.finish_lid(true)
 		return ""
-	if guest_inspection.opened and action!="case_sort":return "Referme d’abord le boîtier."
+	if guest_inspection.opened and action not in ["case_sort","case_handoff"]:return "Referme d’abord le boîtier."
 	match action:
 		"case_scan":
 			if p.distance_to(clerk.scanner.global_position)>1.8:return "Approche-toi du scanner."
@@ -473,6 +473,7 @@ func guest_action(action:String,request:Dictionary)->String:
 		"case_handoff":
 			if clerk.active.is_empty() or int(request.get("customer",-2))!=int(clerk.active.get("id",-1)):return ""
 			if p.distance_to(clerk.customer_hand())>1.8:return "Approche-toi du client."
+			if guest_inspection.opened:guest_inspection.close_case()
 			if clerk.handoff_item(guest_case):
 				guest_case={}
 				guest_flipped=false

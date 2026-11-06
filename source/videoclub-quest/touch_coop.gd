@@ -406,4 +406,4 @@ func refresh():
 		var rest:float=float(shift.get("break_left",0))
 		var seconds:=int(rest if rest>0 else shift.get("time_left",0))
 		info.text+="
-Rush %d · %s · %d:%02d"%[int(shift.get("wave",1)),"Pause" if rest>0 else "Arrivées",seconds/60,seconds%60]
+Jour %d · %s · %d:%02d"%[int(shift.get("day",1)),"Fermeture" if shift.get("closing",false) else "Ouvert",seconds/60,seconds%60]

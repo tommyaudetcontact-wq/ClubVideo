@@ -1,9 +1,9 @@
 extends Node
 const VERSION=2
 const CASE_META=["basket_owner","disc_movie","disc_uid","disc_mismatch_seen","dirty","inspected","antitheft","sort_slot","in_basket","in_sort_tray","barcode_scanned","needs_relock","return_account","return_cycle","return_checked","returned_damage"]
-const SHIFT_FIELDS=["rush_model","day","duration","time_left","closing","summary","started","served","abandoned","lost_sales","missed_scans","revenue","refunds","returned","restocked","damaged","initial_cash","wave","break_left","report","business_balance"]
+const SHIFT_FIELDS=["day_model","rush_model","day","duration","time_left","closing","summary","started","served","abandoned","lost_sales","missed_scans","revenue","refunds","returned","restocked","damaged","initial_cash","wave","break_left","report","business_balance"]
 const COUNTER_FIELDS=["price","tender","tender_parts","tender_received","tender_deposited","paid","change","drawer_open","page","rentals","elapsed","customer_delay","chute_serial","tasks","reminders"]
-const CLIENT_FIELDS=["queue_slot","rental_count","visit_mask","is_refund","refund_due","children_mess_count","children_mess_delay","id","state","cursor","wait","messy","movie","patience","patience_bonus","missing","handed","is_return","replace_title","replacement_movie","replacement_queue","family","companions","children_played","handoff_wait","return_and_rent","browse_index","price_titles","discount","cash_started","next_mess","mess_done","account_id","visit_balance","account_due","offer_ready","subtotal","gst","qst","billed_titles"]
+const CLIENT_FIELDS=["rental_remaining","queue_slot","rental_count","visit_mask","is_refund","refund_due","children_mess_count","children_mess_delay","id","state","cursor","wait","messy","movie","patience","patience_bonus","missing","handed","is_return","replace_title","replacement_movie","replacement_queue","family","companions","children_played","handoff_wait","return_and_rent","browse_index","price_titles","discount","cash_started","next_mess","mess_done","account_id","visit_balance","account_due","offer_ready","subtotal","gst","qst","billed_titles"]
 var game
 var save_path="user://club-save.dat"
 var autosave_clock=0.0
@@ -63,10 +63,10 @@ func _notification(what):
 func record_id(record:Dictionary)->int:return int(record.get("id",-1))
 func pack_job(job:Dictionary)->Dictionary:
 	if job.is_empty():return {}
-	return {"movie":job.movie,"time":job.get("time",0.0),"record":record_id(job.record),"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0)),"locked":bool(job.get("locked",false)),"batch":int(job.get("batch",-1)),"others":job.get("others",[]).map(func(other):return pack_job(other))}
+	return {"movie":job.movie,"time":job.get("time",0.0),"record":record_id(job.record),"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0)),"locked":bool(job.get("locked",false)),"batch":int(job.get("batch",-1)),"complaint":bool(job.get("complaint",false)),"charge":int(job.get("charge",0)),"others":job.get("others",[]).map(func(other):return pack_job(other))}
 func unpack_job(job:Dictionary)->Dictionary:
 	if job.is_empty():return {}
-	return {"movie":job.movie,"time":job.time,"record":game.dvd_records[job.record],"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0)),"locked":bool(job.get("locked",false)),"batch":int(job.get("batch",-1)),"others":job.get("others",[]).map(func(other):return unpack_job(other))}
+	return {"movie":job.movie,"time":job.time,"record":game.dvd_records[job.record],"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0)),"locked":bool(job.get("locked",false)),"batch":int(job.get("batch",-1)),"complaint":bool(job.get("complaint",false)),"charge":int(job.get("charge",0)),"others":job.get("others",[]).map(func(other):return unpack_job(other))}
 
 func pack_case(item:Dictionary,node:Node3D)->Dictionary:
 	var result={"movie":item.movie,"kind":item.kind,"scanned":item.get("scanned",false),"task":item.get("task",""),"record":record_id(item.get("record",{})),"transform":node.global_transform,"meta":{}}
@@ -78,7 +78,7 @@ func pack_case(item:Dictionary,node:Node3D)->Dictionary:
 func snapshot()->Dictionary:
 	var c=game.clerk
 	var state={"version":VERSION,"catalogue":game.layout.movies.size(),"records":[],"cases":[],"clients":[],"active":-1,"waiting":[],"returns":[],"loose_discs":[],"cash":[],"shift":{},"counter":{},"repair":{},"till":c.till.duplicate(),"spawn_timer":c.customers.spawn_timer,"next_id":c.customers.next_id,"processed":c.repairs.processed,"options":{"manual":game.modes.manual_mode,"rain":game.modes.rain_enabled,"teleport":game.teleportation.enabled}}
-	state.return_schedule_version=1
+	state.return_schedule_version=2
 	state.arrival_cluster_left=c.customers.arrival_cluster_left
 	state.last_arrival_kind=c.customers.last_arrival_kind
 	state.accounts=c.accounts.snapshot()
@@ -306,6 +306,13 @@ func restore(s:Dictionary)->bool:
 		c.shift.time_left=c.shift.OPEN_SECONDS
 		c.shift.break_left=0
 		c.shift.closing=false
+	if not s.shift.has("day_model"):
+		c.shift.duration=360.0
+		var played:float=maxf(0,float(s.shift.get("duration",360))-float(s.shift.get("time_left",360)))
+		c.shift.time_left=maxf(0,360-played)
+		if c.shift.summary:c.shift.time_left=0
+		c.shift.closing=c.shift.summary or c.shift.time_left<=0
+		c.shift.break_left=0
 	for key in COUNTER_FIELDS:c.set(key,s.counter[key])
 	c.till=s.till.duplicate()
 	if not s.shift.has("rush_model"):
@@ -334,8 +341,8 @@ func restore(s:Dictionary)->bool:
 			else:c.customers.dismiss(customer)
 	if not c.active.is_empty() and not c.active.has("cash_started"):
 		c.active.cash_started=c.tender_deposited>0 or c.paid or c.tender_parts.reduce(func(sum,value):return sum+value,0)<c.tender
-	if not s.has("return_schedule_version"):
-		for job in c.returns_due:job.time=maxf(job.time,c.elapsed+randf_range(300,600))
+	if int(s.get("return_schedule_version",0))<2:
+		for job in c.returns_due:job.time=minf(job.time,c.elapsed+randf_range(120,240))
 	c.customers.arrival_cluster_left=int(s.get("arrival_cluster_left",0))
 	c.customers.last_arrival_kind=int(s.get("last_arrival_kind",-1))
 	c.customers.spawn_timer=s.spawn_timer

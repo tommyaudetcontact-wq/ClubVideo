@@ -3,7 +3,7 @@ extends Node3D
 const GAME := "res://main.tscn"
 const ART := ["res://assets/loading/checkout.png", "res://assets/loading/games.png"]
 const TIPS := [
-	"Les clients sont patients sans limite. Profite des temps morts entre les rushs pour traiter les retours.",
+	"La journée dure 6 minutes. Termine les clients puis range le club avant de clôturer; À démêler peut attendre.",
 	"Sur mobile, glisse le pouce dans la partie gauche : le joystick apparaît sous ton doigt.",
 	"Les retours arrivent dans la chute. À toi de décider quand vérifier et réparer les disques.",
 	"Scanne le dos du boîtier, puis retire la barre jaune avant de le remettre au client.",

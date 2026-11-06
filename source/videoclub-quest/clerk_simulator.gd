@@ -348,6 +348,7 @@ func select_film(c:Dictionary)->bool:
 		var record=reserve_stock(id)
 		if not record.is_empty():c.reservations.append(record)
 	c.rental_count=c.reservations.size()
+	c.rental_remaining=c.rental_count
 	return true
 func new_case(id:int,position:Vector3,kind:String)->Dictionary:
 	var n=game.modes.create_case_body(float(game.layout.movies[id].get("caseHeight",.19)))
@@ -667,19 +668,19 @@ func action(which:String,hand:int,value:int=0):
 			game._message("Julie : « Avez-vous Shrek ce soir ? Pouvez-vous me rappeler ? »\nLa demande est inscrite sur l'ordinateur, onglet Rappels.")
 	refresh_terminal()
 func handoff_rental():
-	if inspection.opened or held_service.is_empty():return
+	if held_service.is_empty():return
+	if inspection.opened:inspection.close_case()
 	handoff_item(held_service)
 
 func handoff_item(item:Dictionary)->bool:
-	if active.is_empty() or item.is_empty() or item.kind!="rental" or item not in active.items:return false
+	if active.is_empty() or item.is_empty():return false
+	if item.movie in active.get("missing",[]) and item.kind in ["sorting","shelve"]:
+		active.missing.erase(item.movie)
+		item.kind="rental"
+		active.items.append(item)
+	if item.kind!="rental" or item not in active.items:return false
 	var node:Node3D=item.node
-	if not active.missing.is_empty():
-		game._message("Trouve les films manquants avant de remettre ce boîtier.")
-		return false
 	var was_scanned:bool=item.scanned
-	if was_scanned and not paid:
-		game._message("Règle le panier avant de remettre les films facturés.")
-		return false
 	var id:int=item.movie
 	var record:Dictionary=item.record
 	if was_scanned:
@@ -690,28 +691,33 @@ func handoff_item(item:Dictionary)->bool:
 		shift.lost_sales+=Pricing.unit(game.layout.movies[id])
 	var locked:bool=node.get_meta("antitheft",false)
 	var defective:bool=node.get_meta("dirty",false) or node.get_meta("disc_movie",-1)!=id
-	var refund:int=Pricing.unit(game.layout.movies[id]) if was_scanned and (locked or defective) else 0
+	var refund:int=0
 	active.items.erase(item)
 	cases.erase(item)
 	node.queue_free()
 	if item==held_service:clear_hand()
 	active.handed+=1
+	active.rental_remaining=maxi(0,int(active.get("rental_count",active.handed+active.items.size()))-active.handed)
 	var account=int(active.get("account_id",active.id))
 	var cycle=accounts.rental(account,id,record.id)
-	returns_due.append({"movie":id,"time":elapsed+600,"record":record,"account_id":account,"rental_id":cycle,"refund":refund,"locked":locked,"batch":int(active.id)})
+	returns_due.append({"movie":id,"time":elapsed+240,"record":record,"account_id":account,"rental_id":cycle,"refund":refund,"locked":locked,"batch":int(active.id),"complaint":locked or defective,"charge":Pricing.unit(game.layout.movies[id])})
 	if not active.items.is_empty():
 		refresh_invoice()
 		game._message("Film remis sans scan. Perte enregistrée." if not was_scanned else "Remets les autres boîtiers au client.")
 		return true
+	var collected:int=payment_collected()
+	var earned:int=mini(price,collected)
+	shift.lost_sales+=maxi(0,price-collected)
+	for missing in active.missing:shift.lost_sales+=Pricing.unit(game.layout.movies[missing])
 	finalize_return_batch(int(active.id))
-	shift.record_sale(price if paid else 0)
-	if paid:accounts.settle(account,int(active.get("account_due",0)))
+	shift.record_sale(earned)
+	if collected>0:accounts.settle(account,mini(collected,int(active.get("account_due",0))))
 	clear_change()
 	customers.dismiss(active)
 	active={}
 	rentals+=1
 	customer_delay=8
-	game._message("Film remis sans scan. Perte enregistrée au bilan." if not was_scanned else "Panier payé et remis. Le client repart.")
+	game._message("Client servi. Les oublis de scan ou de paiement sont inscrits aux pertes." if not was_scanned or collected<price else "Panier remis. Le client repart.")
 	return true
 
 func release()->bool:
@@ -1114,9 +1120,6 @@ func scan_item(item:Dictionary)->bool:
 	if node.get_meta("needs_relock",false) and not node.get_meta("return_checked",false):
 		var fee=accounts.scan_return(node)
 		game._message("Retour enregistré au dossier client. Frais de 2.00 $ à sa prochaine visite." if fee>0 else "Retour enregistré au bon dossier client.")
-	if item.kind=="rental" and not item.scanned and paid:
-		game._message("Le paiement est terminé. Ce boîtier n’a pas été facturé.")
-		return false
 	node.set_meta("barcode_scanned",true)
 	scan_serial+=1
 	item.scanned=true
@@ -1171,8 +1174,13 @@ func complete_refund(amount:int):
 
 func finalize_return_batch(batch:int,mix_chance:float=.20):
 	var jobs:Array=returns_due.filter(func(job):return int(job.get("batch",-1))==batch)
-	var due:float=elapsed+randf_range(300.0,600.0)
-	for job in jobs:job.time=due
+	var due:float=elapsed+randf_range(120.0,240.0)
+	var refund_budget:int=payment_collected()
+	for job in jobs:
+		job.time=due
+		if job.get("complaint",false):
+			job.refund=mini(int(job.get("charge",0)),refund_budget)
+			refund_budget-=int(job.refund)
 	if jobs.size()<2 or randf()>=mix_chance:return
 	var contents:Array=[]
 	for job in jobs:
@@ -1203,3 +1211,13 @@ func recover_blocked_cases():
 		body.continuous_cd=true
 		body.linear_velocity=Vector3.ZERO
 		body.sleeping=false
+
+func payment_collected()->int:
+	if active.is_empty():return 0
+	var total:int=tender_deposited
+	var pieces:Array=wallet.loose.duplicate()
+	for palm in wallet.palms:pieces.append_array(palm)
+	pieces.append_array(lan.guest_cash)
+	for entry in pieces:
+		if entry.get("tender",false) and int(entry.get("customer_id",-1))==int(active.id):total+=int(entry.value)
+	return maxi(total,0)

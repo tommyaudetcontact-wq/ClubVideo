@@ -12,6 +12,10 @@ func _initialize():
 	var a:Dictionary=clerk.reserve_stock(0)
 	var b:Dictionary=clerk.reserve_stock(1)
 	var unrelated:Dictionary=game.dvd_records[100]
+	a.disc_movie=a.movie
+	b.disc_movie=b.movie
+	a.disc_uid=80001
+	b.disc_uid=80002
 	var ua:int=a.disc_uid
 	var ub:int=b.disc_uid
 	var original:int=unrelated.disc_uid
@@ -22,7 +26,7 @@ func _initialize():
 	clerk.finalize_return_batch(42,1.0)
 	assert(a.disc_uid==ub and b.disc_uid==ua and unrelated.disc_uid==original)
 	var due:float=clerk.returns_due[0].time
-	assert(due>=400 and due<=700 and clerk.returns_due[1].time==due)
+	assert(due>=220 and due<=340 and clerk.returns_due[1].time==due)
 	assert(clerk.take_due_return().is_empty())
 	clerk.elapsed=due-.01
 	assert(clerk.take_due_return().is_empty())
@@ -52,9 +56,9 @@ func _initialize():
 	assert(icon.get_meta("visit_icon_count")==2)
 	var found:=false
 	for child in icon.get_node("VisitIcons").get_children():
-		if child is Label3D and child.text=="×2":found=true
+		if child is Label3D and child.text=="LOCATION ×2":found=true
 	assert(found)
 	assert(game.touch_controls.cash_total.get_theme_color("font_color")==Color.WHITE)
 	assert(game.touch_controls.cash_total.get_theme_font_size("font_size")>=30)
-	print("RETURNS095_OK: 5–10 minute delay, same-rental-only mixing, grouped chute returns, saved bundles, single-disc protection, count icon, readable cash")
+	print("RETURNS095_OK: 2–4 minute delay, same-rental-only mixing, grouped chute returns, saved bundles, single-disc protection, count icon, readable cash")
 	quit(0)
