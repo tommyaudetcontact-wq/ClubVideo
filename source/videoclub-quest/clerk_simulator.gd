@@ -890,7 +890,7 @@ func build_checkout_trailer_screen():
 	popcorn.queue_free()
 	var cabinet:=Node3D.new()
 	add_child(cabinet)
-	cabinet.global_position=screen_origin+Vector3(0,.05,0)
+	cabinet.global_position=screen_origin+Vector3(-.26,.05,0)
 	cabinet.rotation.y=PI
 	Props.box(cabinet,Vector3(0,0,-.065),Vector3(.36,.284,.13),"242729")
 	Props.box(cabinet,Vector3(0,-.155,-.06),Vector3(.23,.035,.15),"242729")
