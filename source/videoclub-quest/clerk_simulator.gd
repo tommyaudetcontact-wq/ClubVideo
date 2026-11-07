@@ -889,17 +889,28 @@ func build_checkout_trailer_screen():
 			batch.queue_free()
 	popcorn.queue_free()
 	var cabinet:=Node3D.new()
+	cabinet.name="CheckoutTrailerTV"
 	add_child(cabinet)
-	cabinet.global_position=screen_origin+Vector3(-.26,.05,0)
+	cabinet.global_position=screen_origin+Vector3(-.26,.17,.035)
 	cabinet.rotation.y=PI
-	Props.box(cabinet,Vector3(0,0,-.065),Vector3(.36,.284,.13),"242729")
-	Props.box(cabinet,Vector3(0,-.155,-.06),Vector3(.23,.035,.15),"242729")
+	# The narrow foot sits behind the lock tray, under the full-width cabinet.
+	Props.box(cabinet,Vector3(0,-.267,-.08),Vector3(.27,.032,.15),"242a30")
+	Props.box(cabinet,Vector3(0,-.223,-.08),Vector3(.125,.070,.095),"343b42")
+	Props.box(cabinet,Vector3(0,.018,-.097),Vector3(.512,.399,.143),"252b32")
+	Props.box(cabinet,Vector3(0,0,-.031),Vector3(.553,.444,.074),"4b535c")
+	Props.box(cabinet,Vector3(0,.013,.009),Vector3(.512,.391,.012),"161b21")
+	Props.box(cabinet,Vector3(-.157,-.200,.009),Vector3(.142,.014,.008),"222830")
+	Props.box(cabinet,Vector3(.195,-.200,.009),Vector3(.015,.009,.008),"70be7c")
 	var screen:=MeshInstance3D.new()
 	var panel:=QuadMesh.new()
-	panel.size=Vector2(.326,.2445)
+	panel.size=Vector2(.495,.37125)
 	screen.mesh=panel
-	screen.position.z=.002
-	screen.material_override=game.screens[0].material_override
+	screen.position=Vector3(0,.013,.017)
+	# The QuadMesh already has upright UVs. The imported CRT meshes need a V flip.
+	var screen_material:StandardMaterial3D=game.screens[0].material_override.duplicate()
+	screen_material.uv1_scale=Vector3.ONE
+	screen_material.uv1_offset=Vector3.ZERO
+	screen.material_override=screen_material
 	screen.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	cabinet.add_child(screen)
 
