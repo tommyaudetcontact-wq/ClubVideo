@@ -738,7 +738,7 @@ func _physics_process(delta: float) -> void:
 	for i in range(2):
 		var trigger := hands[i].get_float(&"trigger") > 0.6
 		var grip := hands[i].get_float(&"grip") > 0.6
-		hand_visuals[i].update_grip(delta,hands[i].get_float(&"trigger"),hands[i].get_float(&"grip"),held_hand==i or (clerk and (clerk.inspection.finger==i or clerk.secondary_hand==i or clerk.basket.hand==i or clerk.lock_hand==i)))
+		hand_visuals[i].update_grip(delta,hands[i].get_float(&"trigger"),hands[i].get_float(&"grip"),held_hand==i or (clerk and (clerk.inspection.finger==i or clerk.secondary_hand==i or clerk.basket.hand==i or clerk.locks.occupies(i))))
 		pointer_beams[i].visible = held_hand!=i and not (clerk and clerk.secondary_hand==i) and not (i==0 and teleportation.enabled and teleportation.aiming)
 		if trigger and not previous_trigger[i]:
 			_interact(i,false)

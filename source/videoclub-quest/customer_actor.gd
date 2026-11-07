@@ -38,6 +38,8 @@ static func attach(parent:Node3D,index:int)->bool:
 			mount.position=Vector3(0,-.028,.042)
 			socket.add_child(mount)
 			visual.set_meta("mount",mount)
+			visual.set_meta("skeleton",skeleton)
+			visual.set_meta("reach_shoulder",skeleton.get_bone_parent(skeleton.get_bone_parent(wrist)))
 	var proxy:=Node3D.new()
 	proxy.name="Arm1"
 	proxy.position=Vector3(.26,1.37,0)
@@ -60,11 +62,23 @@ static func animate(parent:Node3D,key:String):
 	if not visual:return
 	var player:AnimationPlayer=visual.get_meta("player",null)
 	if not player or visual.get_meta("clip","")==key:return
+	var skeleton:Skeleton3D=visual.get_meta("skeleton",null)
+	var shoulder:int=visual.get_meta("reach_shoulder",-1)
+	if skeleton and shoulder>=0 and visual.has_meta("receive_shoulder"):
+		skeleton.set_bone_pose_rotation(shoulder,visual.get_meta("receive_shoulder"))
+		visual.remove_meta("receive_shoulder")
 	if key=="Receive" and player.has_animation("HandOff"):
 		visual.set_meta("clip",key)
 		player.play("HandOff")
 		player.seek(1.60,true)
 		player.pause()
+		if skeleton and shoulder>=0:
+			var original:=skeleton.get_bone_pose_rotation(shoulder)
+			var parent_pose:=skeleton.get_bone_global_pose(skeleton.get_bone_parent(shoulder))
+			var world_basis:Basis=skeleton.global_basis*parent_pose.basis
+			var reach_axis:Vector3=(world_basis.inverse()*(parent.global_basis.x)).normalized()
+			visual.set_meta("receive_shoulder",original)
+			skeleton.set_bone_pose_rotation(shoulder,Quaternion(reach_axis,deg_to_rad(51.0))*original)
 		return
 	if not player.has_animation(key):return
 	visual.set_meta("clip",key)

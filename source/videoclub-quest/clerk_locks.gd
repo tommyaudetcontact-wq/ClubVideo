@@ -3,6 +3,8 @@ const Props=preload("res://clerk_props.gd")
 var clerk
 var game
 var bars:Array=[]
+var second_bar:RigidBody3D
+var second_hand:=-1
 var shelves:Array=[]
 var inserting:Node3D
 var entry_depth := 0.0
@@ -99,7 +101,11 @@ func hold(body:RigidBody3D,hand:int):
 func hand_transform(hand:int)->Transform3D:
 	# Hold the rear end between fingers; the long bar extends in front of the palm.
 	return game.hands[hand].global_transform*Transform3D(Basis(Vector3.RIGHT,-PI/2),Vector3(.025,-.015,-.10))
+func occupies(hand:int)->bool:
+	return hand==clerk.lock_hand or hand==second_hand
+
 func update_hand():
+	if is_instance_valid(second_bar):second_bar.global_transform=hand_transform(second_hand)
 	if clerk.lock_hand>=0 and is_instance_valid(clerk.loose_lock) and not is_instance_valid(clerk.lock_source):clerk.loose_lock.global_transform=hand_transform(clerk.lock_hand)
 func put_in_bin(body:RigidBody3D):
 	body.reparent(self)
@@ -113,12 +119,13 @@ func put_in_bin(body:RigidBody3D):
 	body.rotation=Vector3(PI/2,0,0)
 	body.set_meta("in_bin",true)
 func interact(hand:int)->bool:
+	if hand==second_hand:return true
 	if hand==clerk.lock_hand:
 		if not is_instance_valid(clerk.lock_source):try_insert()
 		return true
-	if clerk.lock_hand>=0 or hand==game.held_hand or hand==clerk.secondary_hand or clerk.wallet.occupied(hand) or hand==clerk.phone_hand or hand==clerk.basket.hand or hand==clerk.inspection.finger:return false
+	if hand==game.held_hand or hand==clerk.secondary_hand or clerk.wallet.occupied(hand) or hand==clerk.phone_hand or hand==clerk.basket.hand or hand==clerk.inspection.finger:return false
 	var p:Vector3=game.hands[hand].global_position
-	if game.held and game.held.get_meta("antitheft",false) and not clerk.inspection.opened:
+	if clerk.lock_hand<0 and game.held and game.held.get_meta("antitheft",false) and not clerk.inspection.opened:
 		var bottom=game.held.to_global(Vector3(.061,-.09,0))
 		if p.distance_to(bottom)<.09 and game.held.global_position.distance_to(DETACHER)<.18:
 			clerk.lock_source=game.held
@@ -131,12 +138,22 @@ func interact(hand:int)->bool:
 	var chosen:RigidBody3D
 	var distance=.12
 	for body in bars:
+		if body==clerk.loose_lock or body==second_bar:continue
 		var gap=p.distance_to(body.global_position)
 		if gap<distance:
 			distance=gap
 			chosen=body
 	if chosen:
-		hold(chosen,hand)
+		if clerk.lock_hand<0:
+			hold(chosen,hand)
+		else:
+			second_bar=chosen
+			second_hand=hand
+			chosen.set_meta("in_bin",false)
+			chosen.freeze=true
+			chosen.collision_layer=0
+			chosen.collision_mask=0
+			update_hand()
 		return true
 	return false
 func try_insert()->bool:
@@ -198,6 +215,7 @@ func ensure_spare():
 func tick(delta:float=1.0/72.0):
 	ensure_spare()
 	update_case_pose(delta)
+	update_hand()
 	for body in bars:
 		if not body.freeze and body.sleeping:
 			body.freeze=true
@@ -217,33 +235,42 @@ func tick(delta:float=1.0/72.0):
 			clerk.refresh_terminal()
 		update_bar_instances()
 		return
-	update_hand()
 	try_insert()
 	update_bar_instances()
+func drop_bar(body:RigidBody3D,hand:int):
+	if body.global_position.distance_to(clerk.lock_bin)<.24:
+		put_in_bin(body)
+	else:
+		body.freeze=false
+		body.collision_layer=8
+		body.collision_mask=1|8
+		body.sleeping=false
+		body.linear_velocity=game.candy.hand_velocity(hand).limit_length(3)
+
 func release(hand:int):
+	if hand==second_hand:
+		drop_bar(second_bar,hand)
+		second_bar=null
+		second_hand=-1
+		return
 	if hand!=clerk.lock_hand:return
 	if is_instance_valid(clerk.lock_source):
 		clerk.loose_lock.position=Vector3(VISIBLE_BAR_X,0,0)
 		clerk.lock_source=null
 	else:
-		var body:RigidBody3D=clerk.loose_lock
-		if body.global_position.distance_to(clerk.lock_bin)<.24:put_in_bin(body)
-		else:
-			body.freeze=false
-			body.collision_layer=8
-			body.collision_mask=1|8
-			body.sleeping=false
-			body.linear_velocity=game.candy.hand_velocity(hand).limit_length(3)
+		drop_bar(clerk.loose_lock,hand)
 	clerk.lock_hand=-1
 	clerk.loose_lock=null
 	inserting=null
 func snapshot()->Array:
 	var result=[]
 	for body in bars:
-		var in_bin=body.get_meta("in_bin",false) or body==clerk.loose_lock
+		var in_bin=body.get_meta("in_bin",false) or body==clerk.loose_lock or body==second_bar
 		result.append({"transform":body.global_transform,"in_bin":in_bin})
 	return result
 func restore(entries:Array):
+	second_bar=null
+	second_hand=-1
 	for body in bars:body.queue_free()
 	bars.clear()
 	for entry in entries:

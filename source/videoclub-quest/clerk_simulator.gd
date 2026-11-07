@@ -140,12 +140,7 @@ func build_counter():
 		m.albedo_texture=terminal.get_texture()
 		m.texture_filter=BaseMaterial3D.TEXTURE_FILTER_LINEAR
 		screen.material_override=m
-	var keys=["CLIENTS","TÂCHES","RETOURS","JOURNÉE"]
-	for i in range(4):
-		var key=Props.box(self,Vector3(-.1+i*.19,1.14,-6.41),Vector3(.17,.022,.08),"3b5955")
-		var text=Props.label(key,keys[i],Vector3(0,.014,0),.00055,24)
-		text.rotation=Vector3(-PI/2,0,PI)
-		target(key,"page",.09,i)
+	build_checkout_trailer_screen()
 	load("res://scene_refresh.gd").move_checkout_scanner(game)
 	var scanner=game.model.find_child("scanner-red-window",true,false)
 	if not scanner:scanner=Props.cylinder(self,scanner_position-Vector3(0,.06,0),.055,.035,"9c3030")
@@ -166,10 +161,10 @@ func build_counter():
 	target(return_tray,"return",.20)
 	drawer=Node3D.new()
 	add_child(drawer)
-	drawer.position=Vector3(-.78,1.13,-6.6)
+	drawer.position=Vector3(-1.14,1.13,-6.6)
 	var register=StaticBody3D.new()
 	add_child(register)
-	register.position=Vector3(-.78,1.17,-6.44)
+	register.position=Vector3(-1.14,1.17,-6.44)
 	var register_shape=CollisionShape3D.new()
 	var register_box=BoxShape3D.new()
 	register_box.size=Vector3(.64,.30,.43)
@@ -775,12 +770,8 @@ func release()->bool:
 		return true
 	if repairs.drop_into_bin(held_service):return true
 	var p:Vector3=game.held.global_position
-	if not game.touch_profile and held_service.kind=="rental" and not active.is_empty() and in_customer_zone(p):
-		# A known wrong case placed on the counter is being set aside. An
-		# intentional handoff remains possible directly into the receiving palm.
-		if not has_identified_mismatch(game.held,held_service.movie) or p.distance_to(customer_hand())<.16:
-			action("handoff",game.held_hand)
-			return true
+	if not game.touch_profile and held_service.kind=="rental" and at_customer_palm(p):
+		if handoff_item(held_service):return true
 	if held_service.kind in ["return","shelve","sorting"] and not has_identified_mismatch(game.held,held_service.movie):
 		for record in game.dvd_records:
 			if record==held_service.record and p.distance_to(record.world.origin)<.25:
@@ -886,6 +877,35 @@ func _physics_process(dt):
 		customer_delay-=dt
 		if customer_delay<=0:start_next()
 	# Returning customers deliver the actual rented copy through the chute.
+func build_checkout_trailer_screen():
+	var popcorn:Node3D=game.model.find_child("popcorn-bucket",true,false)
+	if not popcorn or game.screens.is_empty():return
+	var screen_origin:=popcorn.global_position
+	# The kernels are baked as a separate, compact mesh beside the bucket.
+	for batch in game.model.find_children("static-batch-video-club-2002*","MeshInstance3D",true,false):
+		var bounds:AABB=batch.get_aabb()
+		var center:Vector3=batch.to_global(bounds.get_center())
+		if bounds.size.x<.30 and bounds.size.y<.14 and bounds.size.z<.32 and center.distance_to(screen_origin+Vector3(0,.15,0))<.08:
+			batch.queue_free()
+	popcorn.queue_free()
+	var cabinet:=Node3D.new()
+	add_child(cabinet)
+	cabinet.global_position=screen_origin+Vector3(0,.05,0)
+	cabinet.rotation.y=PI
+	Props.box(cabinet,Vector3(0,0,-.065),Vector3(.36,.284,.13),"242729")
+	Props.box(cabinet,Vector3(0,-.155,-.06),Vector3(.23,.035,.15),"242729")
+	var screen:=MeshInstance3D.new()
+	var panel:=QuadMesh.new()
+	panel.size=Vector2(.326,.2445)
+	screen.mesh=panel
+	screen.position.z=.002
+	screen.material_override=game.screens[0].material_override
+	screen.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	cabinet.add_child(screen)
+
+func at_customer_palm(position:Vector3)->bool:
+	return not active.is_empty() and active.state=="service" and position.distance_to(customer_hand())<.16
+
 func customer_hand()->Vector3:
 	if active.is_empty():return Vector3.INF
 	var mount:Node3D=load("res://customer_actor.gd").mount(active.node)
@@ -939,7 +959,7 @@ func deliver_return(job:Dictionary,customer:Dictionary={},at_counter:bool=false)
 	returned.node.set_meta("return_cycle",int(job.get("rental_id",-1)))
 	returned.node.set_meta("return_checked",false)
 	var refund:=int(job.get("refund",0))
-	var dirty=bool(job.record.get("dirty",false)) if refund>0 else randf()<minf(.45,.30+.015*(shift.day-1))
+	var dirty=bool(job.record.get("dirty",false)) if refund>0 else randf()<.20
 	returned.node.set_meta("dirty",dirty)
 	returned.node.set_meta("returned_damage",dirty and refund==0)
 	job.record.dirty=dirty

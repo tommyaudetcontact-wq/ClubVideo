@@ -44,7 +44,7 @@ func arrange(hand:int):
 			coins+=1
 	totals[hand].text=("%.2f $"%(total(hand)/100.0)) if occupied(hand) else ""
 func take(hand:int,value:int,tender:bool=false):
-	if hand==clerk.basket.hand or hand==game.held_hand or hand==clerk.secondary_hand or hand==clerk.lock_hand or hand==clerk.inspection.finger or palms[hand].size()>=32:return
+	if hand==clerk.basket.hand or hand==game.held_hand or hand==clerk.secondary_hand or clerk.locks.occupies(hand) or hand==clerk.inspection.finger or palms[hand].size()>=32:return
 	if tender:
 		if not clerk.tender_note.visible:
 			game._message("Le client n'a plus d'argent à prendre sur le comptoir.")
@@ -107,7 +107,7 @@ func give_customer(hand:int)->bool:
 func interact(hand:int,grip:bool)->bool:
 	var p:Vector3=game.hands[hand].global_position
 	if grip:
-		if hand==clerk.basket.hand or hand==game.held_hand or hand==clerk.secondary_hand or hand==clerk.lock_hand or hand==clerk.inspection.finger:return false
+		if hand==clerk.basket.hand or hand==game.held_hand or hand==clerk.secondary_hand or clerk.locks.occupies(hand) or hand==clerk.inspection.finger:return false
 		# Remove one selected piece from the other palm, without inventing money.
 		var other=1-hand
 		for entry in loose:
@@ -168,7 +168,7 @@ func release_grip(hand:int):
 	var p:Vector3=game.hands[hand].global_position
 	# A receiving palm wins over the drawer underneath it.
 	var other=1-hand
-	if game.held_hand!=other and clerk.secondary_hand!=other and clerk.lock_hand!=other and clerk.inspection.finger!=other and roots[hand].global_position.distance_to(roots[other].global_position)<.22:
+	if game.held_hand!=other and clerk.secondary_hand!=other and not clerk.locks.occupies(other) and clerk.inspection.finger!=other and roots[hand].global_position.distance_to(roots[other].global_position)<.22:
 		for entry in palms[hand].duplicate():
 			if palms[other].size()>=32:break
 			palms[hand].erase(entry)

@@ -67,7 +67,7 @@ func arrange():
 		items[i].node.position=Vector3(-.165+i*.030,.120,0)
 		items[i].node.rotation=Vector3(0,PI/2,0)
 func can_pick(h:int)->bool:
-	return h!=hand and h!=game.held_hand and h!=clerk.secondary_hand and h!=clerk.inspection.finger and not clerk.wallet.occupied(h) and h!=clerk.lock_hand and clerk.secondary.is_empty() and not clerk.inspection.opened
+	return h!=hand and h!=game.held_hand and h!=clerk.secondary_hand and h!=clerk.inspection.finger and not clerk.wallet.occupied(h) and not clerk.locks.occupies(h) and clerk.secondary.is_empty() and not clerk.inspection.opened
 
 func target_case(h:int)->Dictionary:
 	if not can_pick(h) or items.is_empty():return {}
@@ -112,7 +112,7 @@ func update_targets():
 func interact(h:int,grip:bool)->bool:
 	if body.get_meta("guest_held",false):return false
 	if h==hand:return true
-	if not grip or h==game.held_hand or h==clerk.secondary_hand or h==clerk.inspection.finger or clerk.wallet.occupied(h) or h==clerk.lock_hand:return false
+	if not grip or h==game.held_hand or h==clerk.secondary_hand or h==clerk.inspection.finger or clerk.wallet.occupied(h) or clerk.locks.occupies(h):return false
 	var p:Vector3=game.hands[h].global_position
 	# The tall handle is separate from the cases, so either action is intentional.
 	if hand<0 and p.distance_to(body.to_global(Vector3(0,.39,0)))<.10:
