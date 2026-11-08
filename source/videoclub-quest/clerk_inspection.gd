@@ -42,6 +42,7 @@ func input_tick(dt:float):
 			pending_flip=-1
 			if not opened:game._flip_held()
 func grab_lid(hand:int)->bool:
+	if game.clerk.held_service.get("kind","")=="streamer_gift":return false
 	if not game.held or hand==game.held_hand or hand==game.clerk.secondary_hand or hand==game.clerk.basket.hand or hand==finger:return false
 	if not opened and game.held.get_meta("antitheft",false):return false
 	var p:Vector3=game.hands[hand].global_position

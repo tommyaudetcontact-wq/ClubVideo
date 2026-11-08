@@ -39,11 +39,12 @@ func route(c:Dictionary,target:Vector3)->bool:
 	c.path=grid.get_point_path(start,end)
 	c.cursor=1
 	return not c.path.is_empty()
-func spawn_customer(return_only:bool=false):
-	if customers.size()>=clerk.shift.capacity() or population()>=MAX_VISIBLE_PEOPLE:return
-	var n=Props.customer(self,next_id%6)
+func spawn_customer(return_only:bool=false)->bool:
+	if customers.size()>=clerk.shift.capacity() or population()>=MAX_VISIBLE_PEOPLE:return false
+	var appearance:int=randi_range(0,5) if game.streamer_mode else next_id%6
+	var n=Props.customer(self,appearance)
 	n.position=Vector3(-4.0,0,9.0)
-	var c={"node":n,"id":next_id,"state":"enter","path":PackedVector2Array(),"cursor":0,"wait":0.0,"messy":randf()<minf(.40,.18+.02*clerk.shift.day),"movie":randi_range(0,game.layout.movies.size()-1)}
+	var c={"node":n,"id":next_id,"appearance":appearance,"state":"enter","path":PackedVector2Array(),"cursor":0,"wait":0.0,"messy":randf()<minf(.40,.18+.02*clerk.shift.day),"movie":randi_range(0,game.layout.movies.size()-1)}
 	next_id+=1
 	customers.append(c)
 	c.patience_limit=randf_range(60,180)
@@ -77,6 +78,7 @@ func spawn_customer(return_only:bool=false):
 		load("res://held_case.gd").build(carry,game.layout.movies[c.return_job.movie])
 		c.carry=carry
 	route(c,Vector3(-4,0,4.5))
+	return true
 func attach_companions(customer:Dictionary):
 	var parent:Node3D=customer.node
 	for i in range(customer.get("companions",[]).size()):
@@ -102,7 +104,7 @@ func _physics_process(dt):
 	entry_cooldown=maxf(0,entry_cooldown-dt)
 	var due:bool=clerk.returns_due.any(func(job):return float(job.time)<=clerk.elapsed)
 	var open:bool=clerk.shift.started and not clerk.shift.closing and not clerk.shift.summary
-	if population()<MAX_VISIBLE_PEOPLE and open and entry_cooldown<=0:
+	if not game.streamer_mode and population()<MAX_VISIBLE_PEOPLE and open and entry_cooldown<=0:
 		if due:
 			spawn_customer(true)
 			entry_cooldown=1.5
@@ -120,7 +122,7 @@ func _physics_process(dt):
 		if c.state=="browse" and c.get("selection_left",-1)==0:
 			if is_instance_valid(c.get("carry")):c.carry.visible=true
 			join_queue(c)
-		if c.get("patience_started",false) and c.state!="exit" and not c.get("await_cash",false):
+		if not game.streamer_mode and c.get("patience_started",false) and c.state!="exit" and not c.get("await_cash",false):
 			c.patience=maxf(0,float(c.get("patience",120))-dt)
 			if c.patience<=0:
 				clerk.abandon_customer(c)
@@ -394,6 +396,7 @@ func reflow_queue():
 			route(c,target)
 
 func activate_patience(customer:Dictionary):
+	if game.streamer_mode:return
 	if customer.get("patience_started",false):return
 	if not customer.has("patience_limit"):customer.patience_limit=randf_range(60,180)
 	customer.patience=float(customer.patience_limit)

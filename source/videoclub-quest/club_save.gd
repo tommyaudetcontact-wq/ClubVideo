@@ -3,7 +3,7 @@ const VERSION=2
 const CASE_META=["basket_owner","disc_movie","disc_uid","disc_mismatch_seen","dirty","inspected","antitheft","sort_slot","in_basket","in_sort_tray","barcode_scanned","needs_relock","return_account","return_cycle","return_checked","returned_damage"]
 const SHIFT_FIELDS=["quota_model","target_customers","arrived_customers","week_losses","week_abandoned","week_refunds","week_cash_error","week_perfect","day_model","rush_model","day","duration","time_left","closing","summary","started","served","abandoned","lost_sales","missed_scans","revenue","refunds","returned","restocked","damaged","initial_cash","wave","break_left","report","business_balance"]
 const COUNTER_FIELDS=["price","tender","tender_parts","tender_received","tender_deposited","paid","change","drawer_open","page","rentals","elapsed","customer_delay","chute_serial","tasks","reminders"]
-const CLIENT_FIELDS=["selection_left","nav_goal","queue_joined","pending_finish","await_cash","abandon_wait_cash","patience_limit","patience_started","rental_remaining","queue_slot","rental_count","visit_mask","is_refund","refund_due","children_mess_count","children_mess_delay","id","state","cursor","wait","messy","movie","patience","patience_bonus","missing","handed","is_return","replace_title","replacement_movie","replacement_queue","family","companions","children_played","handoff_wait","return_and_rent","browse_index","price_titles","discount","cash_started","next_mess","mess_done","account_id","visit_balance","account_due","offer_ready","subtotal","gst","qst","billed_titles"]
+const CLIENT_FIELDS=["appearance","selection_left","nav_goal","queue_joined","pending_finish","await_cash","abandon_wait_cash","patience_limit","patience_started","rental_remaining","queue_slot","rental_count","visit_mask","is_refund","refund_due","children_mess_count","children_mess_delay","id","state","cursor","wait","messy","movie","patience","patience_bonus","missing","handed","is_return","replace_title","replacement_movie","replacement_queue","family","companions","children_played","handoff_wait","return_and_rent","browse_index","price_titles","discount","cash_started","next_mess","mess_done","account_id","visit_balance","account_due","offer_ready","subtotal","gst","qst","billed_titles"]
 var game
 var save_path="user://club-save.dat"
 var autosave_clock=0.0
@@ -92,7 +92,12 @@ func snapshot()->Dictionary:
 		state.basket_transform=game.touch_controls.basket_resting_pose
 	for record in game.dvd_records:
 		state.records.append({"movie":record.movie,"disc_movie":record.get("disc_movie",record.movie),"disc_uid":record.get("disc_uid",record.id),"dirty":record.get("dirty",false),"locked":record.get("locked",true),"reserved":record.get("clerk_reserved",false)})
-	for item in c.cases:state.cases.append(pack_case(item,item.node))
+	var case_indices:Dictionary={}
+	for i in c.cases.size():
+		var item:Dictionary=c.cases[i]
+		if item.kind=="streamer_gift":continue
+		case_indices[i]=state.cases.size()
+		state.cases.append(pack_case(item,item.node))
 	# Shelf copies held or dropped manually become equivalent physical service cases.
 	for record in game.dvd_records:
 		var visual:Node3D=null
@@ -107,11 +112,11 @@ func snapshot()->Dictionary:
 			record.reserved=true
 			for key in ["disc_movie","disc_uid","dirty"]:record[key]=entry.meta[key]
 	for customer in c.customers.customers:
-		var entry={"position":customer.node.position,"rotation":customer.node.rotation,"record":record_id(customer.get("record",{})),"reservations":[],"items":[],"return_item":c.cases.find(customer.get("return_item",{})),"return_job":pack_job(customer.get("return_job",{})),"path":customer.path,"carry":customer.has("carry") and is_instance_valid(customer.carry) and customer.carry.visible}
+		var entry={"position":customer.node.position,"rotation":customer.node.rotation,"record":record_id(customer.get("record",{})),"reservations":[],"items":[],"return_item":case_indices.get(c.cases.find(customer.get("return_item",{})),-1),"return_job":pack_job(customer.get("return_job",{})),"path":customer.path,"carry":customer.has("carry") and is_instance_valid(customer.carry) and customer.carry.visible}
 		for key in CLIENT_FIELDS:
 			if customer.has(key):entry[key]=customer[key]
 		for record in customer.get("reservations",[]):entry.reservations.append(record_id(record))
-		for item in customer.get("items",[]):entry.items.append(c.cases.find(item))
+		for item in customer.get("items",[]):entry.items.append(case_indices[c.cases.find(item)])
 		state.clients.append(entry)
 		if customer==c.active:state.active=state.clients.size()-1
 	for customer in c.waiting:state.waiting.append(c.customers.customers.find(customer))
@@ -275,7 +280,7 @@ func restore(s:Dictionary)->bool:
 		c.lan.personal_basket().restore_items()
 		c.lan.personal_basket().body.global_transform=s.guest_basket_transform
 	for saved in s.clients:
-		var node=load("res://clerk_props.gd").customer(c.customers,int(saved.id)%6)
+		var node=load("res://clerk_props.gd").customer(c.customers,int(saved.get("appearance",int(saved.id)%6)))
 		node.position=saved.position
 		node.rotation=saved.rotation
 		var customer={"node":node,"record":{} if saved.record<0 else game.dvd_records[saved.record],"reservations":[],"items":[],"return_job":unpack_job(saved.return_job),"path":saved.path}

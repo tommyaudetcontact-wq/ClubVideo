@@ -69,6 +69,10 @@ func _refresh_labels() -> void:
 	for label in labels:
 		label.modulate=Color("123968")
 		label.outline_size=0
+	if menu_page==3:
+		game.streamer.menu_labels(labels)
+		panel_title.text="VIDÉO CLUB · STREAMER"
+		return
 	if messenger:
 		for label in labels:label.text=""
 		labels[0].text="Retour"
@@ -104,7 +108,7 @@ func _refresh_labels() -> void:
 	labels[6].text="Ouvrir Netflix / connexion"
 	labels[7].text="Son des bandes-annonces : "+("COUPÉ" if trailers_muted else "ACTIVÉ")
 	labels[8].text="Partie · sauvegarder / continuer / nouvelle"
-	labels[9].text="Coop Wi-Fi"
+	labels[9].text="Mode Streamer · B + Y" if game.streamer_mode else "Coop Wi-Fi"
 
 func toggle_pause() -> void:
 	confirm_new=false
@@ -143,6 +147,9 @@ func _menu_hit(origin: Vector3,direction: Vector3) -> int:
 	return -1
 
 func _activate(row: int) -> void:
+	if menu_page==3:
+		game.streamer.menu_action(row)
+		return
 	if menu_page==2:
 		match row:
 			0:menu_page=0
@@ -187,7 +194,7 @@ func _activate(row: int) -> void:
 		10:game.toggle_clerk_model()
 		9:
 			if game.lobby:
-				menu_page=2
+				menu_page=3 if game.streamer_mode else 2
 		7:
 			trailers_muted=not trailers_muted
 			_apply_trailer_audio()

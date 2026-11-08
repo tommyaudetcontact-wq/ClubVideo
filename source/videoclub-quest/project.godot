@@ -33,6 +33,10 @@ window/handheld/orientation.touchgame=0
 
 enabled=PackedStringArray()
 
+[audio]
+
+general/text_to_speech.quest=true
+
 [physics]
 
 common/physics_ticks_per_second=72

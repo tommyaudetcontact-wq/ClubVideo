@@ -421,8 +421,8 @@ func refresh_tender_visual():
 		tender_note.add_child(piece)
 		piece.position=Vector3((i%3)*.025,(i/3)*.004,0)
 	tender_note.visible=not tender_parts.is_empty() and active.get("missing",[]).is_empty()
-func make_mess(c:Dictionary):
-	if cases.filter(func(item):return str(item.get("task","")).begins_with("Ramasser")).size()>=8:return
+func make_mess(c:Dictionary,limit:int=8):
+	if cases.filter(func(item):return str(item.get("task","")).begins_with("Ramasser")).size()>=limit:return
 	var nearby=game.dvd_records.filter(func(r):return not r.get("clerk_reserved",false) and not r.get("loose",false) and r!=game.held_record and r.world.origin.distance_to(c.node.global_position+Vector3(0,1,0))<2.0)
 	if nearby.is_empty():return
 	var record:Dictionary=nearby.pick_random()
@@ -843,7 +843,7 @@ func _physics_process(dt):
 	if not game:return
 	elapsed+=dt
 	if not active.is_empty() and active.get("pending_finish",false) and cash_is_settled():try_finish_checkout()
-	shift.tick(dt)
+	if not game.streamer_mode:shift.tick(dt)
 	shift_ui_clock+=dt
 	if shift_ui_clock>=1:
 		shift_ui_clock=0
@@ -860,12 +860,15 @@ func _physics_process(dt):
 	var near=game.head.global_position.distance_to(Vector3(-4.07,1.5,7.1))<2
 	for c in customers.customers:
 		if c.node.position.distance_to(Vector3(-4.07,0,7.1))<2:near=true
+	if game.streamer_mode and not near:
+		for visitor in get_tree().get_nodes_in_group("streamer_door_visitor"):
+			if visitor.global_position.distance_to(Vector3(-4.07,0,7.1))<2:near=true
 	if is_instance_valid(lan.remote_avatar) and lan.remote_avatar.valid_pose:
 		var guest:Vector3=lan.remote_avatar.targets[0].origin
 		near=near or Vector2(guest.x+4.1,guest.z-7.12).length()<1.8
 	door.rotation.y=move_toward(door.rotation.y,-PI/2 if near else 0,dt*1.6)
 	phone_timer-=dt
-	if phone_enabled and phone_timer<=0:
+	if not game.streamer_mode and phone_enabled and phone_timer<=0:
 		ringing=true
 		phone_timer=95
 	ring_tick-=dt
@@ -1229,6 +1232,7 @@ func scan_held()->bool:
 
 
 func scan_item(item:Dictionary)->bool:
+	if item.kind=="streamer_gift":return false
 	var node:Node3D=item.node
 	# Also recover a known wrong copy set down before this release, or held in
 	# the other hand. Unopened copies never reveal their disc contents here.

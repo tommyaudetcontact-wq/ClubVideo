@@ -85,7 +85,11 @@ var xr_interface: XRInterface
 var lod_update_usec := 0
 var lod_occlusion_tests := 0
 
+var streamer
+var streamer_mode:bool=false
+
 func _ready() -> void:
+	streamer_mode=OS.has_feature("quest") and bool(get_tree().get_meta("streamer_mode",false))
 	var avatar_settings:=ConfigFile.new()
 	if avatar_settings.load("user://avatar.cfg")==OK:
 		clerk_model=1 if avatar_settings.get_value("avatar","clerk_model",0)==1 else 0
@@ -157,7 +161,13 @@ func _ready() -> void:
 	session=load("res://club_save.gd").new()
 	add_child(session)
 	if touch_profile and not OS.has_feature("android"):session.save_path="user://touch-playtest.dat"
+	if streamer_mode:session.save_path="user://club-streamer.dat"
+	if OS.has_feature("quest"):
+		streamer=preload("res://club_streamer.gd").new()
+		add_child(streamer)
+		streamer.setup(self)
 	session.setup(self)
+	if streamer_mode:clerk.shift.started=true
 	if touch_profile:
 		touch_controls=load("res://touch_game.gd").new()
 		add_child(touch_controls)
@@ -372,6 +382,7 @@ func _prepare_player() -> void:
 		beam.visible = xr_active
 
 func _on_controller_button(action: StringName, hand_index: int) -> void:
+	if streamer and streamer.controller_button(action,hand_index):return
 	if hand_index!=0:
 		return
 	if action==&"by_button":

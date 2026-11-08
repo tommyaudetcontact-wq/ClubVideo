@@ -61,6 +61,7 @@ func record_sale(total:int):
 	served+=1
 	revenue+=total
 func finish()->bool:
+	if clerk.game.streamer_mode:return false
 	if summary:return true
 	if not closing:
 		clerk.game._message("La journée est encore ouverte.")
@@ -150,6 +151,7 @@ func remaining_scratches()->int:
 	return count
 
 func text()->String:
+	if clerk.game.streamer_mode:return "MODE STREAMER · QUART LIBRE\nArrivées manuelles · aucun jour à clôturer."
 	if summary:return report
 	if not started:return "JOUR %d · %s · PRÊT\n%d clients locataires, arrivées variées, puis retours et close.\nObjectif vendredi : semaine parfaite.\nLe bac À démêler reste à part."%[day,weekday(),target_customers]
 	return ("PERTES : %.2f $\n"%(loss_total()/100.0))+"JOUR %d · %s · %s\nClients arrivés : %d / %d\nRetours attendus : %d · reçus : %d · rangés : %d\nRéparations : %d\nClôture après le dernier client et les retours.\nÀ démêler peut attendre demain."%[day,weekday(),"FERMETURE" if closing else "OUVERT",arrived_customers,target_customers,clerk.returns_due.size(),returned,restocked,clerk.repairs.processed]
