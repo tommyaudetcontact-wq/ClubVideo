@@ -34,5 +34,21 @@ func _initialize():
 	assert(game.streamer.wrist.text.contains("5:00"))
 	game.streamer._process(300.0)
 	assert(game.streamer.guest==null)
-	print("STREAMER0106_OK")
+	var blocked:Dictionary=game.dvd_records[0]
+	blocked.clerk_reserved=true
+	game.streamer.explode_shelves()
+	assert(game.streamer.fallen_cases.size()==game.dvd_records.size()-1)
+	assert(not game.streamer.fallen_cases.has(blocked.id))
+	game.streamer.advance_blast(2.0)
+	var saved:Dictionary=game.session.snapshot().streamer_fallen
+	assert(saved.size()==game.dvd_records.size()-1)
+	game.streamer.restore_fallen_to_shelves()
+	assert(game.streamer.fallen_cases.is_empty())
+	game.streamer.load_fallen(saved)
+	var id:int=saved.keys()[0]
+	game.hands[0].global_position=saved[id].origin
+	assert(game.streamer.try_pickup_fallen(0,true))
+	assert(game.clerk.held_service.record.id==id)
+	assert(game.streamer.fallen_cases.size()==saved.size()-1)
+	print("STREAMER0106_OK · EXPLOSION_OK")
 	quit()

@@ -79,6 +79,7 @@ func snapshot()->Dictionary:
 	var c=game.clerk
 	var state={"version":VERSION,"catalogue":game.layout.movies.size(),"records":[],"cases":[],"clients":[],"active":-1,"waiting":[],"returns":[],"loose_discs":[],"cash":[],"shift":{},"counter":{},"repair":{},"till":c.till.duplicate(),"spawn_timer":c.customers.spawn_timer,"next_id":c.customers.next_id,"processed":c.repairs.processed,"options":{"manual":game.modes.manual_mode,"rain":game.modes.rain_enabled,"teleport":game.teleportation.enabled}}
 	state.return_schedule_version=2
+	if game.streamer_mode:state.streamer_fallen=game.streamer.pack_fallen()
 	state.entry_cooldown=c.customers.entry_cooldown
 	state.arrival_cluster_left=c.customers.arrival_cluster_left
 	state.last_arrival_kind=c.customers.last_arrival_kind
@@ -235,6 +236,7 @@ func restore(s:Dictionary)->bool:
 	# Restore is used only into a fresh scene; never append into a running session.
 	if not c.cases.is_empty() or not c.customers.customers.is_empty():return false
 	c.accounts.restore(s.get("accounts",{}))
+	if game.streamer_mode:game.streamer.load_fallen(s.get("streamer_fallen",{}))
 	if s.has("loose_locks"):c.locks.restore(s.loose_locks)
 	for i in range(s.records.size()):
 		var record:Dictionary=game.dvd_records[i]

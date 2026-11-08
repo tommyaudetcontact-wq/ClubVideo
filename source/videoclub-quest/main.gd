@@ -875,6 +875,7 @@ func _interact(hand_index: int, by_grip: bool) -> void:
 	if clerk and clerk.interact(hand_index,by_grip):return
 	if netflix and netflix.interact(hand_index,by_grip):return
 	if candy and candy.try_interact(hand_index,by_grip): return
+	if streamer and streamer.try_pickup_fallen(hand_index,by_grip):return
 	if modes and modes.try_loose_pickup(hand_index,by_grip): return
 	if held:
 		if hand_index == held_hand:

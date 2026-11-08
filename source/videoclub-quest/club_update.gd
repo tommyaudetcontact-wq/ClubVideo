@@ -1,6 +1,6 @@
 extends Node
 
-const QUEST_VERSION := "0.10.6"
+const QUEST_VERSION := "0.10.7"
 const ANDROID_VERSION := "0.10.5"
 const REPOSITORY := "https://github.com/tommyaudetcontact-wq/ClubVideo"
 const RELEASES := "https://api.github.com/repos/tommyaudetcontact-wq/ClubVideo/releases?per_page=12"

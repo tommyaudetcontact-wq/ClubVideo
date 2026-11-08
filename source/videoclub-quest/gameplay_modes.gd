@@ -381,6 +381,7 @@ func try_loose_pickup(hand_index: int,by_grip: bool) -> bool:
 	return false
 
 func restore_loose_dvds() -> void:
+	if game.streamer_mode:game.streamer.restore_fallen_to_shelves()
 	for record in loose_dvds:
 		if record.has("loose_body") and is_instance_valid(record.loose_body):
 			if game.held_record==record and game.held:

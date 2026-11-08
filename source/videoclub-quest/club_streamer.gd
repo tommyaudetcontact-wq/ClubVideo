@@ -12,6 +12,10 @@ var game
 var wrist:Label3D
 var comments:Array[String]=[]
 var queued_clients:=0
+var fallen_cases:Dictionary={}
+var blast_elapsed:=0.0
+var blast_frame:=0.0
+const BLAST_DURATION:=1.35
 var arrival_delay:=0.0
 var guest:Node3D
 var guest_seconds:=0.0
@@ -88,7 +92,7 @@ func menu_labels(labels:Array) -> void:
 	labels[6].text="5 $ · Rush de cinq clients"
 	labels[7].text="10 $ · Visiteur web simulé"
 	labels[8].text="Sauvegarder le mode Streamer"
-	labels[9].text="Clients en attente : %d"%queued_clients
+	labels[9].text="20 $ · Explosion dans le club"
 	labels[10].text="Simulation locale · aucun paiement"
 
 func menu_action(row:int) -> void:
@@ -98,7 +102,7 @@ func menu_action(row:int) -> void:
 	if row==0:
 		toggle_menu()
 		return
-	if not game.streamer_mode or row<2 or row>8:return
+	if not game.streamer_mode or row<2 or row>9:return
 	if row==8:
 		game.session.save_game()
 		return
@@ -111,6 +115,7 @@ func menu_action(row:int) -> void:
 			run_special(row-2)
 		6:queue_clients(5)
 		7:spawn_guest()
+		9:explode_shelves()
 
 func switch_mode() -> void:
 	if switching:return
@@ -132,6 +137,7 @@ func queue_clients(count:int) -> void:
 
 func _process(dt:float) -> void:
 	if not game.streamer_mode:return
+	advance_blast(dt)
 	if queued_clients>0:
 		arrival_delay=maxf(0,arrival_delay-dt)
 		if arrival_delay<=0 and game.clerk.customers.spawn_customer():
@@ -266,3 +272,108 @@ func drop_demo_case() -> void:
 	var motion:=create_tween()
 	motion.tween_property(item.node,"position",game.clerk.return_bin+Vector3.UP*.09,.6)
 	motion.tween_callback(func():item.node.set_meta("customer_animating",false))
+
+
+func explode_shelves() -> void:
+	if not game.streamer_mode:return
+	var added:=0
+	for record in game.dvd_records:
+		if record.get("loose",false) or record.get("clerk_reserved",false) or record==game.held_record:continue
+		var shelf:Vector3=record.world.origin
+		var aisle:Vector3=game.clerk.customers.aisle_for(shelf)
+		var floor_point:=aisle+Vector3(randf_range(-.09,.09),randf_range(.012,.045),randf_range(-.09,.09))
+		var floor_basis:=Basis(Vector3.UP,randf_range(-PI,PI))*Basis(Vector3.RIGHT,-PI/2)
+		fallen_cases[record.id]={"pose":Transform3D(floor_basis,floor_point),"flying":true}
+		record.loose=true
+		game.clerk.locks.update_slot(record)
+		added+=1
+	if added==0:return
+	blast_elapsed=0.0
+	blast_frame=0.0
+	game._update_cover_lod(game.head.global_position,true)
+	game._message("BOUM ! %d boîtiers tombent des rayons."%added)
+	play_blast()
+
+func advance_blast(dt:float) -> void:
+	if fallen_cases.is_empty() or blast_elapsed>=BLAST_DURATION:return
+	blast_elapsed=minf(BLAST_DURATION,blast_elapsed+dt)
+	blast_frame+=dt
+	if blast_frame<.033 and blast_elapsed<BLAST_DURATION:return
+	blast_frame=0.0
+	for id in fallen_cases:
+		var entry:Dictionary=fallen_cases[id]
+		if not entry.flying:continue
+		var record:Dictionary=game.dvd_records[id]
+		var target:Transform3D=entry.pose
+		var t:=clampf((blast_elapsed-float(int(id)%13)*.013)/1.18,0,1)
+		var pose:Transform3D=record.world.interpolate_with(target,t)
+		pose.origin.y=lerpf(record.world.origin.y,target.origin.y,t*t)+sin(t*PI)*.29
+		draw_fallen(record,pose)
+		entry.flying=t<1.0
+
+func draw_fallen(record:Dictionary,pose:Transform3D) -> void:
+	record.group.multimesh.set_instance_transform(record.index,record.group.global_transform.affine_inverse()*pose)
+	if game.shell and record.shell_index>=0:
+		game.shell.multimesh.set_instance_transform(record.shell_index,game.shell.global_transform.affine_inverse()*pose)
+
+func try_pickup_fallen(hand:int,grip:bool) -> bool:
+	if not grip or game.held or fallen_cases.is_empty():return false
+	var position:Vector3=game.hands[hand].global_position
+	var closest:=-1
+	var distance:=.21
+	for id in fallen_cases:
+		var entry:Dictionary=fallen_cases[id]
+		if entry.flying:continue
+		var gap:=position.distance_to(entry.pose.origin)
+		if gap<distance:
+			distance=gap
+			closest=id
+	if closest<0:return false
+	var record:Dictionary=game.dvd_records[closest]
+	fallen_cases.erase(closest)
+	record.erase("loose")
+	game._take(record,hand,true)
+	return true
+
+func restore_fallen_to_shelves() -> void:
+	for id in fallen_cases:
+		var record:Dictionary=game.dvd_records[id]
+		game.modes._restore_slot(record)
+		game.clerk.locks.update_slot(record)
+	fallen_cases.clear()
+	game._update_cover_lod(game.head.global_position,true)
+
+func pack_fallen() -> Dictionary:
+	var result:Dictionary={}
+	for id in fallen_cases:result[id]=fallen_cases[id].pose
+	return result
+
+func load_fallen(poses:Dictionary) -> void:
+	for id in poses:
+		if not id is int or id<0 or id>=game.dvd_records.size() or not poses[id] is Transform3D:continue
+		var record:Dictionary=game.dvd_records[id]
+		fallen_cases[id]={"pose":poses[id],"flying":false}
+		record.loose=true
+		draw_fallen(record,poses[id])
+		game.clerk.locks.update_slot(record)
+	blast_elapsed=BLAST_DURATION
+
+func play_blast() -> void:
+	const RATE:=16000
+	var samples:=PackedByteArray()
+	samples.resize(RATE*2)
+	for i in RATE:
+		var t:=float(i)/RATE
+		var decay:=exp(-t*7.0)*minf(t*180.0,1.0)
+		var rumble:=sin(TAU*(66.0*t-21.0*t*t))*.63
+		samples.encode_s16(i*2,roundi((rumble+randf_range(-.28,.28))*decay*27000.0))
+	var clip:=AudioStreamWAV.new()
+	clip.format=AudioStreamWAV.FORMAT_16_BITS
+	clip.mix_rate=RATE
+	clip.data=samples
+	var speaker:=AudioStreamPlayer.new()
+	add_child(speaker)
+	speaker.stream=clip
+	speaker.volume_db=-9
+	speaker.finished.connect(speaker.queue_free)
+	speaker.play()
