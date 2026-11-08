@@ -9,7 +9,15 @@ const COMMENTS:Array[String]=[
 	"Julie : Qui a choisi le film ?",
 ]
 var game
+const CHAT_PAGE_SIZE:=3
+var wrist_panel:Node3D
 var wrist:Label3D
+var wrist_footer:Label3D
+var chat_chime:AudioStreamPlayer
+var comment_offset:=0
+var comment_timer:=0.0
+var next_comment:=-1
+var scroll_repeat:=0.0
 var comments:Array[String]=[]
 var queued_clients:=0
 var fallen_cases:Dictionary={}
@@ -26,17 +34,57 @@ var chord_latched:Dictionary={}
 
 func setup(owner_game) -> void:
 	game=owner_game
-	wrist=Label3D.new()
-	wrist.name="ChatStreamer"
-	wrist.font_size=40
-	wrist.pixel_size=.00065
-	wrist.outline_size=12
-	wrist.no_depth_test=true
-	wrist.billboard=BaseMaterial3D.BILLBOARD_ENABLED
-	wrist.modulate=Color("e7f7ff")
-	wrist.hide()
-	game.hands[0].add_child(wrist)
-	wrist.position=Vector3(0,.085,.13)
+	wrist_panel=Node3D.new()
+	wrist_panel.name="ChatStreamer"
+	game.hands[0].add_child(wrist_panel)
+	wrist_panel.position=Vector3(0,.11,.12)
+	var background:=MeshInstance3D.new()
+	var quad:=QuadMesh.new()
+	quad.size=Vector2(.39,.235)
+	background.mesh=quad
+	var material:=StandardMaterial3D.new()
+	material.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color=Color("101c2b")
+	material.no_depth_test=true
+	background.material_override=material
+	wrist_panel.add_child(background)
+	wrist_label("CHAT DU LIVE · TEST",.083,36,Color("89d9ff"))
+	wrist=wrist_label("",.008,31,Color("f4f7ff"))
+	wrist.width=790
+	wrist.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
+	wrist_footer=wrist_label("",-.087,26,Color("a5bacd"))
+	wrist_panel.hide()
+	chat_chime=AudioStreamPlayer.new()
+	chat_chime.stream=make_chat_chime()
+	chat_chime.volume_db=-20
+	add_child(chat_chime)
+
+func wrist_label(value:String,y:float,size:int,color:Color) -> Label3D:
+	var label:=Label3D.new()
+	label.text=value
+	label.font_size=size
+	label.pixel_size=.00044
+	label.outline_size=0
+	label.no_depth_test=true
+	label.modulate=color
+	label.position=Vector3(0,y,.002)
+	wrist_panel.add_child(label)
+	return label
+
+func make_chat_chime() -> AudioStreamWAV:
+	const RATE:=16000
+	const FRAMES:=1600
+	var samples:=PackedByteArray()
+	samples.resize(FRAMES*2)
+	for i in FRAMES:
+		var t:=float(i)/RATE
+		var envelope:=minf(1,t*220)*pow(1-float(i)/FRAMES,2)
+		samples.encode_s16(i*2,roundi(sin(TAU*880*t)*envelope*15000))
+	var clip:=AudioStreamWAV.new()
+	clip.format=AudioStreamWAV.FORMAT_16_BITS
+	clip.mix_rate=RATE
+	clip.data=samples
+	return clip
 
 func controller_button(action:StringName,hand:int) -> bool:
 	if action not in [&"by_button",&"primary_click"]:return false
@@ -109,8 +157,8 @@ func menu_action(row:int) -> void:
 	toggle_menu()
 	match row:
 		2:
-			comments=COMMENTS.duplicate()
-			refresh_wrist()
+			next_comment=0
+			comment_timer=0.0
 		3,4,5:
 			run_special(row-2)
 		6:queue_clients(5)
@@ -138,6 +186,13 @@ func queue_clients(count:int) -> void:
 func _process(dt:float) -> void:
 	if not game.streamer_mode:return
 	advance_blast(dt)
+	if next_comment>=0:
+		comment_timer-=dt
+		if comment_timer<=0:
+			add_comment(COMMENTS[next_comment])
+			next_comment+=1
+			comment_timer=1.3
+			if next_comment>=COMMENTS.size():next_comment=-1
 	if queued_clients>0:
 		arrival_delay=maxf(0,arrival_delay-dt)
 		if arrival_delay<=0 and game.clerk.customers.spawn_customer():
@@ -152,15 +207,37 @@ func _process(dt:float) -> void:
 		else:
 			var seconds:=ceili(guest_seconds)
 			if not wrist.text.ends_with("%d:%02d"%[seconds/60,seconds%60]):refresh_wrist()
-	var offset:Vector3=wrist.global_position-game.head.global_position
-	wrist.visible=not wrist.text.is_empty() and offset.length()<.95 and (-game.head.global_basis.z).dot(offset.normalized())>.82
+	var offset:Vector3=wrist_panel.global_position-game.head.global_position
+	wrist_panel.visible=not wrist.text.is_empty() and offset.length()<.95 and (-game.head.global_basis.z).dot(offset.normalized())>.82
+	if wrist_panel.visible:wrist_panel.look_at(game.head.global_position,game.head.global_basis.y,true)
+
+func add_comment(message:String) -> void:
+	if comment_offset>0:comment_offset+=1
+	comments.append(message)
+	if comments.size()>60:comments.pop_front()
+	comment_offset=mini(comment_offset,maxi(0,comments.size()-CHAT_PAGE_SIZE))
+	refresh_wrist()
+	chat_chime.play()
+
+func scroll_chat(stick:Vector2,dt:float) -> bool:
+	if not game.streamer_mode or not wrist_panel.visible:return false
+	if absf(stick.y)<.35:scroll_repeat=0.0
+	if absf(stick.y)<.55 or absf(stick.x)>absf(stick.y):return true
+	scroll_repeat-=dt
+	if scroll_repeat<=0:
+		scroll_repeat=.22
+		comment_offset=clampi(comment_offset+(1 if stick.y>0 else -1),0,maxi(0,comments.size()-CHAT_PAGE_SIZE))
+		refresh_wrist()
+	return true
 
 func refresh_wrist() -> void:
-	var lines:Array[String]=comments.duplicate()
+	var end:=comments.size()-comment_offset
+	var lines:Array[String]=comments.slice(maxi(0,end-CHAT_PAGE_SIZE),end)
 	if is_instance_valid(guest):
 		var seconds:=ceili(guest_seconds)
 		lines.append("Visiteur test · %d:%02d"%[seconds/60,seconds%60])
-	wrist.text="CHAT DU LIVE · TEST\n"+"\n".join(lines) if not lines.is_empty() else ""
+	wrist.text="\n".join(lines)
+	wrist_footer.text="↑ ↓  Joystick droit    ·    "+("%d plus récent(s)"%comment_offset if comment_offset>0 else "En direct")
 
 func spawn_guest() -> void:
 	if is_instance_valid(guest):return
@@ -223,8 +300,12 @@ func run_special(tier:int) -> void:
 		await walk(visitor,Vector3(-.6,0,-5.05))
 		var phrase:="Salut ! Ton club vidéo me rappelle mes vendredis soir."
 		game._message("Client du live : "+phrase)
-		var voices:=DisplayServer.tts_get_voices_for_language("fr")
-		if not voices.is_empty():DisplayServer.tts_speak(phrase,voices[0])
+		var voice:=AudioStreamPlayer3D.new()
+		voice.stream=load("res://assets/streamer-client-fr.mp3")
+		voice.position.y=1.55
+		voice.unit_size=3.0
+		visitor.add_child(voice)
+		voice.play()
 		await get_tree().create_timer(4.5,false).timeout
 		await walk(visitor,Vector3(-4,0,9))
 	visitor.queue_free()
