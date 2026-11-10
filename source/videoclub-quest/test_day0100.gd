@@ -115,6 +115,38 @@ func _initialize():
 	assert(c.active==shopper and c.wallet.can_return_tender(0))
 	assert(c.wallet.give_customer(0) and c.active.is_empty())
 	remove_shopper(shopper)
+	# Reset must reverse only this sale, even after a handoff and a partial change.
+	shopper=rental()
+	item=shopper.items[0]
+	assert(c.scan_item(item))
+	c.tender_parts=[1000]
+	c.tender=1000
+	shopper.original_tender=[1000]
+	var opening_till:Dictionary=c.till.duplicate()
+	c.refresh_tender_visual()
+	c.wallet.take(0,1000,true)
+	c.wallet.remove_one(0,0,true)
+	c.drawer_open=true
+	c.wallet.take(0,25)
+	c.wallet.take(0,10)
+	load("res://club_surface_drop.gd").drop_cash(c.wallet,c.wallet.palms[0],Vector3(.12,1.375,-6.085))
+	assert(c.wallet.loose.size()==2)
+	assert(c.handoff_item(item) and c.active==shopper)
+	var saved:Dictionary=g.session.snapshot()
+	assert(saved.clients[saved.active].original_tender==[1000])
+	assert(saved.clients[saved.active].cash_delta=={1000:1,25:-1,10:-1})
+	assert(c.reset_payment())
+	assert(c.till==opening_till and c.wallet.loose.is_empty())
+	assert(c.tender_parts==[1000] and c.tender_deposited==0 and c.change==0)
+	assert(shopper.handed==1 and not c.cash_is_settled())
+	c.try_finish_checkout()
+	assert(c.active==shopper)
+	assert(c.reset_payment() and c.till==opening_till)
+	c.wallet.take(0,1000,true)
+	c.wallet.remove_one(0,0,true)
+	give_amount(c.tender-c.price)
+	assert(c.active.is_empty() and shopper.state=="exit")
+	remove_shopper(shopper)
 	# Whole-shape safety and recovery preserve a dropped note's identity/value.
 	c.drawer_open=true
 	c.tender_received=true

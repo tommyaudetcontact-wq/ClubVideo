@@ -229,7 +229,9 @@ func remote_cash(action:String,coins:Variant)->String:
 		for value in clerk.tender_parts:visible_total+=int(value)
 		if remaining<=0 or visible_total!=remaining or not clerk.tender_note.visible:
 			return "Le paiement doit être disponible sur le comptoir de l’hôte."
-		for value in clerk.tender_parts:clerk.till[value]+=1
+		for value in clerk.tender_parts:
+			clerk.till[value]+=1
+			clerk.track_cash_delta(int(value),1,int(clerk.active.id))
 		clerk.tender_parts.clear()
 		clerk.active.cash_started=true
 		clerk.tender_deposited=clerk.tender
@@ -253,7 +255,9 @@ func remote_cash(action:String,coins:Variant)->String:
 		if count<0 or count>int(clerk.till.get(value,0)) or not clerk.till.has(value):
 			return "Une pièce n’est plus disponible dans le tiroir."
 		total+=value*count
-	for denomination in coins:clerk.till[int(denomination)]-=int(coins[denomination])
+	for denomination in coins:
+		clerk.till[int(denomination)]-=int(coins[denomination])
+		clerk.track_cash_delta(int(denomination),-int(coins[denomination]),int(clerk.active.id))
 	clerk.change+=total
 	clerk.paid=true
 	clerk.refresh_terminal()
@@ -553,6 +557,7 @@ func guest_money(action:String,request:Dictionary)->String:
 			if not clerk.drawer_open or not (clerk.tender_received or clerk.active.get("await_cash",false)) or p.distance_to(clerk.drawer.global_position)>1.8:return "Ouvre le tiroir et encaisse le paiement."
 			if not clerk.till.has(value) or int(clerk.till[value])<=0:return "Cette pièce ou ce billet n’est plus disponible."
 			clerk.till[value]-=1
+			clerk.track_cash_delta(value,-1,int(clerk.active.id))
 			add_guest_money(value,false,clerk.active.get("id",-1))
 	elif action=="cash_pick":
 		if guest_cash.size()>=32:return "Main pleine."

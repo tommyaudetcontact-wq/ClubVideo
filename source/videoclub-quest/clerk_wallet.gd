@@ -57,6 +57,7 @@ func take(hand:int,value:int,tender:bool=false):
 	else:
 		if not clerk.drawer_open or not (clerk.tender_received or clerk.active.get("await_cash",false)) or clerk.till[value]<=0:return
 		clerk.till[value]-=1
+		clerk.track_cash_delta(value,-1,int(clerk.active.get("id",-1)))
 	var n=clerk.make_money(value)
 	roots[hand].add_child(n)
 	palms[hand].append({"node":n,"value":value,"tender":tender,"customer_id":clerk.active.get("id",-1)})
@@ -70,6 +71,7 @@ func remove_one(hand:int,index:int,deposit:bool):
 	clerk.refresh_terminal()
 func deposit_entry(entry:Dictionary):
 	clerk.till[entry.value]+=1
+	clerk.track_cash_delta(int(entry.value),1,int(entry.get("customer_id",-1)))
 	if entry.tender and entry.get("customer_id",-1)==clerk.active.get("id",-2):
 		clerk.tender_deposited+=entry.value
 		clerk.tender_received=clerk.tender_deposited>=clerk.tender

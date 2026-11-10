@@ -9,6 +9,8 @@ var details: Label
 var cursor: Polygon2D
 var targets: Array[Button] = []
 var hovered: Button
+var reset_button:Button
+var reset_customer:=-1
 
 func setup(owner_clerk):
 	clerk = owner_clerk
@@ -32,7 +34,7 @@ func setup(owner_clerk):
 	button(window,Rect2(778,7,46,36),"×",func():window.hide(),Color("b33b27"))
 	var scroll:=ScrollContainer.new()
 	scroll.position=Vector2(18,65)
-	scroll.size=Vector2(800,529)
+	scroll.size=Vector2(800,489)
 	scroll.horizontal_scroll_mode=ScrollContainer.SCROLL_MODE_DISABLED
 	window.add_child(scroll)
 	details=label(scroll,Rect2(0,0,780,0),35,Color("101b2c"))
@@ -40,6 +42,8 @@ func setup(owner_clerk):
 	details.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
 	button(window,Rect2(18,614,390,46),"Action du programme",run_action,Color("3561a6"))
 	button(window,Rect2(422,614,390,46),"Défiler",func():scroll.scroll_vertical=0 if scroll.scroll_vertical>=scroll.get_v_scroll_bar().max_value-scroll.size.y-4 else scroll.scroll_vertical+310,Color("3561a6"))
+	button(window,Rect2(18,558,794,46),"Réinitialiser le paiement",confirm_reset_payment,Color("36547f"))
+	reset_button=targets.back()
 	cursor=Polygon2D.new()
 	cursor.polygon=PackedVector2Array([Vector2.ZERO,Vector2(0,28),Vector2(7,20),Vector2(14,32),Vector2(19,29),Vector2(12,17),Vector2(23,17)])
 	cursor.color=Color("fff3ad")
@@ -91,7 +95,21 @@ func refresh():
 		details.text=str(touch.coop_panel.pages[app])
 	else:details.text=clerk.terminal_content(app) if app<4 else clerk.lan.host_status()
 	targets[8].text=["Ouvrir le tiroir","Actualiser","Actualiser les retours","Clôturer / continuer",("Désactiver la coop" if clerk.game.lobby and clerk.game.lobby.available else "Activer la coop")][app]
+	var customer:int=int(clerk.active.get("id",-1))
+	if app!=0 or reset_customer!=customer:reset_customer=-1
+	reset_button.visible=app==0 and clerk.can_reset_payment()
+	reset_button.text="Confirmer la réinitialisation" if reset_customer>=0 else "Réinitialiser le paiement"
 	get_viewport().render_target_update_mode=SubViewport.UPDATE_ONCE
+
+func confirm_reset_payment() -> void:
+	if not clerk.can_reset_payment():return
+	var id:int=clerk.active.id
+	if reset_customer==id:
+		reset_customer=-1
+		clerk.reset_payment()
+	else:
+		reset_customer=id
+	refresh()
 
 func run_action():
 	var touch=clerk.game.touch_controls

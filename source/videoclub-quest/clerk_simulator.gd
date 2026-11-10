@@ -388,6 +388,9 @@ func start_next():
 	active.await_cash=false
 	active.abandon_wait_cash=false
 	active.cash_started=false
+	active.cash_delta={}
+	active.original_tender=[]
+	active.cash_reset_wait=false
 	active.offer_ready=false
 	if not active.has("account_id"):active.account_id=accounts.create_account()
 	if not active.has("visit_balance"):active.visit_balance=int(accounts.ensure(active.account_id).balance)
@@ -723,7 +726,7 @@ func cash_is_settled()->bool:
 	if active.is_empty():return true
 	if customer_cash_outside():return false
 	var collected:int=payment_collected()
-	if collected<=0:return true
+	if collected<=0:return not active.get("cash_reset_wait",false)
 	if change>=collected:return true # Original payment has been fully returned.
 	if active.get("abandon_wait_cash",false):return false
 	return tender_received and paid
@@ -1259,6 +1262,7 @@ func offer_rental_payment():
 	if expected<=0:return
 	active.offer_ready=true
 	tender_parts=Pricing.payment(expected)
+	active.original_tender=tender_parts.duplicate()
 	tender=0
 	for value in tender_parts:tender+=value
 
@@ -1353,6 +1357,50 @@ func recover_blocked_cases():
 		body.linear_velocity=Vector3.ZERO
 		body.sleeping=false
 
+
+func track_cash_delta(value:int,count:int,customer:int) -> void:
+	if active.is_empty() or int(active.id)!=customer or not active.has("cash_delta"):return
+	var delta:Dictionary=active.cash_delta
+	var net:int=int(delta.get(value,0))+count
+	if net==0:delta.erase(value)
+	else:delta[value]=net
+
+func can_reset_payment() -> bool:
+	return not active.is_empty() and not active.get("is_refund",false) and not active.get("is_return",false) and not active.get("abandon_wait_cash",false) and not active.get("original_tender",[]).is_empty() and active.has("cash_delta")
+
+func reset_payment() -> bool:
+	if not can_reset_payment():return false
+	var delta:Dictionary=active.cash_delta
+	for value in delta:
+		if not till.has(value) or int(till[value])-int(delta[value])<0:
+			game._message("Réinitialisation impossible : une coupure manque dans le tiroir.")
+			return false
+	var customer:int=int(active.id)
+	for value in delta:till[value]-=int(delta[value])
+	for hand in range(2):
+		for index in range(wallet.palms[hand].size()-1,-1,-1):
+			if int(wallet.palms[hand][index].get("customer_id",-1))==customer:
+				wallet.remove_one(hand,index,false)
+	for entry in wallet.loose.duplicate():
+		if int(entry.get("customer_id",-1))!=customer:continue
+		wallet.loose.erase(entry)
+		entry.body.queue_free()
+	for entry in lan.guest_cash.duplicate():
+		if int(entry.get("customer_id",-1))!=customer:continue
+		lan.guest_cash.erase(entry)
+		entry.node.queue_free()
+	active.cash_delta={}
+	active.cash_started=false
+	active.cash_reset_wait=true
+	tender_parts=active.original_tender.duplicate()
+	tender_deposited=0
+	tender_received=false
+	paid=false
+	change=0
+	clear_change()
+	refresh_terminal()
+	game._message("Paiement remis à zéro. Le client redépose son argent.")
+	return true
 
 func payment_collected()->int:
 	if active.is_empty():return 0
