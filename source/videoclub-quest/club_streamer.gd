@@ -7,9 +7,24 @@ const COMMENTS:Array[String]=[
 	"Camille : Salut du Québec !",
 	"RetroMax : Je louais ça tout le temps.",
 	"Julie : Qui a choisi le film ?",
+	"Alex : Un jeu de course !",
+	"Sam : J’aime les néons.",
+	"Mia : Le rayon horreur !",
+	"Jo : Salut la gang !",
+	"Max : Beau retour en 2002 !",
+	"Léa : Je prends deux films.",
 ]
 var game
-const CHAT_PAGE_SIZE:=3
+const CHAT_PAGE_SIZE:=7
+const DURATIONS:=[10,15,20,30]
+var duration_index:=2
+var challenge_remaining:=-1.0
+var challenge_report:=""
+var challenge_menu:=false
+var confirm_restart:=false
+var event_label:Label3D
+var event_text:=""
+var pending_specials:Array[int]=[]
 var wrist_panel:Node3D
 var wrist:Label3D
 var wrist_footer:Label3D
@@ -40,19 +55,20 @@ func setup(owner_game) -> void:
 	wrist_panel.position=Vector3(0,.11,.12)
 	var background:=MeshInstance3D.new()
 	var quad:=QuadMesh.new()
-	quad.size=Vector2(.39,.235)
+	quad.size=Vector2(.46,.35)
 	background.mesh=quad
 	var material:=StandardMaterial3D.new()
 	material.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color=Color("101c2b")
+	material.albedo_color=Color("d9edfc")
 	material.no_depth_test=true
 	background.material_override=material
 	wrist_panel.add_child(background)
-	wrist_label("CHAT DU LIVE · TEST",.083,36,Color("89d9ff"))
-	wrist=wrist_label("",.008,31,Color("f4f7ff"))
-	wrist.width=790
+	wrist_label("● VIDÉO CLUB MESSENGER",.144,36,Color("174c87"))
+	event_label=wrist_label("",.107,29,Color("255c94"))
+	wrist=wrist_label("",-.014,32,Color("123968"))
+	wrist.width=960
 	wrist.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
-	wrist_footer=wrist_label("",-.087,26,Color("a5bacd"))
+	wrist_footer=wrist_label("",-.145,28,Color("235a85"))
 	wrist_panel.hide()
 	chat_chime=AudioStreamPlayer.new()
 	chat_chime.stream=make_chat_chime()
@@ -87,7 +103,8 @@ func make_chat_chime() -> AudioStreamWAV:
 	return clip
 
 func controller_button(action:StringName,hand:int) -> bool:
-	if action not in [&"by_button",&"primary_click"]:return false
+	if action==&"ax_button" and not game.streamer_mode:return false
+	if action not in [&"by_button",&"primary_click",&"ax_button"]:return false
 	if chord_latched.get(action,false):return true
 	var serial:int=int(chord_serial.get(action,0))+1
 	chord_serial[action]=serial
@@ -96,7 +113,7 @@ func controller_button(action:StringName,hand:int) -> bool:
 		if action==&"by_button":
 			toggle_menu()
 		elif game.streamer_mode and not game.modes.menu_open:
-			queue_clients(1)
+			queue_clients(1,action!=&"ax_button")
 		unlatch_when_released(action)
 	elif hand==0:
 		single_after_chord_window(action,serial)
@@ -109,7 +126,8 @@ func single_after_chord_window(action:StringName,serial:int) -> void:
 		game.modes.menu_page=0
 		game.modes.toggle_pause()
 	elif not game.modes.menu_open:
-		game.teleportation.toggle()
+		if action==&"ax_button":game._recenter_entry(true)
+		else:game.teleportation.toggle()
 
 func unlatch_when_released(action:StringName) -> void:
 	while is_inside_tree() and (game.hands[0].is_button_pressed(action) or game.hands[1].is_button_pressed(action)):
@@ -128,6 +146,13 @@ func toggle_menu() -> void:
 
 func menu_labels(labels:Array) -> void:
 	for label in labels:label.text=""
+	if challenge_menu and game.streamer_mode:
+		labels[0].text="Retour aux événements"
+		labels[1].text="Durée · %d minutes"%DURATIONS[duration_index]
+		labels[2].text="Démarrer le défi" if challenge_remaining<0 else "Défi en cours" if challenge_remaining>0 else "Temps écoulé"
+		labels[3].text=challenge_report
+		labels[5].text="Confirmer le redémarrage Streamer" if confirm_restart else "Nouvelle partie Streamer"
+		return
 	labels[0].text="Reprendre"
 	labels[1].text="Retour au mode commis" if game.streamer_mode else "Entrer en mode Streamer"
 	if not game.streamer_mode:
@@ -141,9 +166,33 @@ func menu_labels(labels:Array) -> void:
 	labels[7].text="10 $ · Visiteur web simulé"
 	labels[8].text="Sauvegarder le mode Streamer"
 	labels[9].text="20 $ · Explosion dans le club"
-	labels[10].text="Simulation locale · aucun paiement"
+	labels[10].text="Défi du live · durée et nouvelle partie"
 
 func menu_action(row:int) -> void:
+	if challenge_menu and game.streamer_mode:
+		match row:
+			0:
+				challenge_menu=false
+				confirm_restart=false
+			1:duration_index=(duration_index+1)%DURATIONS.size()
+			2:
+				if challenge_remaining<0:
+					challenge_remaining=DURATIONS[duration_index]*60.0
+					notify_event("Défi du live commencé")
+					challenge_menu=false
+					toggle_menu()
+					return
+			5:
+				if confirm_restart and game.session.save_path=="user://club-streamer.dat":
+					game.session.new_game()
+					return
+				confirm_restart=true
+		game.modes._refresh_labels()
+		return
+	if row==10 and game.streamer_mode:
+		challenge_menu=true
+		game.modes._refresh_labels()
+		return
 	if row==1:
 		switch_mode()
 		return
@@ -161,7 +210,9 @@ func menu_action(row:int) -> void:
 			comment_timer=0.0
 		3,4,5:
 			run_special(row-2)
-		6:queue_clients(5)
+		6:
+			notify_event("5 $ · Rush de cinq clients")
+			queue_clients(5)
 		7:spawn_guest()
 		9:explode_shelves()
 
@@ -178,14 +229,23 @@ func switch_mode() -> void:
 	get_tree().paused=false
 	get_tree().reload_current_scene()
 
-func queue_clients(count:int) -> void:
+func queue_clients(count:int,announce:bool=true) -> void:
 	if not game.streamer_mode:return
 	queued_clients=mini(queued_clients+count,20)
-	game._message("%d client(s) en attente."%queued_clients)
+	if announce:game._message("%d client(s) en attente."%queued_clients)
 
 func _process(dt:float) -> void:
 	if not game.streamer_mode:return
 	advance_blast(dt)
+	if challenge_remaining>0:
+		var previous:=ceili(challenge_remaining)
+		challenge_remaining=maxf(0,challenge_remaining-dt)
+		if challenge_remaining==0:
+			challenge_report=check_challenge()
+			notify_event(challenge_report)
+		elif ceili(challenge_remaining)!=previous:refresh_wrist()
+	if not special_busy and not pending_specials.is_empty():
+		run_special(pending_specials.pop_front())
 	if next_comment>=0:
 		comment_timer-=dt
 		if comment_timer<=0:
@@ -208,7 +268,7 @@ func _process(dt:float) -> void:
 			var seconds:=ceili(guest_seconds)
 			if not wrist.text.ends_with("%d:%02d"%[seconds/60,seconds%60]):refresh_wrist()
 	var offset:Vector3=wrist_panel.global_position-game.head.global_position
-	wrist_panel.visible=not wrist.text.is_empty() and offset.length()<.95 and (-game.head.global_basis.z).dot(offset.normalized())>.82
+	wrist_panel.visible=(not wrist.text.is_empty() or not event_text.is_empty() or challenge_remaining>=0) and offset.length()>.22 and offset.length()<1.05 and (-game.head.global_basis.z).dot(offset.normalized())>.82
 	if wrist_panel.visible:wrist_panel.look_at(game.head.global_position,game.head.global_basis.y,true)
 
 func add_comment(message:String) -> void:
@@ -237,7 +297,31 @@ func refresh_wrist() -> void:
 		var seconds:=ceili(guest_seconds)
 		lines.append("Visiteur test · %d:%02d"%[seconds/60,seconds%60])
 	wrist.text="\n".join(lines)
+	var timer:=""
+	if challenge_remaining>=0:
+		var remaining:=ceili(challenge_remaining)
+		timer="  ·  %d:%02d"%[remaining/60,remaining%60]
+	event_label.text=event_text+timer
 	wrist_footer.text="↑ ↓  Joystick droit    ·    "+("%d plus récent(s)"%comment_offset if comment_offset>0 else "En direct")
+
+func notify_event(message:String) -> void:
+	event_text=message
+	refresh_wrist()
+	chat_chime.play()
+	game._message(message)
+
+func check_challenge() -> String:
+	var clerk=game.clerk
+	var stock_clear:bool=fallen_cases.is_empty() and game.modes.loose_dvds.is_empty() and not game.held
+	for item in clerk.cases:
+		if item.kind!="streamer_gift":stock_clear=false
+	var cash_balanced:bool=clerk.shift.cash_in_till()==clerk.shift.initial_cash+clerk.shift.revenue-clerk.shift.refunds
+	cash_balanced=cash_balanced and clerk.wallet.loose.is_empty() and not clerk.wallet.occupied(0) and not clerk.wallet.occupied(1) and not clerk.drawer_open
+	var counter_clear:bool=clerk.active.is_empty() and clerk.waiting.is_empty() and clerk.customers.customers.is_empty() and queued_clients==0
+	if stock_clear and cash_balanced and counter_clear:return "Défi réussi · club en ordre"
+	if not stock_clear:return "Temps écoulé · boîtiers à ranger"
+	if not cash_balanced:return "Temps écoulé · caisse à régler"
+	return "Temps écoulé · clients à servir"
 
 func spawn_guest() -> void:
 	if is_instance_valid(guest):return
@@ -253,7 +337,7 @@ func spawn_guest() -> void:
 	guest.add_child(label)
 	guest_seconds=300.0
 	refresh_wrist()
-	game._message("Visiteur simulé · 5 minutes.")
+	notify_event("10 $ · Visiteur simulé")
 
 func walk(person:Node3D,target:Vector3,speed:float=2.1) -> void:
 	var route:Dictionary={"node":person}
@@ -261,21 +345,30 @@ func walk(person:Node3D,target:Vector3,speed:float=2.1) -> void:
 	Actor.animate(person,"Walk")
 	var motion:=create_tween()
 	var previous:=person.global_position
+	var heading:=person.global_rotation.y
 	for cell:Vector2 in route.path:
 		var point:=Vector3(cell.x,0,cell.y)
 		var step:=point-previous
 		if step.length()<.03:continue
-		motion.tween_property(person,"global_rotation:y",atan2(-step.x,-step.z),.06)
-		motion.parallel().tween_property(person,"global_position",point,step.length()/speed)
+		var next_heading:=heading+angle_difference(heading,atan2(-step.x,-step.z))
+		if absf(next_heading-heading)>.8:
+			motion.tween_property(person,"global_rotation:y",next_heading,.15)
+			motion.tween_property(person,"global_position",point,step.length()/speed)
+		else:
+			motion.tween_property(person,"global_position",point,step.length()/speed)
+			motion.parallel().tween_property(person,"global_rotation:y",next_heading,.09)
+		heading=next_heading
 		previous=point
 	if motion.is_running():await motion.finished
 	if is_instance_valid(person):Actor.animate(person,"Idle")
 
 func run_special(tier:int) -> void:
 	if special_busy:
-		game._message("Une simulation est déjà en cours.")
+		pending_specials.append(tier)
+		game._message("Événement ajouté à la file.")
 		return
 	special_busy=true
+	notify_event(["1 $ · Client et phrase","2 $ · Pochette dans la chute","3 $ · Famille de cinq enfants"][tier-1])
 	var visitor:=Props.customer(self,randi_range(0,5))
 	visitor.position=Vector3(-4,0,9)
 	visitor.add_to_group("streamer_door_visitor")
@@ -298,6 +391,9 @@ func run_special(tier:int) -> void:
 		await walk(visitor,Vector3(-4,0,9))
 	else:
 		await walk(visitor,Vector3(-.6,0,-5.05))
+		while not player_at_counter():
+			await get_tree().create_timer(.20,false).timeout
+		visitor.look_at(Vector3(game.head.global_position.x,0,game.head.global_position.z))
 		var phrase:="Salut ! Ton club vidéo me rappelle mes vendredis soir."
 		game._message("Client du live : "+phrase)
 		var voice:=AudioStreamPlayer3D.new()
@@ -310,6 +406,10 @@ func run_special(tier:int) -> void:
 		await walk(visitor,Vector3(-4,0,9))
 	visitor.queue_free()
 	special_busy=false
+
+func player_at_counter() -> bool:
+	var position:Vector3=game.head.global_position
+	return position.x>=-2.25 and position.x<=1.85 and position.z<=-6.48 and position.z>=-7.85
 
 func child_chaos(child:Node3D,index:int) -> void:
 	await get_tree().create_timer(float(index)*.35,false).timeout
@@ -372,7 +472,7 @@ func explode_shelves() -> void:
 	blast_elapsed=0.0
 	blast_frame=0.0
 	game._update_cover_lod(game.head.global_position,true)
-	game._message("BOUM ! %d boîtiers tombent des rayons."%added)
+	notify_event("20 $ · Explosion · %d boîtiers"%added)
 	play_blast()
 
 func advance_blast(dt:float) -> void:
