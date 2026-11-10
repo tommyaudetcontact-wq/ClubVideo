@@ -20,6 +20,7 @@ const DURATIONS:=[10,15,20,30]
 var duration_index:=2
 var challenge_remaining:=-1.0
 var challenge_report:=""
+var challenge_stats:Dictionary={}
 var challenge_menu:=false
 var confirm_restart:=false
 var event_label:Label3D
@@ -151,6 +152,14 @@ func menu_labels(labels:Array) -> void:
 		labels[1].text="Durée · %d minutes"%DURATIONS[duration_index]
 		labels[2].text="Démarrer le défi" if challenge_remaining<0 else "Défi en cours" if challenge_remaining>0 else "Temps écoulé"
 		labels[3].text=challenge_report
+		if not challenge_stats.is_empty():
+			labels[4].text="Boîtiers à ranger : %d"%challenge_stats.cases
+			labels[6].text="Caisse : %.2f $ / %.2f $"%[challenge_stats.cash/100.0,challenge_stats.expected/100.0]
+			var difference:int=challenge_stats.cash-challenge_stats.expected
+			labels[7].text="Écart de caisse : %+.2f $"%(difference/100.0)
+			labels[8].text="Clients servis : %d · restants : %d"%[challenge_stats.served,challenge_stats.remaining]
+			labels[9].text="Pertes : %.2f $"%(challenge_stats.losses/100.0)
+			labels[10].text="Caisse à fermer ou argent à ranger" if not challenge_stats.tidy_cash else ""
 		labels[5].text="Confirmer le redémarrage Streamer" if confirm_restart else "Nouvelle partie Streamer"
 		return
 	labels[0].text="Reprendre"
@@ -243,6 +252,8 @@ func _process(dt:float) -> void:
 		if challenge_remaining==0:
 			challenge_report=check_challenge()
 			notify_event(challenge_report)
+			challenge_menu=true
+			toggle_menu()
 		elif ceili(challenge_remaining)!=previous:refresh_wrist()
 	if not special_busy and not pending_specials.is_empty():
 		run_special(pending_specials.pop_front())
@@ -312,16 +323,24 @@ func notify_event(message:String) -> void:
 
 func check_challenge() -> String:
 	var clerk=game.clerk
-	var stock_clear:bool=fallen_cases.is_empty() and game.modes.loose_dvds.is_empty() and not game.held
+	var cases_to_shelve:int=fallen_cases.size()+game.modes.loose_dvds.size()
 	for item in clerk.cases:
-		if item.kind!="streamer_gift":stock_clear=false
-	var cash_balanced:bool=clerk.shift.cash_in_till()==clerk.shift.initial_cash+clerk.shift.revenue-clerk.shift.refunds
-	cash_balanced=cash_balanced and clerk.wallet.loose.is_empty() and not clerk.wallet.occupied(0) and not clerk.wallet.occupied(1) and not clerk.drawer_open
-	var counter_clear:bool=clerk.active.is_empty() and clerk.waiting.is_empty() and clerk.customers.customers.is_empty() and queued_clients==0
-	if stock_clear and cash_balanced and counter_clear:return "Défi réussi · club en ordre"
-	if not stock_clear:return "Temps écoulé · boîtiers à ranger"
-	if not cash_balanced:return "Temps écoulé · caisse à régler"
-	return "Temps écoulé · clients à servir"
+		if item.kind!="streamer_gift":cases_to_shelve+=1
+	if game.held and clerk.held_service.is_empty() and game.held_record not in game.modes.loose_dvds:
+		cases_to_shelve+=1
+	var cash:int=clerk.shift.cash_in_till()
+	var expected:int=clerk.shift.initial_cash+clerk.shift.revenue-clerk.shift.refunds
+	var tidy_cash:bool=clerk.wallet.loose.is_empty() and not clerk.wallet.occupied(0) and not clerk.wallet.occupied(1) and not clerk.drawer_open
+	var remaining:int=queued_clients
+	for customer in clerk.customers.customers:
+		if customer.state!="exit":remaining+=1
+	challenge_stats={
+		"cases":cases_to_shelve,"cash":cash,"expected":expected,
+		"served":clerk.shift.served,"remaining":remaining,"losses":clerk.shift.loss_total(),
+		"tidy_cash":tidy_cash
+	}
+	if cases_to_shelve==0 and cash==expected and tidy_cash and remaining==0:return "Défi réussi · club en ordre"
+	return "Temps écoulé · bilan du défi"
 
 func spawn_guest() -> void:
 	if is_instance_valid(guest):return

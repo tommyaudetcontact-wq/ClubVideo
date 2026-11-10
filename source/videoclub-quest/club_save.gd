@@ -81,7 +81,7 @@ func snapshot()->Dictionary:
 	state.return_schedule_version=2
 	if game.streamer_mode:
 		state.streamer_fallen=game.streamer.pack_fallen()
-		state.streamer_challenge={"duration":game.streamer.duration_index,"remaining":game.streamer.challenge_remaining,"report":game.streamer.challenge_report}
+		state.streamer_challenge={"duration":game.streamer.duration_index,"remaining":game.streamer.challenge_remaining,"report":game.streamer.challenge_report,"stats":game.streamer.challenge_stats.duplicate()}
 	state.entry_cooldown=c.customers.entry_cooldown
 	state.arrival_cluster_left=c.customers.arrival_cluster_left
 	state.last_arrival_kind=c.customers.last_arrival_kind
@@ -244,6 +244,7 @@ func restore(s:Dictionary)->bool:
 		game.streamer.duration_index=clampi(int(challenge.get("duration",2)),0,3)
 		game.streamer.challenge_remaining=float(challenge.get("remaining",-1))
 		game.streamer.challenge_report=str(challenge.get("report",""))
+		game.streamer.challenge_stats=challenge.get("stats",{})
 		game.streamer.refresh_wrist()
 	if s.has("loose_locks"):c.locks.restore(s.loose_locks)
 	for i in range(s.records.size()):

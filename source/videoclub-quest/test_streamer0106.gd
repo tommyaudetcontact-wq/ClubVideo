@@ -61,7 +61,9 @@ func _initialize():
 	assert(game.streamer.wrist.text=="2\n3\n4\n5\n6\n7\n8")
 	game.streamer.challenge_remaining=0.5
 	game.streamer._process(1.0)
-	assert(game.streamer.challenge_report.contains("boîtiers à ranger"))
+	assert(game.streamer.challenge_stats.cases==saved.size()+1)
+	assert(game.streamer.challenge_stats.cash==clerk.shift.cash_in_till())
+	assert(game.streamer.challenge_stats.expected==clerk.shift.initial_cash+clerk.shift.revenue-clerk.shift.refunds)
 	assert(game.session.snapshot().streamer_challenge.remaining==0.0)
 	game.head.global_position=Vector3(-.6,1.6,-7)
 	assert(game.streamer.player_at_counter())
