@@ -1,0 +1,16 @@
+[
+  {
+    "name": "VideoClub-VR-Quest3S-v0.11.0.apk",
+    "size": 1134735603,
+    "sha256": "8f2554c68f079cc4ed79b371866bec329b263b92665b76174bb28f7079c72c9d",
+    "textures": 800,
+    "trailers": 60
+  },
+  {
+    "name": "VideoClub-Android-Jeu-v0.11.0.apk",
+    "size": 1128862843,
+    "sha256": "26cc24648e59d58457aa21a8b8185ed2db6c1d1817059bfa4d537590c1c01b92",
+    "textures": 800,
+    "trailers": 60
+  }
+]
