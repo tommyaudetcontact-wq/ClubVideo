@@ -88,7 +88,7 @@ static func capture(game,include_stock:bool=true)->String:
 	if game.entrepreneur and include_stock:
 		var b=game.entrepreneur
 		payload.business=b.snapshot()
-		payload.business.controls={"board":b.guest_board,"drill":b.guest_drill,"placing":b.guest_placing,"poster":b.guest_poster_order,"ghost":b.ghost.global_transform if is_instance_valid(b.ghost) else Transform3D.IDENTITY,"drill_pose":b.drill.global_transform,"board_pose":b.guest_board_node.global_transform if is_instance_valid(b.guest_board_node) else Transform3D.IDENTITY}
+		payload.business.controls={"carton":b.freight.guest_id,"board":b.guest_board,"drill":b.guest_drill,"placing":b.guest_placing,"poster":b.guest_poster_order,"ghost":b.ghost.global_transform if is_instance_valid(b.ghost) else Transform3D.IDENTITY,"drill_pose":b.drill.global_transform,"board_pose":b.guest_board_node.global_transform if is_instance_valid(b.guest_board_node) else Transform3D.IDENTITY}
 	if not include_stock:payload.erase("stock")
 	var raw:=var_to_bytes(payload)
 	return Marshalls.raw_to_base64(raw.compress(FileAccess.COMPRESSION_DEFLATE))

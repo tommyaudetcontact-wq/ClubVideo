@@ -1,0 +1,8 @@
+{
+  "test": "test_day0100-gpu",
+  "passed": true,
+  "exit_code": 0,
+  "seconds": 4.03,
+  "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_day0100-gpu.log",
+  "teardown_warnings": []
+}

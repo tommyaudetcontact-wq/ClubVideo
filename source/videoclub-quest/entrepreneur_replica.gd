@@ -24,6 +24,8 @@ func apply(data:Dictionary) -> void:
 	business.ledgers=data.get("ledgers",{}).duplicate(true)
 	refresh_views(data.get("assembly",{}))
 	var controls:Dictionary=data.get("controls",{})
+	business.freight.held_id=int(controls.get("carton",-1))
+	business.freight.held_hand=0 if business.freight.held_id>=0 else -1
 	business.guest_board=controls.get("board",false)
 	business.guest_drill=controls.get("drill",false)
 	business.guest_placing=controls.get("placing",false)
@@ -69,6 +71,10 @@ func refresh_views(assembly:Dictionary) -> void:
 		if not order.get("delivered",false):continue
 		delivered[int(order.id)]=true
 		if not business.packages.has(int(order.id)):business.deliver(order)
+	for order in business.state.orders:
+		if business.packages.has(int(order.id)):
+			if order.has("pose"):business.packages[int(order.id)].transform=order.pose
+			business.freight.refresh(order)
 	for id in business.packages.keys():
 		if delivered.has(id):continue
 		var node:Node3D=business.packages[id]
@@ -77,8 +83,12 @@ func refresh_views(assembly:Dictionary) -> void:
 		business.packages.erase(id)
 	if assembly_data!=assembly:
 		business.assembly=assembly.duplicate(true)
+		business.moving_shelf=int(assembly.get("moving_index",-1))
+		for index in business.shelf_nodes.size():business.shelf_nodes[index].visible=index!=business.moving_shelf
 		if is_instance_valid(business.ghost):business.ghost.queue_free();business.ghost=null
-		if not assembly.is_empty():business.build_assembly()
+		if not assembly.is_empty():
+			if assembly.get("stage","") in ["site","move"]:business.begin_placement()
+			else:business.build_assembly()
 		elif is_instance_valid(business.assembly_node):
 			var old:Node3D=business.assembly_node
 			business.game.clerk.targets=business.game.clerk.targets.filter(func(target):return is_instance_valid(target.node) and not old.is_ancestor_of(target.node))

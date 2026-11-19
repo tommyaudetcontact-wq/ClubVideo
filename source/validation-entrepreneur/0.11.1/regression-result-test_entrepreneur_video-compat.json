@@ -1,0 +1,11 @@
+{
+  "test": "test_entrepreneur_video-compat",
+  "passed": true,
+  "exit_code": 0,
+  "seconds": 3.03,
+  "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_entrepreneur_video-compat.log",
+  "teardown_warnings": [
+    "ERROR: Texture with GL ID of 164: leaked 87380 bytes.",
+    "ERROR: Texture with GL ID of 165: leaked 87380 bytes."
+  ]
+}

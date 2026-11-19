@@ -9,6 +9,10 @@ var heading:Label
 var message:Label
 var rows:Array[Button]=[]
 var row_ids:Array=[]
+var thumbnails:Array[Control]=[]
+var wheel_accumulator:=0.0
+var category_button:Button
+var calendar_preview:TextureRect
 var primary:Button
 var secondary:Button
 const TABS:=["Commandes","Inventaire","Clients","Réservations","Calendrier","Rayons"]
@@ -25,7 +29,19 @@ func setup(owner_desktop) -> void:
 		var row:=index
 		add_button(Rect2(8,120+index*62,794,56),"",func():select_row(row))
 		rows.append(desktop.targets.back())
-	message=desktop.label(self,Rect2(8,435,794,70),22,Color("17396b"))
+		rows.back().alignment=HORIZONTAL_ALIGNMENT_LEFT
+		var style:StyleBoxFlat=rows.back().get_theme_stylebox("normal").duplicate()
+		style.content_margin_left=82
+		style.bg_color=Color("f7f7ee")
+		style.border_color=Color("9aaac0");style.set_border_width_all(1)
+		rows.back().add_theme_stylebox_override("normal",style)
+		rows.back().add_theme_color_override("font_color",Color("17396b"))
+		rows.back().add_theme_color_override("font_hover_color",Color("17396b"))
+		rows.back().add_theme_font_size_override("font_size",20)
+		var thumb:Control=load("res://entrepreneur_thumbnail.gd").new()
+		thumb.position=Vector2(12,122+index*62);thumb.size=Vector2(64,52);thumb.mouse_filter=Control.MOUSE_FILTER_IGNORE
+		add_child(thumb);thumbnails.append(thumb)
+	message=desktop.label(self,Rect2(8,435,794,42),19,Color("17396b"))
 	message.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
 	add_button(Rect2(8,518,135,40),"Précédent",func():offset=maxi(0,offset-5);refresh())
 	add_button(Rect2(151,518,135,40),"Suivant",func():offset+=5;refresh())
@@ -34,6 +50,29 @@ func setup(owner_desktop) -> void:
 	add_button(Rect2(550,518,252,40),"",alternate)
 	secondary=desktop.targets.back()
 	add_button(Rect2(8,566,794,35),"Journée · ouvrir / clôturer / lendemain",day_action)
+
+	add_button(Rect2(8,482,794,30),"Catégorie suivante",func():selected_genre=(selected_genre+1)%10;refresh())
+	category_button=desktop.targets.back()
+	calendar_preview=TextureRect.new();calendar_preview.position=Vector2(135,116);calendar_preview.size=Vector2(530,310)
+	calendar_preview.expand_mode=TextureRect.EXPAND_IGNORE_SIZE;calendar_preview.stretch_mode=TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	calendar_preview.mouse_filter=Control.MOUSE_FILTER_IGNORE;add_child(calendar_preview);calendar_preview.hide()
+
+func scroll_rows(amount:int) -> void:
+	offset=maxi(0,offset+amount)
+	refresh()
+	desktop.get_viewport().render_target_update_mode=SubViewport.UPDATE_ONCE
+
+func scroll_input(axis:float,dt:float) -> bool:
+	if not visible or not desktop.cursor.visible or not Rect2(global_position+Vector2(8,110),Vector2(794,320)).has_point(desktop.cursor.position):return false
+	if absf(axis)<.35:wheel_accumulator=0;return false
+	wheel_accumulator+=dt
+	if wheel_accumulator>.16:wheel_accumulator=0;scroll_rows(-1 if axis>0 else 1)
+	return true
+
+func _gui_input(event:InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index==MOUSE_BUTTON_WHEEL_DOWN:scroll_rows(1);accept_event()
+		elif event.button_index==MOUSE_BUTTON_WHEEL_UP:scroll_rows(-1);accept_event()
 
 func add_button(bounds:Rect2,text:String,callback:Callable) -> void:
 	desktop.button(self,bounds,text,callback,Color("315d9d"))
@@ -50,7 +89,7 @@ func refresh() -> void:
 		0:
 			for model in range(3):
 				row_ids.append({"kind":"shelf","id":model})
-				descriptions.append("Étagère %d de large · %d places · %.2f $"%[state.SHELF_COLUMNS[model],state.SHELF_COLUMNS[model]*4,state.SHELF_PRICES[model]/100.0])
+				descriptions.append("Étagère · %d DVD côte à côte · %d places · %.2f $"%[state.SHELF_COLUMNS[model],state.SHELF_COLUMNS[model]*4,state.SHELF_PRICES[model]/100.0])
 			for index in state.bundles.size():
 				row_ids.append({"kind":"bundle","id":index})
 				descriptions.append("Lot de %d films · %.2f $"%[state.bundles[index].movies.size(),state.bundles[index].price/100.0])
@@ -104,15 +143,20 @@ func refresh() -> void:
 				var shelf:Dictionary=state.shelves[index]
 				descriptions.append("Rayon %d · %d places\nÉtiquette : %s"%[index+1,state.SHELF_COLUMNS[int(shelf.model)]*4,str(shelf.get("genre","")) if not str(shelf.get("genre","")).is_empty() else "aucune"])
 			message.text="Choix : %s. Commande une étiquette, puis ouvre son colis : elle sera posée sur ce rayon."%str(state.CATEGORIES[selected_genre])
-			primary.text="Changer la catégorie"
+			primary.text="Déplacer le rayon"
 			secondary.text="Étiquette · 3 $"
-	offset=mini(offset,maxi(0,descriptions.size()-1)/5*5)
+	offset=clampi(offset,0,maxi(0,descriptions.size()-5))
 	for index in rows.size():
 		var position_index:=offset+index
-		rows[index].visible=position_index<descriptions.size()
+		rows[index].visible=page!=4 and position_index<descriptions.size()
+		thumbnails[index].visible=rows[index].visible
 		if rows[index].visible:
 			rows[index].text=descriptions[position_index]
+			if position_index<row_ids.size():thumbnails[index].show_item(row_ids[position_index],business)
 			rows[index].modulate=Color("ffe4a4") if selected==position_index else Color.WHITE
+	category_button.visible=page==5
+	calendar_preview.visible=page==4
+	if page==4:calendar_preview.texture=business.calendar_canvas.get_viewport().get_texture()
 	secondary.visible=not secondary.text.is_empty()
 
 func select_row(index:int) -> void:
@@ -135,8 +179,8 @@ func act() -> void:
 	var item:Dictionary=row_ids[selected]
 	var success:=false
 	if page==5:
-		selected_genre=(selected_genre+1)%business.state.CATEGORIES.size()
-		refresh()
+		if remote({"op":"move_shelf","id":int(item.id)}):return
+		business.start_move_shelf(int(item.id))
 		return
 	if page==0 and remote({"op":"buy","kind":item.kind,"id":int(item.id),"day":business.state.day}):return
 	if page==2 and remote({"op":"claim","id":int(item.id)}):return

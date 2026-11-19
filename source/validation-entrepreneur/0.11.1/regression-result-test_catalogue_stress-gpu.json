@@ -1,0 +1,8 @@
+{
+  "test": "test_catalogue_stress-gpu",
+  "passed": true,
+  "exit_code": 0,
+  "seconds": 104.16,
+  "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_catalogue_stress-gpu.log",
+  "teardown_warnings": []
+}

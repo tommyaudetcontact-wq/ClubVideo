@@ -762,6 +762,7 @@ func _physics_process(delta: float) -> void:
 		_move_player((right*move.x+forward*move.y)*delta*2.68)
 	var right_stick := hands[1].get_vector2(&"primary")
 	if streamer and streamer.scroll_chat(right_stick,delta):right_stick=Vector2.ZERO
+	if clerk and clerk.desktop.business_view and clerk.desktop.business_view.scroll_input(right_stick.y,delta):right_stick=Vector2.ZERO
 	_update_crouch(right_stick,delta)
 	var turn := right_stick.x if absf(right_stick.x)>absf(right_stick.y) else 0.0
 	if absf(turn) < 0.3:

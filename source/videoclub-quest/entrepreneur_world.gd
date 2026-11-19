@@ -8,8 +8,8 @@ static func empty_shop(game) -> void:
 		var b:=Vector3(box.max[0],box.max[1],box.max[2])
 		if a.y==0 and b.y<2 and a.z<4 and b.z>0 and absf(a.x)<4:
 			bays.append(AABB(a-Vector3(.15,0,.25),b-a+Vector3(.3,.5,.5)))
-	bays.append(AABB(Vector3(-5.64,.05,-6.5),Vector3(.55,2.5,13)))
-	bays.append(AABB(Vector3(5.09,.05,-6.5),Vector3(.55,2.5,13)))
+	bays.append(AABB(Vector3(-5.64,.001,-7.1),Vector3(.55,2.5,13.7)))
+	bays.append(AABB(Vector3(5.09,.001,-7.1),Vector3(.55,2.5,13.7)))
 	for node in game.model.find_children("*","MeshInstance3D",true,false):
 		if not node.mesh:continue
 		var result:=ArrayMesh.new()
@@ -21,12 +21,19 @@ static func empty_shop(game) -> void:
 			var indices:PackedInt32Array=arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX]!=null else PackedInt32Array()
 			if indices.is_empty():
 				for index in vertices.size():indices.append(index)
+			var blue_backing:=false
+			var material:Material=node.get_active_material(surface)
+			# The imported shelf backing has a unique .85 matte laminate material.
+			# Do not read GPU textures on Quest just to classify this static geometry.
+			if material is StandardMaterial3D:
+				blue_backing=material.albedo_texture!=null and material.roughness_texture!=null and absf(material.roughness-.85)<.001 and material.metallic<.01
 			var kept:=PackedInt32Array()
 			for triangle in range(0,indices.size(),3):
 				var center:Vector3=node.global_transform*((vertices[indices[triangle]]+vertices[indices[triangle+1]]+vertices[indices[triangle+2]])/3)
 				var old_rear:=absf(center.x)<5.9 and center.z< -9.3 and center.z> -9.8 and center.y>.05
 				# Keep the carpet at y=0, but remove low feet and plinth triangles too.
-				var shelf:=old_rear or (center.y>.001 and bays.any(func(bounds):return bounds.has_point(center)))
+				var side_panel:=blue_backing and absf(center.x)>5.62 and absf(center.x)<5.77 and center.y>.001 and center.y<2.5 and center.z> -7.1 and center.z<6.6
+				var shelf:=old_rear or side_panel or (center.y>.001 and bays.any(func(bounds):return bounds.has_point(center)))
 				if shelf:changed=true
 				else:kept.append_array(indices.slice(triangle,triangle+3))
 			if kept.is_empty():continue
@@ -57,20 +64,22 @@ static func shelf(parent:Node3D,columns:int) -> Node3D:
 	# Laminate cabinet, wood edges, steel foot levellers, and recessed screws.
 	Props.box(node,Vector3(0,.92,-.155),Vector3(width,1.82,.018),"333a42")
 	for side in [-1,1]:
-		Props.box(node,Vector3(side*(width/2-.013),.92,0),Vector3(.026,1.84,.34),"b58b5b")
+		Props.box(node,Vector3(side*(width/2-.013),.92,0),Vector3(.026,1.84,.34),"26344a").material_override=laminate()
 		for z in [-.10,.10]:
 			Props.cylinder(node,Vector3(side*(width/2-.04),.035,z),.025,.06,"252a30",.7)
 	for row in range(5):
 		var height:=.20+row*.35
-		Props.box(node,Vector3(0,height,0),Vector3(width,.024,.34),"ac8155")
-		Props.box(node,Vector3(0,height+.012,.17),Vector3(width,.033,.012),"262d37")
+		Props.box(node,Vector3(0,height,0),Vector3(width,.024,.34),"c2a57b").material_override=laminate()
+		Props.box(node,Vector3(0,height+.012,.17),Vector3(width,.033,.012),"b68d52")
 		for side in [-1,1]:
 			var screw:=Props.cylinder(node,Vector3(side*(width/2+.002),height,0),.007,.003,"91989c",.8)
 			screw.rotation.z=PI/2
 	Props.box(node,Vector3(0,1.73,.18),Vector3(width,.16,.02),"182d55")
 	# Batch the static cabinet while preserving the different metal/laminate response.
 	batch_props(node)
-	Props.label(node,"VIDÉO CLUB",Vector3(0,1.73,.194),.0006,28).name="CategoryHeader"
+	var header:=Props.label(node,"VIDÉO CLUB",Vector3(0,1.73,.194),.001,56)
+	header.name="CategoryHeader"
+	header.modulate=Color("f5d782")
 	return node
 
 static func batch_props(parent:Node3D) -> void:
@@ -79,7 +88,7 @@ static func batch_props(parent:Node3D) -> void:
 	for child in parent.get_children():
 		if not child is MeshInstance3D or not child.material_override is StandardMaterial3D:continue
 		var material:StandardMaterial3D=child.material_override
-		var key:="%s|%s"%[material.metallic,material.roughness]
+		var key:="%s|%s|%s"%[material.metallic,material.roughness,material.albedo_texture.get_instance_id() if material.albedo_texture else 0]
 		if not batches.has(key):
 			var tool:=SurfaceTool.new()
 			tool.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -93,11 +102,14 @@ static func batch_props(parent:Node3D) -> void:
 			var arrays:Array=child.mesh.surface_get_arrays(surface)
 			var vertices:PackedVector3Array=arrays[Mesh.ARRAY_VERTEX]
 			var normals:PackedVector3Array=arrays[Mesh.ARRAY_NORMAL]
+			var uvs:PackedVector2Array=arrays[Mesh.ARRAY_TEX_UV] if arrays[Mesh.ARRAY_TEX_UV]!=null else PackedVector2Array()
 			var indices:PackedInt32Array=arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX]!=null else PackedInt32Array()
 			if indices.is_empty():
 				for index in vertices.size():indices.append(index)
 			for index in indices:
-				tool.set_color(material.albedo_color)
+				if not uvs.is_empty():tool.set_uv(uvs[index])
+				var colors:PackedColorArray=arrays[Mesh.ARRAY_COLOR] if arrays[Mesh.ARRAY_COLOR]!=null else PackedColorArray()
+				tool.set_color(material.albedo_color*colors[index] if material.vertex_color_use_as_albedo and not colors.is_empty() else material.albedo_color)
 				tool.set_normal((child.basis.inverse().transposed()*normals[index]).normalized())
 				tool.add_vertex(child.transform*vertices[index])
 		parts.append(child)
@@ -204,3 +216,46 @@ static func desk_base(parent:Node3D,center:Vector3,width:float,depth:float,drawe
 			Props.box(node,Vector3(width/2-.37,.13+row*.22,depth/2-.067),Vector3(.51,.20,.018),"c6b79d")
 			Props.box(node,Vector3(width/2-.37,.15+row*.22,depth/2-.052),Vector3(.13,.018,.024),"697374")
 	batch_props(node)
+
+static func assembly_screw(parent:Node3D) -> Node3D:
+	var node:=Node3D.new()
+	parent.add_child(node)
+	var shaft:=Props.cylinder(node,Vector3(0,0,-.014),.004,.028,"92999d",.85)
+	shaft.rotation.x=PI/2
+	var head:=Props.cylinder(node,Vector3.ZERO,.012,.005,"c2c8cc",.9)
+	head.rotation.x=PI/2
+	for angle in [0.0,PI/2]:
+		var slot:=Props.box(node,Vector3(0,0,.003),Vector3(.016,.0025,.001),"363c40")
+		slot.rotation.z=angle
+	return node
+
+static var laminate_material:StandardMaterial3D
+static func laminate() -> StandardMaterial3D:
+	if laminate_material:return laminate_material
+	var noise:=FastNoiseLite.new()
+	noise.seed=1298;noise.frequency=.045;noise.fractal_octaves=3
+	var image:=Image.create(256,256,false,Image.FORMAT_RGB8)
+	for y in 256:
+		for x in 256:
+			var grain:float=noise.get_noise_2d(x*.16,y*2.5)*.08
+			image.set_pixel(x,y,Color(.24+grain,.29+grain,.37+grain))
+	image.generate_mipmaps()
+	laminate_material=StandardMaterial3D.new()
+	laminate_material.albedo_texture=ImageTexture.create_from_image(image)
+	laminate_material.roughness=.58
+	laminate_material.texture_filter=BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	var bump:=image.duplicate();bump.bump_map_to_normal_map(1.1);bump.generate_mipmaps()
+	laminate_material.normal_texture=ImageTexture.create_from_image(bump)
+	laminate_material.normal_enabled=true;laminate_material.normal_scale=.14
+	return laminate_material
+
+static func placement_grid(parent:Node3D) -> void:
+	var tool:=SurfaceTool.new();tool.begin(Mesh.PRIMITIVE_LINES)
+	for i in range(-10,11):
+		var value:float=i*.1
+		tool.add_vertex(Vector3(value,.012,-1));tool.add_vertex(Vector3(value,.012,1))
+		tool.add_vertex(Vector3(-1,.012,value));tool.add_vertex(Vector3(1,.012,value))
+	var node:=MeshInstance3D.new();node.name="PlacementGrid";node.mesh=tool.commit()
+	var material:=StandardMaterial3D.new();material.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color=Color(.45,.85,.68,.42);material.transparency=BaseMaterial3D.TRANSPARENCY_ALPHA
+	node.material_override=material;parent.add_child(node)

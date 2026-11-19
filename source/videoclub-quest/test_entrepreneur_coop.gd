@@ -61,7 +61,11 @@ func _initialize():
 	host.entrepreneur.tick(11)
 	var order:Dictionary=host.entrepreneur.state.orders[0]
 	check(await wait_for(func():return guest.entrepreneur.packages.has(int(order.id))),"delivered parcel visible to guest")
+	guest.head.global_position=Vector3(-.5,1.5,-10)
+	check(await wait_for(func():return host.clerk.lan.remote_avatar.targets[0].origin.distance_to(guest.head.global_position)<.1),"guest approaches carton")
 	host.entrepreneur.open_parcel(int(order.id))
+	check(host.entrepreneur.freight.extract(order,1,true),"guest extracts paid copy")
+	host.clerk.lan.drop_guest_case()
 	var delivered:Dictionary=host.clerk.cases.back()
 	host.clerk.restore_stock(delivered.record);host.clerk.cases.erase(delivered);delivered.node.queue_free()
 	check(await wait_for(func():return guest.entrepreneur.state.stock.size()==5 and guest.entrepreneur.packages.is_empty()),"opened parcel and new copy replicated")
@@ -74,25 +78,28 @@ func _initialize():
 	guest.head.global_position=Vector3(-.5,1.5,-10)
 	coop.send("enterprise","",JSON.stringify({"op":"parcel","id":int(shelf_order.id)}))
 	check(await wait_for(func():return not guest.entrepreneur.assembly.is_empty()),"guest opens shared assembly parcel")
-	guest.head.global_position=Vector3(-3.8,1.5,-11.9)
+	guest.head.global_position=Vector3(1.1,1.6,-.8)
+	guest.entrepreneur.ghost.transform=guest.entrepreneur.snap_placement(Vector3(1.1,0,1),0,0)
+	guest.entrepreneur.placement_angle=0
+	guest.entrepreneur.finish_placement()
+	check(await wait_for(func():return guest.entrepreneur.assembly.get("stage","")=="boards"),"guest chooses site before assembly")
+	guest.head.global_position=Vector3(1.1,1.5,.3)
 	for step in 6:
 		coop.send("enterprise","",JSON.stringify({"op":"take_board"}))
 		check(await wait_for(func():return guest.entrepreneur.guest_board),"guest takes board")
 		guest.entrepreneur.mobile_use()
 		var expected:=step+1
 		check(await wait_for(func():return int(guest.entrepreneur.assembly.get("boards",0))==expected and not guest.entrepreneur.guest_board),"guest places shared board")
+	guest.head.global_position=Vector3(-3.1,1.5,-12)
 	coop.send("enterprise","",JSON.stringify({"op":"drill"}))
 	check(await wait_for(func():return guest.entrepreneur.guest_drill),"guest takes shared drill")
+	guest.head.global_position=Vector3(1.1,1.5,.3)
 	for step in 4:
 		guest.entrepreneur.mobile_use()
 		var expected:=step+1
-		check(await wait_for(func():return int(guest.entrepreneur.assembly.get("screws",0))==expected),"guest fixes screw")
-	check(guest.entrepreneur.guest_placing and is_instance_valid(guest.entrepreneur.ghost),"guest receives shelf placement preview")
-	guest.head.global_position=Vector3(1.1,1.6,-.8)
-	guest.entrepreneur.ghost.transform=guest.entrepreneur.snap_placement(Vector3(1.1,0,1),0,0)
-	guest.entrepreneur.placement_angle=0
-	guest.entrepreneur.finish_placement()
-	check(await wait_for(func():return host.entrepreneur.state.shelves.size()==2 and guest.entrepreneur.shelf_nodes.size()==2),"guest places shared shelf")
+		if step<3:check(await wait_for(func():return int(guest.entrepreneur.assembly.get("screws",0))==expected),"guest fixes screw")
+		else:check(await wait_for(func():return guest.entrepreneur.state.shelves.size()==2),"guest final screw completes shelf")
+	check(await wait_for(func():return host.entrepreneur.state.shelves.size()==2 and guest.entrepreneur.shelf_nodes.size()==2),"final guest screw completes shared shelf at selected site")
 	guest.head.global_position=host.clerk.screen.global_position+Vector3(0,.25,.6)
 	coop.send("enterprise","",JSON.stringify({"op":"poster","id":id}))
 	check(await wait_for(func():return host.entrepreneur.state.orders.size()==1),"guest buys poster")

@@ -1,0 +1,8 @@
+{
+  "test": "test_coop_full_simulation-gpu",
+  "passed": true,
+  "exit_code": 0,
+  "seconds": 31.61,
+  "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_coop_full_simulation-gpu.log",
+  "teardown_warnings": []
+}

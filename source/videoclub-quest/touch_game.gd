@@ -13,6 +13,9 @@ var basket_carried:=false
 var basket_resting_pose:Transform3D
 var checkout_panel:VBoxContainer
 var checkout_popup:PanelContainer
+var desktop_drag_start:=Vector2.ZERO
+var desktop_dragged:=false
+var desktop_drag_pixels:=0.0
 var checkout_scroll:ScrollContainer
 var checkout_button:Button
 var coop_panel:PanelContainer
@@ -1052,7 +1055,7 @@ func toggle_case():
 
 func flip_item():
 	if game.entrepreneur and is_instance_valid(game.entrepreneur.ghost):
-		game.entrepreneur.placement_angle+=PI/2
+		game.entrepreneur.placement_angle+=PI/4
 		return
 	if action_busy():return
 	if coop_panel.connected:
@@ -1238,6 +1241,8 @@ func handoff():
 	clerk.action("handoff",game.held_hand)
 
 func drop():
+	if game.entrepreneur and game.entrepreneur.freight.held_id>=0 and not game.held and coop_panel.guest_case_id.is_empty():
+		game.entrepreneur.freight.drop();return
 	if (coop_panel.connected and not coop_panel.guest_disc.is_empty()) or (not coop_panel.connected and is_instance_valid(clerk.inspection.carried)):
 		if disc_sorting_point().is_finite():use_disc("table")
 		else:game._message("Vise la table à démêler pour déposer le disque, ou touche Ranger le disque.")
@@ -1346,8 +1351,18 @@ func desktop_input(event:InputEvent):
 	if event is InputEventScreenTouch:
 		desktop_view.accept_event()
 		if event.pressed:
+			desktop_drag_start=event.position;desktop_dragged=false;desktop_drag_pixels=0
+		elif not desktop_dragged:
 			var point:Vector2=event.position/desktop_view.size*clerk.desktop.size
 			clerk.desktop.point(point,true)
+	elif event is InputEventScreenDrag and clerk.desktop.business_view and clerk.desktop.business_view.visible:
+		desktop_view.accept_event()
+		if event.position.distance_to(desktop_drag_start)>12:desktop_dragged=true
+		if desktop_dragged:
+			desktop_drag_pixels+=event.relative.y*768.0/desktop_view.size.y
+			if absf(desktop_drag_pixels)>36:
+				clerk.desktop.business_view.scroll_rows(-1 if desktop_drag_pixels>0 else 1)
+				desktop_drag_pixels=0
 
 func cash_target()->Dictionary:
 	var candidate:Dictionary={}

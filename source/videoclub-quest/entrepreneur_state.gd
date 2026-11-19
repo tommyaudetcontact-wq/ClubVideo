@@ -2,7 +2,7 @@ extends RefCounted
 ## Persistent business rules. Currency is stored as integer cents.
 const OPEN_SECONDS:=480.0
 const SHELF_PRICES:=[10000,17500,25000]
-const SHELF_COLUMNS:=[4,8,12]
+const SHELF_COLUMNS:=[5,10,15]
 const CATEGORIES:=["action","horreur","suspense policier","science-fiction","comédie","cinéma familial","fantastique","aventure","drame","comédie romantique"]
 const START_DATE:=1335830400 # May 1, 2012, UTC.
 var day:=1
@@ -113,6 +113,11 @@ func roll_offers(movies:Array) -> void:
 func buy(kind:String,value:int,price:int,contents:Array=[]) -> bool:
 	if price<0 or cash<price:return false
 	cash-=price
+	if kind=="films":
+		for order in orders:
+			if order.kind=="films" and not order.delivered and order.contents.size()+contents.size()<=20:
+				order.contents.append_array(contents)
+				return true
 	orders.append({"id":next_order,"kind":kind,"value":value,"contents":contents.duplicate(),"remaining":10.0,"delivered":false})
 	next_order+=1
 	return true
