@@ -51,3 +51,10 @@ Pour lancer TEST : `adb -s ... shell monkey -p com.videoclub.quest.preview -c an
 - Recompiler les deux APK finales avec dernier source, version commune cohérente et signature officielle, publier source/release/pages uniquement une fois vérifiées.
 - Photos PC : `work/catalogue-in-store.png`, `work/entrepreneur-empty-store.png` (dernière capture propre, pieds corrigés).
 - Backup initial intact : `backups/avant-entrepreneur-20261118-150251`.
+
+## Vérifications finales de cette séance
+- Quest diagnostic `.preview` version0.11.0-preview.2/code2 installé avec succès (log `work/quest-preview2-install.log`). Version habituelle préservée.
+- Les deux APK vérifiées par apksigner : signature v2 valide. Taille et SHA dans `work/apk-preview-validation.json`.
+- Rapport consolidé fiable : `work/validation-summary-20261118.json` = 23 scénarios logiciels sur23 réussis. Il remplace les références aux rapports partiels dans les notes ci-dessus. Aucun FPS Quest porté mesuré.
+- Dernier commit GitHub avant ce complément : d48e6da sur `entrepreneur-200-films`. La page publique et les APK publiques sont inchangées.
+- Usage observé à97 % utilisés : prochain contrôle à faire avant de travailler davantage. À98 %, sauvegarder puis lancer `shutdown.exe /s /t 60` (sans /f), conformément à l’utilisateur.
