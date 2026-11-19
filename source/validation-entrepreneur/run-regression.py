@@ -5,10 +5,13 @@ from pathlib import Path
 import subprocess
 import time
 import re
+import shutil
 
 ROOT = Path(__file__).resolve().parent.parent
 ENGINE = Path('C:/Users/recto/Documents/Codex/2026-10-27/fait-x20-2/work/tools/godot/Godot_v4.7.2-stable_win64_console.exe')
 TESTS = [
+    ('test_entrepreneur_coop', 'ENTREPRENEUR_COOP_COMPLETE failures=0', []),
+    ('test_entrepreneur_dropin', 'ENTREPRENEUR_DROPIN_COMPLETE failures=0', ['--touch-profile']),
     ('test_catalogue_stress', 'CATALOGUE_STRESS_COMPLETE failures=0', []),
     ('test_catalogue_migration', 'CATALOGUE_MIGRATION_COMPLETE failures=0', []),
     ('test_entrepreneur_rules', 'ENTREPRENEUR_RULES_COMPLETE failures=0', []),
@@ -45,6 +48,10 @@ def main():
     config = (project / 'project.godot').read_text(encoding='utf-8-sig')
     if 'ClubVideo-AutomatedTests-20261118' not in config:
         raise RuntimeError('Refusing to test without isolated user data')
+    # Always exercise the current scripts, while keeping the isolated project settings.
+    for path in (ROOT / 'outputs/videoclub-quest').iterdir():
+        if path.is_file() and path.suffix in {'.gd', '.uid', '.tscn', '.tres', '.gdshader', '.svg'}:
+            shutil.copy2(path, project / path.name)
     results = []
     for name, marker, extra in TESTS:
         if args.only and name not in args.only:

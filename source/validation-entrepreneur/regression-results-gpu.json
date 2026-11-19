@@ -1,51 +1,98 @@
 [
   {
+    "test": "test_entrepreneur_coop-gpu",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 10.06,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_entrepreneur_coop-gpu.log",
+    "teardown_warnings": []
+  },
+  {
+    "test": "test_entrepreneur_dropin-touch-gpu",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 5.55,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_entrepreneur_dropin-touch-gpu.log",
+    "teardown_warnings": []
+  },
+  {
+    "test": "test_catalogue_stress-gpu",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 104.66,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_catalogue_stress-gpu.log",
+    "teardown_warnings": []
+  },
+  {
     "test": "test_catalogue_migration-gpu",
     "passed": true,
     "exit_code": 0,
-    "seconds": 5.05,
-    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_catalogue_migration-gpu.log"
+    "seconds": 4.53,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_catalogue_migration-gpu.log",
+    "teardown_warnings": []
   },
   {
     "test": "test_entrepreneur_rules-gpu",
     "passed": true,
     "exit_code": 0,
-    "seconds": 1.5,
-    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_entrepreneur_rules-gpu.log"
+    "seconds": 1.51,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_entrepreneur_rules-gpu.log",
+    "teardown_warnings": []
   },
   {
     "test": "test_day0100-gpu",
     "passed": true,
     "exit_code": 0,
-    "seconds": 3.53,
-    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_day0100-gpu.log"
+    "seconds": 3.52,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_day0100-gpu.log",
+    "teardown_warnings": []
   },
   {
     "test": "test_disc096-gpu",
     "passed": true,
     "exit_code": 0,
-    "seconds": 4.02,
-    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_disc096-gpu.log"
+    "seconds": 3.51,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_disc096-gpu.log",
+    "teardown_warnings": []
   },
   {
     "test": "test_capture0103-gpu",
     "passed": true,
     "exit_code": 0,
     "seconds": 3.53,
-    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_capture0103-gpu.log"
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_capture0103-gpu.log",
+    "teardown_warnings": []
   },
   {
     "test": "test_entrepreneur_flow-gpu",
     "passed": true,
     "exit_code": 0,
-    "seconds": 6.56,
-    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_entrepreneur_flow-gpu.log"
+    "seconds": 6.06,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_entrepreneur_flow-gpu.log",
+    "teardown_warnings": []
   },
   {
     "test": "test_entrepreneur_flow-touch-gpu",
     "passed": true,
     "exit_code": 0,
     "seconds": 6.53,
-    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_entrepreneur_flow-touch-gpu.log"
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_entrepreneur_flow-touch-gpu.log",
+    "teardown_warnings": []
+  },
+  {
+    "test": "test_coop_full_simulation-gpu",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 30.58,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_coop_full_simulation-gpu.log",
+    "teardown_warnings": []
+  },
+  {
+    "test": "test_coop_full_mobile-gpu",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 30.59,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_coop_full_mobile-gpu.log",
+    "teardown_warnings": []
   }
 ]

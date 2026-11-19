@@ -1,0 +1,136 @@
+extends RefCounted
+## Visiting players send intent, never prices, balances, or inventory state.
+static func perform(business,command:Dictionary,position:Vector3) -> String:
+	if str(command.get("op","")) in ["parcel","take_board","place_board","drill","screw","place_shelf","place_poster","cancel_poster","sign"]:
+		return physical(business,command,position)
+	var near_computer:bool=position.distance_to(business.game.clerk.screen.global_position)<=2.5 or position.distance_to(business.office_screen.global_position)<=2.5
+	if not near_computer:return "Approche-toi d’un ordinateur pour gérer la boutique."
+	var op:=str(command.get("op",""))
+	var id:=int(command.get("id",-1))
+	var success:=false
+	match op:
+		"buy":
+			if int(command.get("day",-1))!=business.state.day:return "La boutique en ligne a changé. Actualise la commande."
+			match str(command.get("kind","")):
+				"film":success=business.buy_film(id)
+				"shelf":success=business.buy_shelf(id)
+				"bundle":
+					if id<0 or id>=business.state.bundles.size():return "Ce lot n’est plus disponible."
+					var batch:Dictionary=business.state.bundles[id]
+					success=business.state.buy("films",-1,batch.price,batch.movies)
+			return "Commande confirmée. Livraison au backstore." if success else "Commande impossible : fonds insuffisants ou article indisponible."
+		"poster":
+			if not business.state.offers.has(id):return "Ce film n’est plus proposé aujourd’hui."
+			success=business.state.buy("poster",id,1500)
+			return "Affiche commandée." if success else "Fonds insuffisants."
+		"label":
+			var genre:=int(command.get("genre",-1))
+			if id<0 or id>=business.state.shelves.size() or genre<0 or genre>=business.state.CATEGORIES.size():return "Rayon ou catégorie indisponible."
+			return "Étiquette commandée." if business.state.buy("sign",genre,300,[id]) else "Fonds insuffisants."
+		"sell":return "Exemplaire revendu." if business.sell_copy(id) else "Cet exemplaire ne peut pas être revendu."
+		"claim":
+			var customer:Dictionary=business.game.clerk.active
+			if customer.is_empty() or int(customer.get("account_id",-1))!=id:return "Ce client doit être à la caisse pour réclamer ses frais."
+			if not business.ledgers.has(id):return "Dossier indisponible."
+			var ledger:Dictionary=business.ledgers[id]
+			var amount:int=ledger.get("balance",0)
+			customer.account_due=int(customer.get("account_due",0))+amount
+			business.game.clerk.accounts.ensure(id).balance+=amount
+			ledger.balance=0
+			business.game.clerk.refresh_invoice()
+			return "Frais ajoutés à la facture." if amount>0 else "Aucun frais à réclamer."
+		"ban":
+			if not business.ledgers.has(id):return "Dossier indisponible."
+			business.ledgers[id].banned=not business.ledgers[id].get("banned",false)
+			return "Dossier mis à jour."
+		"cancel":
+			for index in business.state.reservations.size():
+				var reservation:Dictionary=business.state.reservations[index]
+				if int(reservation.account)==id and int(reservation.movie)==int(command.get("movie",-1)):
+					business.cancel_reservation(index)
+					return "Réservation annulée."
+			return "Cette réservation n’est plus active."
+		"day":
+			match business.state.phase:
+				"preparation":return "Boutique ouverte." if business.open_day() else "Prépare les rayons avant d’ouvrir."
+				"closing":return "Close terminé." if business.close_day() else "La boutique doit encore être rangée."
+				"closed":business.next_day();return "Nouvelle journée."
+			return "La boutique ferme à minuit."
+		"save":return "Partie partagée sauvegardée." if business.game.session.save_game(false) else "Échec de sauvegarde."
+	return "Action de gestion inconnue."
+
+static func point_from(command:Dictionary) -> Vector3:
+	var values:Variant=command.get("point")
+	if not values is Array or values.size()!=3:return Vector3.INF
+	for value in values:
+		if not (value is float or value is int) or not is_finite(float(value)) or absf(float(value))>50:return Vector3.INF
+	return Vector3(float(values[0]),float(values[1]),float(values[2]))
+
+static func physical(b,command:Dictionary,position:Vector3) -> String:
+	var op:=str(command.get("op",""))
+	var id:=int(command.get("id",-1))
+	if op=="sign":
+		if position.distance_to(b.sign.global_position)>2.5:return "Approche-toi du néon."
+		b.action(0,1)
+		return ""
+	if op=="parcel":
+		if not b.packages.has(id) or position.distance_to(b.packages[id].global_position)>2.8:return "Approche-toi du colis."
+		var orders:Array=b.state.orders.filter(func(order):return int(order.id)==id)
+		if orders.is_empty():return "Ce colis a déjà été ouvert."
+		if orders[0].kind=="poster":
+			if b.poster_placement.active() or (b.guest_poster_order>=0 and b.guest_poster_order!=id):return "Une affiche est déjà en cours de placement."
+			b.guest_poster_order=id
+			return "Vise un mur pour poser l’affiche."
+		b.open_parcel(id)
+		return ""
+	if op=="cancel_poster":
+		if b.guest_poster_order==id:b.guest_poster_order=-1
+		return "Colis de l’affiche conservé."
+	if op=="place_poster":
+		if b.guest_poster_order!=id:return "Cette affiche n’est plus en cours de placement."
+		var point:=point_from(command)
+		if not point.is_finite() or position.distance_to(point)>5:return "Vise un mur à proximité."
+		var hit:Dictionary=b.poster_placement.wall_pose(position,(point-position).normalized())
+		if hit.is_empty() or hit.pose.origin.distance_to(point)>.12 or not b.poster_placement.allowed(hit.pose,position):return "Cet emplacement est occupé ou masqué."
+		var orders:Array=b.state.orders.filter(func(order):return int(order.id)==id)
+		if orders.is_empty():return "Cette affiche a déjà été posée."
+		b.state.posters.append({"movie":int(orders[0].value),"day":b.state.day,"pose":hit.pose})
+		b.place_poster(int(orders[0].value));b.consume_order(orders[0]);b.guest_poster_order=-1
+		return "Affiche posée."
+	if op=="place_shelf":
+		if not b.guest_placing or not is_instance_valid(b.ghost):return "Aucune étagère à poser."
+		var point:=point_from(command)
+		var angle:Variant=command.get("angle",0)
+		if not point.is_finite() or not (angle is int or angle is float) or not is_finite(float(angle)) or absf(float(angle))>100:return "Placement invalide."
+		if Vector2(point.x-position.x,point.z-position.z).length()>5:return "Approche-toi de l’emplacement."
+		var pose:Transform3D=b.snap_placement(point,snappedf(float(angle),PI/2),int(b.assembly.model))
+		if not b.valid_placement(pose,int(b.assembly.model)):return "Le passage est bloqué."
+		b.ghost.transform=pose;b.finish_placement()
+		return "Étagère posée."
+	if not is_instance_valid(b.assembly_node) or position.distance_to(b.assembly_node.global_position)>2.8:return "Approche-toi de l’établi."
+	match op:
+		"take_board":
+			if b.assembly.is_empty() or int(b.assembly.boards)>=6:return "Les planches sont déjà posées."
+			if b.board_hand>=0 or b.guest_board or b.guest_drill:return "Une planche ou un outil est déjà en main."
+			b.guest_board=true
+			b.guest_board_node=b.Props.box(b,Vector3.ZERO,Vector3(.35,.025,.18),"b58b5b")
+			return "Planche prise."
+		"place_board":
+			if not b.guest_board:return "Prends la planche à côté de l’établi."
+			b.guest_board=false
+			if is_instance_valid(b.guest_board_node):b.guest_board_node.queue_free();b.guest_board_node=null
+			b.place_board()
+			return "Planche placée."
+		"drill":
+			if b.drill_hand>=0 or b.guest_board:return "La perceuse est déjà utilisée, ou ta main est occupée."
+			b.guest_drill=not b.guest_drill
+			if not b.guest_drill:b.drill.position=Vector3(-3.1,.94,-12.8);b.drill.rotation=Vector3.ZERO
+			return "Perceuse prise." if b.guest_drill else "Perceuse reposée."
+		"screw":
+			if not b.guest_drill or b.assembly.is_empty() or int(b.assembly.boards)!=6:return "Pose les six planches puis prends la perceuse."
+			b.fasten_screw(.61)
+			if is_instance_valid(b.ghost):
+				b.guest_drill=false;b.guest_placing=true
+				b.drill.position=Vector3(-3.1,.94,-12.8);b.drill.rotation=Vector3.ZERO
+			return "Vis fixée."
+	return "Action d’atelier indisponible."

@@ -76,7 +76,7 @@ func refresh() -> void:
 			for id in business.ledgers:
 				var entry:Dictionary=business.ledgers[id]
 				row_ids.append({"kind":"client","id":id})
-				descriptions.append("Client %03d · %d visites · %d retards · %.2f $ · %s"%[id,entry.get("visits",0),entry.get("late",0),entry.get("balance",0)/100.0,"BANNI" if entry.get("banned",false) else "ACTIF"])
+				descriptions.append("Client %03d · %d visites · %d retards · %d abîmés\nFrais à réclamer : %.2f $ · %s"%[id,entry.get("visits",0),entry.get("late",0),entry.get("damage",0),entry.get("balance",0)/100.0,"BANNI" if entry.get("banned",false) else "ACTIF"])
 			message.text="Les frais sont à réclamer au client à sa prochaine visite. Bannir empêche ses nouvelles locations."
 			primary.text="Réclamer les frais"
 			secondary.text="Bannir / réadmettre"
@@ -119,9 +119,16 @@ func select_row(index:int) -> void:
 	selected=offset+index
 	refresh()
 
+func remote(command:Dictionary) -> bool:
+	var touch=business.game.touch_controls
+	if not touch or not touch.coop_panel.connected:return false
+	touch.coop_panel.send("enterprise","",JSON.stringify(command))
+	return true
+
 func act() -> void:
 	if not business:return
 	if page==4:
+		if remote({"op":"save"}):return
 		business.game.session.save_game()
 		return
 	if selected<0 or selected>=row_ids.size():return
@@ -131,6 +138,8 @@ func act() -> void:
 		selected_genre=(selected_genre+1)%business.state.CATEGORIES.size()
 		refresh()
 		return
+	if page==0 and remote({"op":"buy","kind":item.kind,"id":int(item.id),"day":business.state.day}):return
+	if page==2 and remote({"op":"claim","id":int(item.id)}):return
 	match page:
 		0:
 			match item.kind:
@@ -163,6 +172,18 @@ func alternate() -> void:
 	var item:Dictionary=row_ids[selected]
 	match page:
 		0:
+			if item.kind=="film" and remote({"op":"poster","id":int(item.id)}):return
+		1:
+			if remote({"op":"sell","id":int(item.id)}):return
+		2:
+			if remote({"op":"ban","id":int(item.id)}):return
+		3:
+			var reservation:Dictionary=business.state.reservations[item.id]
+			if remote({"op":"cancel","id":int(reservation.account),"movie":int(reservation.movie)}):return
+		5:
+			if remote({"op":"label","id":int(item.id),"genre":selected_genre}):return
+	match page:
+		0:
 			if item.kind=="film":
 				var ok:bool=business.state.buy("poster",item.id,1500)
 				business.game._message("Affiche commandée." if ok else "Fonds insuffisants.")
@@ -177,6 +198,7 @@ func alternate() -> void:
 	refresh()
 
 func day_action() -> void:
+	if remote({"op":"day"}):return
 	match business.state.phase:
 		"preparation":business.open_day()
 		"closing":business.close_day()

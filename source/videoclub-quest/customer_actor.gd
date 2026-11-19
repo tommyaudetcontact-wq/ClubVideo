@@ -2,6 +2,15 @@ extends RefCounted
 
 static var wardrobe:StandardMaterial3D
 
+static func replace(parent:Node3D,index:int) -> bool:
+	if not ResourceLoader.exists("res://assets/customers/client-%d.glb"%posmod(index,8)):return false
+	for node_name in ["ActorVisual","Arm1"]:
+		var old:=parent.get_node_or_null(node_name)
+		if old:
+			parent.remove_child(old)
+			old.queue_free()
+	return attach(parent,index)
+
 static func attach(parent:Node3D,index:int)->bool:
 	var path:="res://assets/customers/client-%d.glb"%posmod(index,8)
 	if not ResourceLoader.exists(path):return false

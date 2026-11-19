@@ -84,6 +84,7 @@ func setup(owner_game):
 	host_button=button(layout,"Héberger ma partie",game.lobby.toggle_mobile_host)
 	game.lobby.changed.connect(refresh_players)
 	game.lobby.join_granted.connect(connect_host)
+	call_deferred("connect_pending")
 	feedback=Label.new()
 	feedback.text="Active la coop sur les deux appareils, sur le même Wi-Fi."
 	feedback.add_theme_color_override("font_color",Color("123968"))
@@ -164,10 +165,35 @@ func join_or_leave():
 		return
 	game.lobby.toggle_available()
 
+func connect_pending() -> void:
+	if not is_inside_tree():return
+	if not get_tree().has_meta("coop_pending_join"):return
+	var pending:Dictionary=get_tree().get_meta("coop_pending_join")
+	get_tree().remove_meta("coop_pending_join")
+	game.lobby.set_available(true)
+	connect_host(str(pending.ip),str(pending.grant))
+
 func connect_host(ip:String,access:String):
 	if socket or game.clerk.lan.server:return
+	if game.entrepreneur and (game.entrepreneur.board_hand>=0 or game.entrepreneur.drill_hand>=0 or is_instance_valid(game.entrepreneur.ghost) or game.entrepreneur.poster_placement.active()):
+		feedback.text="Termine le placement ou repose les outils avant de rejoindre."
+		return
 	if game.held or game.touch_controls.basket_carried or game.clerk.wallet.occupied(0) or game.clerk.wallet.occupied(1):
 		feedback.text="Dépose le boîtier et le panier avant de rejoindre."
+		return
+	var remote_mode:="entrepreneur" if game.entrepreneur_mode else "normal"
+	for peer in game.lobby.peers.values():
+		if str(peer.ip)==ip:remote_mode=str(peer.get("mode","normal"));break
+	if (remote_mode=="entrepreneur")!=game.entrepreneur_mode:
+		if game.session.load_failed or not game.session.save_game(false):
+			feedback.text="Sauvegarde ta partie locale avant de changer de mode pour rejoindre."
+			return
+		get_tree().set_meta("coop_return_mode",{"entrepreneur":game.entrepreneur_mode,"streamer":game.streamer_mode})
+		get_tree().set_meta("coop_pending_join",{"ip":ip,"grant":access})
+		get_tree().set_meta("entrepreneur_mode",remote_mode=="entrepreneur")
+		get_tree().set_meta("streamer_mode",false)
+		get_tree().paused=false
+		get_tree().reload_current_scene()
 		return
 	grant=access
 	socket=StreamPeerTCP.new()
@@ -212,6 +238,13 @@ func reset(message:String):
 	avatar=null
 	buffer.clear()
 	checkout.clear()
+	if get_tree().has_meta("coop_return_mode"):
+		var previous:Dictionary=get_tree().get_meta("coop_return_mode")
+		get_tree().remove_meta("coop_return_mode")
+		get_tree().set_meta("entrepreneur_mode",previous.entrepreneur)
+		get_tree().set_meta("streamer_mode",previous.streamer)
+		get_tree().paused=false
+		get_tree().call_deferred("reload_current_scene")
 	selected.clear()
 	shown_inventory.clear()
 	feedback.text=message
@@ -255,6 +288,9 @@ func receive(reply:Dictionary):
 		return
 	if reply.get("v")!=1:return
 	if reply.get("checkout") is Dictionary:
+		if reply.get("catalogue",0)!=1:
+			reset("Mets les deux appareils à jour : leurs catalogues de films sont différents.")
+			return
 		world_in_flight=false
 		if not connected:
 			if not reply.get("world") is String:
@@ -356,6 +392,7 @@ func guest_held_pose()->Transform3D:
 
 func _physics_process(_delta:float):
 	if not is_instance_valid(mirror):return
+	if connected and game.entrepreneur:game.entrepreneur.update_tools(_delta)
 	if basket_carried:game.clerk.basket.body.global_transform=game.head.global_transform*Transform3D(Basis(Vector3.UP,.10),Vector3(-.35,-.43,-.77))
 	var node:Node3D=mirror.nodes.get("cases"+guest_case_id)
 	if is_instance_valid(node):
@@ -378,7 +415,7 @@ func send(action:String,id:String="",target:String=""):
 	if action.is_empty():
 		world_in_flight=true
 		world_sent_at=Time.get_ticks_msec()
-	var message:={"case":selected_case if id.is_empty() else id,"v":1,"grant":grant,"features":["checkout","world_sync","world_delta"],"action":action,"target":target,"customer":checkout.get("customer",-1),"coins":selected,"pose":PeerPose.pack(game)}
+	var message:={"catalogue":1,"case":selected_case if id.is_empty() else id,"v":1,"grant":grant,"features":["checkout","world_sync","world_delta","business"],"action":action,"target":target,"customer":checkout.get("customer",-1),"coins":selected,"pose":PeerPose.pack(game)}
 	message.merge(PeerPose.appearance(game))
 	socket.put_data((JSON.stringify(message)+"\n").to_utf8_buffer())
 

@@ -17,7 +17,7 @@ func setup(g):
 	name="SavedGame"
 	process_mode=Node.PROCESS_MODE_ALWAYS
 	tools_run=OS.get_cmdline_args().has("--script")
-	if not tools_run and (FileAccess.file_exists(save_path) or FileAccess.file_exists(save_path+".bak")):
+	if not tools_run and not get_tree().has_meta("coop_pending_join") and (FileAccess.file_exists(save_path) or FileAccess.file_exists(save_path+".bak")):
 		load_failed=not restore_file()
 		if load_failed:game._message("Sauvegarde incompatible : elle est conservée. Utilise Nouvelle partie pour recommencer.")
 		else:
@@ -151,6 +151,7 @@ func pack_cash(entry:Dictionary,transform:Transform3D)->Dictionary:
 	return {"value":entry.value,"tender":entry.tender,"customer_id":entry.get("customer_id",-1),"transform":transform}
 
 func guest_coop()->bool:
+	if get_tree().has_meta("coop_return_mode"):return true
 	return game.touch_profile and game.touch_controls!=null and game.touch_controls.coop_panel!=null and game.touch_controls.coop_panel.connected
 
 func save_game(announce=true)->bool:

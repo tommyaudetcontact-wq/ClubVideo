@@ -599,7 +599,10 @@ func use_target():
 	if coop_panel.connected:
 		if not tap_aim:sync_hands()
 		var target:=coop_interaction()
-		if target.action=="computer":open_desktop()
+		if target.action=="business_use":game.entrepreneur.mobile_use()
+		elif target.action=="computer":
+			if target.get("business",false):clerk.desktop.open_program(5)
+			open_desktop()
 		elif target.action=="basket_menu":open_basket()
 		elif target.action=="cash_take":
 			if target.target=="tender":take_payment()
@@ -865,6 +868,15 @@ func coop_marked(target:Dictionary,pose:Transform3D,bounds:Vector3)->Dictionary:
 
 func coop_interaction()->Dictionary:
 	if not coop_panel.guest_disc.is_empty():return inspection_disc_action()
+	if game.entrepreneur and coop_panel.guest_case_id.is_empty() and not clerk.wallet.occupied(CASH_HAND):
+		var hint:String=game.entrepreneur.mobile_hint()
+		if not hint.is_empty():return {"action":"business_use","label":hint}
+		for target in clerk.targets:
+			if target.action!="enterprise" or not is_instance_valid(target.node) or not near(target.node.global_position,2.8) or aimed(target.node.global_position,target.radius)==INF:continue
+			var value:=int(target.value)
+			if value==3:return coop_marked({"action":"computer","business":true,"label":"Mon entreprise"},target.node.global_transform,Vector3(.48,.36,.08))
+			var command:Dictionary={"op":"parcel","id":value-100} if value>=100 else {"op":"sign" if value==0 else "drill" if value==2 else "take_board"}
+			return coop_marked({"action":"enterprise","target":JSON.stringify(command),"label":"Ouvrir le colis" if value>=100 else "Néon ouvert / fermé" if value==0 else "Prendre la perceuse" if value==2 else "Prendre la planche"},target.node.global_transform,Vector3.ONE*target.radius*1.5)
 	if clerk.desktop.project_ray(game.aim_hands[0]).x>=0:
 		var screen_size:Vector2=clerk.screen.mesh.size
 		return coop_marked({"action":"computer","label":"Ouvrir l’ordi"},clerk.screen.global_transform,Vector3(screen_size.x+.012,screen_size.y+.012,.018))
@@ -891,6 +903,8 @@ func coop_interaction()->Dictionary:
 		if coop_panel.customer_pos.is_finite() and near(coop_panel.customer_pos) and aimed(coop_panel.customer_pos,.42)<INF:
 			return coop_marked({"action":"case_handoff","label":"Remettre le film"},Transform3D(Basis.IDENTITY,coop_panel.customer_pos),Vector3(.24,.19,.20))
 		if basket_aimed():return coop_marked({"action":"held_basket","label":"Mettre au panier"},clerk.basket.body.global_transform,Vector3(.46,.27,.39))
+		if game.entrepreneur and near(Vector3(2.7,1.2,-7.2),1.8) and aimed(Vector3(2.7,1.2,-7.2),.35)<INF:
+			return coop_marked({"action":"case_reserve","label":"Préparer la réservation"},Transform3D(Basis.IDENTITY,Vector3(2.7,1.2,-7.2)),Vector3(.65,.3,.36))
 		var tray:=Vector3(1.75,1.19,-5.92)
 		if near(tray,1.8) and aimed(tray,.32)<INF:
 			return coop_marked({"action":"case_sort","label":"Mettre au tri"},Transform3D(Basis.IDENTITY,tray),Vector3(.46,.14,.40))
@@ -960,7 +974,7 @@ func coop_case_target()->Dictionary:
 	return result
 
 func refresh_action(over_desktop:bool):
-	if game.entrepreneur and not coop_panel.connected:
+	if game.entrepreneur and (not coop_panel.connected or game.entrepreneur.guest_board or game.entrepreneur.guest_drill or game.entrepreneur.guest_placing or game.entrepreneur.poster_placement.active()):
 		var business_hint:String=game.entrepreneur.mobile_hint()
 		if not business_hint.is_empty():
 			primary_button.text=business_hint
@@ -1044,7 +1058,9 @@ func flip_item():
 	if coop_panel.connected:
 		coop_panel.send("disc_flip" if not coop_panel.guest_disc.is_empty() else "case_flip")
 		return
-	if clerk.inspection.finger>=0:disc_back=not disc_back
+	if clerk.inspection.finger>=0:
+		disc_back=not disc_back
+		if disc_back:clerk.inspection.mark_inspected()
 	elif not clerk.inspection.opened:game._flip_held()
 
 func use_disc(target:String=""):

@@ -1,9 +1,31 @@
 [
   {
+    "test": "test_entrepreneur_coop-compat",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 9.06,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_entrepreneur_coop-compat.log",
+    "teardown_warnings": [
+      "ERROR: Texture with GL ID of 175: leaked 87380 bytes.",
+      "ERROR: Texture with GL ID of 176: leaked 87380 bytes."
+    ]
+  },
+  {
+    "test": "test_entrepreneur_dropin-touch-compat",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 8.55,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_entrepreneur_dropin-touch-compat.log",
+    "teardown_warnings": [
+      "ERROR: Texture with GL ID of 164: leaked 87380 bytes.",
+      "ERROR: Texture with GL ID of 165: leaked 87380 bytes."
+    ]
+  },
+  {
     "test": "test_entrepreneur_flow-compat",
     "passed": true,
     "exit_code": 0,
-    "seconds": 4.05,
+    "seconds": 4.55,
     "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_entrepreneur_flow-compat.log",
     "teardown_warnings": [
       "ERROR: Texture with GL ID of 23: leaked 349524 bytes.",
@@ -14,15 +36,15 @@
       "ERROR: Texture with GL ID of 30: leaked 349524 bytes.",
       "ERROR: Texture with GL ID of 31: leaked 87380 bytes.",
       "ERROR: Texture with GL ID of 32: leaked 87380 bytes.",
-      "ERROR: Texture with GL ID of 106: leaked 87380 bytes.",
-      "ERROR: Texture with GL ID of 177: leaked 87380 bytes."
+      "ERROR: Texture with GL ID of 93: leaked 87380 bytes.",
+      "ERROR: Texture with GL ID of 106: leaked 87380 bytes."
     ]
   },
   {
     "test": "test_entrepreneur_flow-touch-compat",
     "passed": true,
     "exit_code": 0,
-    "seconds": 4.53,
+    "seconds": 4.05,
     "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_entrepreneur_flow-touch-compat.log",
     "teardown_warnings": [
       "ERROR: Texture with GL ID of 23: leaked 349524 bytes.",
@@ -33,8 +55,24 @@
       "ERROR: Texture with GL ID of 30: leaked 349524 bytes.",
       "ERROR: Texture with GL ID of 31: leaked 87380 bytes.",
       "ERROR: Texture with GL ID of 32: leaked 87380 bytes.",
-      "ERROR: Texture with GL ID of 95: leaked 87380 bytes.",
-      "ERROR: Texture with GL ID of 106: leaked 87380 bytes."
+      "ERROR: Texture with GL ID of 88: leaked 87380 bytes.",
+      "ERROR: Texture with GL ID of 95: leaked 87380 bytes."
     ]
+  },
+  {
+    "test": "test_coop_full_simulation-compat",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 31.31,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_coop_full_simulation-compat.log",
+    "teardown_warnings": []
+  },
+  {
+    "test": "test_coop_full_mobile-compat",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 29.08,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_coop_full_mobile-compat.log",
+    "teardown_warnings": []
   }
 ]

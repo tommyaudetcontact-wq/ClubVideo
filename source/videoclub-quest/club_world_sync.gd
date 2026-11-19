@@ -4,6 +4,7 @@ const Actor=preload("res://customer_actor.gd")
 const Props=preload("res://clerk_props.gd")
 const Case=preload("res://held_case.gd")
 const Save=preload("res://club_save.gd")
+const CATALOGUE_REVISION=1
 var game
 var host_basket
 var nodes:Dictionary={}
@@ -17,8 +18,10 @@ var drawer_pose:Transform3D
 var drawer_target:Transform3D
 var drawer_motion:Tween
 var motion_targets:Dictionary={}
+var business_replica
 
 static func shelf_key(game,record:Dictionary)->String:
+	if game.entrepreneur:return "E|%d"%int(record.id)
 	return "%s|%d|%d"%[game._position_key(record.world.origin),record.movie,record.index]
 
 static func capture(game,include_stock:bool=true)->String:
@@ -26,6 +29,7 @@ static func capture(game,include_stock:bool=true)->String:
 	var stock:Dictionary={}
 	if include_stock:
 		for record in game.dvd_records:
+			if game.entrepreneur and not game.entrepreneur.state.stock.has(int(record.id)):continue
 			var flags:int=int(record.get("dirty",false))|int(record.get("locked",true))<<1
 			if record.get("clerk_reserved",false) or record.get("loose",false):flags|=4
 			stock[shelf_key(game,record)]=[record.movie,record.disc_movie,record.disc_uid,flags,record.world]
@@ -33,7 +37,7 @@ static func capture(game,include_stock:bool=true)->String:
 	for item in c.cases:
 		var node:Node3D=item.node
 		if not is_instance_valid(node):continue
-		cases.append({"id":str(node.get_instance_id()),"movie":item.movie,"disc":node.get_meta("disc_movie",item.movie),"dirty":node.get_meta("dirty",false),"locked":node.get_meta("antitheft",false),"transform":node.global_transform,"opened":(c.inspection.opened and node==c.inspection.case_node) or (is_instance_valid(c.lan.guest_inspection) and c.lan.guest_inspection.opened and node==c.lan.guest_inspection.case_node),"held":node==game.held or item==c.secondary or node.get_meta("guest_held",false),"busy":node.get_meta("customer_animating",false),"kind":item.kind,"in_basket":node.get_meta("in_basket",false),"basket_owner":node.get_meta("basket_owner","host"),"scanned":item.scanned})
+		cases.append({"id":str(node.get_instance_id()),"record":int(item.get("record",{}).get("id",-1)),"movie":item.movie,"disc":node.get_meta("disc_movie",item.movie),"dirty":node.get_meta("dirty",false),"locked":node.get_meta("antitheft",false),"transform":node.global_transform,"opened":(c.inspection.opened and node==c.inspection.case_node) or (is_instance_valid(c.lan.guest_inspection) and c.lan.guest_inspection.opened and node==c.lan.guest_inspection.case_node),"held":node==game.held or item==c.secondary or node.get_meta("guest_held",false),"busy":node.get_meta("customer_animating",false),"kind":item.kind,"in_basket":node.get_meta("in_basket",false),"basket_owner":node.get_meta("basket_owner","host"),"scanned":item.scanned})
 	for record in game.modes.loose_dvds:
 		var loose:Node3D=record.get("loose_body")
 		if is_instance_valid(loose):
@@ -48,7 +52,7 @@ static func capture(game,include_stock:bool=true)->String:
 			var follower:Node3D=n.get_node_or_null("Companion%d"%index)
 			if follower:
 				followers.append({"index":index,"transform":follower.global_transform,"clip":actor_clip(follower)})
-		clients.append({"id":str(customer.id),"transform":n.global_transform,"patience":float(customer.get("patience",0)),"patience_limit":float(customer.get("patience_limit",120)),"patience_active":customer.get("patience_started",false) and customer.state!="exit","intent":load("res://club_visit_icons.gd").reason_mask(customer),"rental_count":load("res://club_visit_icons.gd").remaining_count(customer),"moving":customer.cursor<customer.path.size(),"companions":customer.get("companions",[]),"followers":followers,"clip":actor_clip(n),"carry":customer.get("movie",-1) if is_instance_valid(customer.get("carry")) and customer.carry.visible else -1})
+		clients.append({"id":str(customer.id),"appearance":int(customer.get("appearance",int(customer.id)%6)),"transform":n.global_transform,"patience":float(customer.get("patience",0)),"patience_limit":float(customer.get("patience_limit",120)),"patience_active":customer.get("patience_started",false) and customer.state!="exit","intent":load("res://club_visit_icons.gd").reason_mask(customer),"rental_count":load("res://club_visit_icons.gd").remaining_count(customer),"moving":customer.cursor<customer.path.size(),"companions":customer.get("companions",[]),"followers":followers,"clip":actor_clip(n),"carry":customer.get("movie",-1) if is_instance_valid(customer.get("carry")) and customer.carry.visible else -1})
 	var discs:Array=[]
 	if c.inspection.opened and is_instance_valid(c.inspection.disc) and c.inspection.disc.visible:
 		var id:int=c.inspection.case_node.get_meta("disc_movie",-1)
@@ -81,6 +85,10 @@ static func capture(game,include_stock:bool=true)->String:
 	var day:Dictionary={}
 	for key in Save.SHIFT_FIELDS:day[key]=c.shift.get(key)
 	var payload={"stock":stock,"cases":cases,"clients":clients,"discs":discs,"cash":cash,"bars":bars,"repair":{"remaining":c.repairs.remaining,"busy":is_instance_valid(c.repairs.disc)},"guest_basket":c.lan.personal_basket().body.global_transform,"basket":c.basket.body.global_transform,"drawer":c.drawer.global_transform,"shift":day,"audio":{"scan":c.scan_serial,"ring":c.ring_serial,"ringing":c.ringing,"trailer":game.active_trailer}}
+	if game.entrepreneur and include_stock:
+		var b=game.entrepreneur
+		payload.business=b.snapshot()
+		payload.business.controls={"board":b.guest_board,"drill":b.guest_drill,"placing":b.guest_placing,"poster":b.guest_poster_order,"ghost":b.ghost.global_transform if is_instance_valid(b.ghost) else Transform3D.IDENTITY,"drill_pose":b.drill.global_transform,"board_pose":b.guest_board_node.global_transform if is_instance_valid(b.guest_board_node) else Transform3D.IDENTITY}
 	if not include_stock:payload.erase("stock")
 	var raw:=var_to_bytes(payload)
 	return Marshalls.raw_to_base64(raw.compress(FileAccess.COMPRESSION_DEFLATE))
@@ -90,13 +98,16 @@ static func actor_clip(node:Node3D)->String:
 	return str(visual.get_meta("clip","Idle")) if visual else "Idle"
 
 static func shelf_case_state(record:Dictionary,node:Node3D,held:bool)->Dictionary:
-	return {"id":str(node.get_instance_id()),"movie":record.movie,"disc":record.disc_movie,"dirty":record.get("dirty",false),"locked":record.get("locked",true),"transform":node.global_transform,"opened":false,"held":held,"kind":"shelve","in_basket":false,"scanned":false}
+	return {"id":str(node.get_instance_id()),"record":int(record.id),"movie":record.movie,"disc":record.disc_movie,"dirty":record.get("dirty",false),"locked":record.get("locked",true),"transform":node.global_transform,"opened":false,"held":held,"kind":"shelve","in_basket":false,"scanned":false}
 
 static func disc_state(node:Node3D,movie:int,dirty:bool)->Dictionary:
 	return {"id":str(node.get_instance_id()),"movie":movie,"dirty":dirty,"transform":node.global_transform}
 
 func setup(owner_game):
 	game=owner_game
+	if game.entrepreneur:
+		business_replica=preload("res://entrepreneur_replica.gd").new()
+		business_replica.setup(game.entrepreneur)
 	process_mode=Node.PROCESS_MODE_ALWAYS
 	basket_pose=game.clerk.basket.body.global_transform
 	drawer_pose=game.clerk.drawer.global_transform
@@ -130,18 +141,33 @@ func apply(encoded:String):
 	if not value.stock is Dictionary:return
 	var stock:Dictionary=value.stock
 	if stock.size()>3500:return
+	if business_replica and value.get("business") is Dictionary:business_replica.apply(value.business)
 	sync_audio(value.get("audio",{}),state.get("audio",{}))
 	state=value
 	if last_stock!=stock:
-		for key in shelf_index:
+		var keys:Array=shelf_index.keys()
+		if game.entrepreneur:
+			var changed:Dictionary={}
+			for key in stock:changed[key]=true
+			for key in last_stock:changed[key]=true
+			for id in business_replica.local_state.rules.stock:changed["E|%d"%int(id)]=true
+			keys=changed.keys()
+		for key in keys:
+			if not shelf_index.has(key):continue
 			var index:int=shelf_index[key]
 			var record:Dictionary=game.dvd_records[index]
 			var row:Array=stock.get(key,[])
 			if not last_stock.is_empty() and row==last_stock.get(key,[]):continue
 			if not originals.has(index):
-				originals[index]={"disc_movie":record.disc_movie,"disc_uid":record.disc_uid,"dirty":record.get("dirty",false),"locked":record.get("locked",true),"clerk_reserved":record.get("clerk_reserved",false)}
+				originals[index]={"disc_movie":record.disc_movie,"disc_uid":record.disc_uid,"dirty":record.get("dirty",false),"locked":record.get("locked",true),"clerk_reserved":record.get("clerk_reserved",false),"world":record.world,"local":record.local,"inverse":record.inverse}
 			var matches:bool=not row.is_empty() and int(row[0])==int(record.movie)
 			if matches:
+				if game.entrepreneur:
+					record.world=row[4]
+					record.local=record.group.global_transform.affine_inverse()*record.world
+					record.inverse=record.world.affine_inverse()
+					game.entrepreneur.index_record(record)
+					record.group.multimesh.visible_instance_count=maxi(record.group.multimesh.visible_instance_count,int(record.index)+1)
 				record.disc_movie=row[1]
 				record.disc_uid=row[2]
 				record.dirty=bool(int(row[3])&1)
@@ -229,6 +255,7 @@ func _process(delta:float):
 		if not is_instance_valid(node):continue
 		var target:Transform3D=motion_targets[key]
 		node.global_transform=target if node.global_position.distance_to(target.origin)>2.0 else node.global_transform.interpolate_with(target,weight)
+	if game.entrepreneur and game.entrepreneur.locate_id>=0:game.entrepreneur.update_locator()
 
 func sync_audio(audio:Dictionary,previous:Dictionary):
 	if audio.is_empty():return
@@ -292,7 +319,7 @@ func make_visual(category:String,entry:Dictionary)->Node3D:
 			add_child(node)
 			Case.build(node,game.layout.movies[entry.movie])
 		"clients":
-			node=Props.customer(self,int(entry.id)%6)
+			node=Props.customer(self,int(entry.get("appearance",int(entry.id)%6)))
 			game.clerk.customers.attach_companions({"node":node,"companions":entry.companions})
 		"discs":
 			if not valid_movie(entry.movie):return null
@@ -330,10 +357,12 @@ func update_shelf(record:Dictionary):
 
 func restore_local():
 	game.clerk.phone_audio.stop()
+	if business_replica:business_replica.restore_local()
 	for index in originals:
 		var record:Dictionary=game.dvd_records[index]
 		record.merge(originals[index],true)
 		update_shelf(record)
+	if game.entrepreneur:game.entrepreneur.rebuild_navigation()
 	game._update_cover_lod(game.head.global_position,true)
 	for node in hidden:
 		if is_instance_valid(node):node.visible=hidden[node]

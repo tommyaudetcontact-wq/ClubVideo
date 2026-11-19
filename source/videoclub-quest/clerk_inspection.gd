@@ -233,21 +233,29 @@ func take_open_disc(hand:int):
 	finger=hand
 	carried=disc
 	carried_data={"movie":int(case_node.get_meta("disc_movie",case_node.get_meta("movie",game.movie_id))),"uid":int(case_node.get_meta("disc_uid",-1)),"dirty":case_node.get_meta("dirty",false),"inspected":false}
+	for key in ["returned_damage","return_account","return_cycle"]:carried_data[key]=case_node.get_meta(key,false if key=="returned_damage" else -1)
 	source_case=case_node
 	label_seen=true
 	load("res://clerk_inventory.gd").put(case_node,-1,-1)
 	carried.reparent(self)
 	disc=null
 	game._message("Inspecte le disque, puis remets-le dans le boîtier ou dépose-le au tri.")
+
+func mark_inspected() -> void:
+	if not is_instance_valid(carried):return
+	var first_time:bool=not carried_data.get("inspected",false)
+	inspected=true
+	carried_data.inspected=true
+	if is_instance_valid(source_case):source_case.set_meta("inspected",true)
+	if first_time and game.entrepreneur:game.entrepreneur.assess_return_damage(carried_data,source_case)
+
 func _physics_process(dt):
 	if finger<0 or not is_instance_valid(carried):return
 	carried.global_transform=finger_transform(finger)
 	if game.layout.movies[carried_data.movie].get("console","")=="GameCube":carried.scale=Vector3(.667,.667,1)
 	var eye:Vector3=game.head.global_position-carried.global_position
 	if eye.length()<.65 and absf(eye.normalized().dot(carried.global_basis.z.normalized()))>.6:
-		inspected=true
-		carried_data.inspected=true
-		if is_instance_valid(source_case):source_case.set_meta("inspected",true)
+		mark_inspected()
 	var pad=Vector3(1.18,1.12,-6.18)
 	if carried.global_position.distance_to(pad)<.20:
 		var travel=carried.global_position.distance_to(last_clean_position)

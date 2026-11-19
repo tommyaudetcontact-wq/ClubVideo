@@ -60,10 +60,11 @@ func permit(ip:String)->String:
 	for token in permits.keys():
 		if int(permits[token].expires)<Time.get_ticks_msec():permits.erase(token)
 	var token:=Crypto.new().generate_random_bytes(12).hex_encode()
-	permits[token]={"ip":ip,"expires":Time.get_ticks_msec()+15000}
+	permits[token]={"ip":ip,"expires":Time.get_ticks_msec()+120000}
 	return token
 
 func disconnect_client():
+	if clerk.game.entrepreneur:clerk.game.entrepreneur.release_guest_tools()
 	if guest_spare:
 		clerk.locks.put_in_bin(clerk.locks.create_bar())
 		guest_spare=false
@@ -115,6 +116,10 @@ func handle_request(request:Variant):
 		disconnect_client()
 		return
 	if not authenticated:
+		if request.get("catalogue",0)!=WorldSync.CATALOGUE_REVISION:
+			send_response({"error":"Mets les deux appareils à jour : leurs catalogues de films sont différents."})
+			disconnect_client()
+			return
 		var token:=str(request.get("grant",""))
 		var access:Dictionary=permits.get(token,{})
 		var valid:bool=not access.is_empty() and access.ip==client.get_connected_host() and int(access.expires)>=Time.get_ticks_msec()
@@ -143,6 +148,13 @@ func handle_request(request:Variant):
 	var receipt:=""
 	var action:=str(request.get("action",""))
 	match action:
+		"enterprise":
+			var encoded:=str(request.get("target",""))
+			var command:Variant=JSON.parse_string(encoded) if encoded.length()<=2048 else null
+			if clerk.game.entrepreneur and command is Dictionary and is_instance_valid(remote_avatar) and remote_avatar.valid_pose:
+				receipt=load("res://entrepreneur_commands.gd").perform(clerk.game.entrepreneur,command,remote_avatar.targets[0].origin)
+				clerk.game.entrepreneur.update_tools(0)
+			else:receipt="Commande entrepreneur indisponible."
 		"case_pick","shelf_pick":
 			receipt=pick_guest_case(action,str(request.get("case","")))
 		"surface_drop":
@@ -161,7 +173,7 @@ func handle_request(request:Variant):
 			receipt="Partie partagée sauvegardée." if clerk.game.session.save_game(false) else "Échec de la sauvegarde."
 		"spare_take":
 			receipt=take_guest_spare()
-		"case_open","disc_use","disc_flip","case_scan","case_lock","case_handoff","case_sort","case_rack","phone","door","day":
+		"case_open","disc_use","disc_flip","case_scan","case_lock","case_handoff","case_sort","case_rack","case_reserve","phone","door","day":
 			receipt=guest_action(action,request)
 		"case_basket","case_shelf":
 			receipt=assist_case(action,str(request.get("case","")))
@@ -186,7 +198,7 @@ func handle_request(request:Variant):
 	var content:Array[String]=[]
 	for tab in range(4):
 		content.append(clerk.terminal_content(tab))
-	var response={"v":VERSION,"action":action,"pages":content,"client":not clerk.active.is_empty(),"can_return":clerk.active.get("is_return",false) and clerk.paid and clerk.scanned,"day":clerk.shift.day}
+	var response={"v":VERSION,"catalogue":WorldSync.CATALOGUE_REVISION,"action":action,"pages":content,"client":not clerk.active.is_empty(),"can_return":clerk.active.get("is_return",false) and clerk.paid and clerk.scanned,"day":clerk.shift.day}
 	var features:Variant=request.get("features",[])
 	if features is Array and "checkout" in features:
 		var inventory:Dictionary={}
@@ -417,6 +429,7 @@ func guest_action(action:String,request:Dictionary)->String:
 	if not is_instance_valid(remote_avatar) or not remote_avatar.valid_pose:return ""
 	var p:Vector3=remote_avatar.targets[0].origin
 	if action=="day":
+		if clerk.game.entrepreneur:return load("res://entrepreneur_commands.gd").perform(clerk.game.entrepreneur,{"op":"day"},p)
 		if p.distance_to(clerk.screen.global_position)>2.0:return "Approche-toi de l’ordinateur."
 		if clerk.shift.summary:clerk.shift.next_day()
 		else:clerk.shift.finish()
@@ -429,6 +442,7 @@ func guest_action(action:String,request:Dictionary)->String:
 				if not clerk.ringing:return ""
 				clerk.ringing=false
 				clerk.phone_audio.stop()
+				if clerk.game.entrepreneur:clerk.game.entrepreneur.answer_phone();return "Réservation notée."
 				clerk.reminders.append("Rappeler Julie : disponibilité de Shrek.")
 				clerk.refresh_terminal()
 			else:clerk.action("door",-1)
@@ -437,12 +451,19 @@ func guest_action(action:String,request:Dictionary)->String:
 	if not is_instance_valid(guest_inspection):return ""
 	if action=="disc_flip" and is_instance_valid(guest_inspection.carried):
 		guest_disc_back=not guest_disc_back
-		guest_inspection.carried_data.inspected=true
+		guest_inspection.mark_inspected()
 		update_guest_case_pose()
 		return ""
 	if action=="disc_use":return use_guest_disc(p,str(request.get("target","")))
 	if guest_case.is_empty():return ""
 	var node:Node3D=guest_case.node
+	if action=="case_reserve" and clerk.game.entrepreneur:
+		if p.distance_to(Vector3(2.7,1.2,-7.2))>1.8:return "Approche-toi du présentoir des réservations."
+		if guest_inspection.opened:guest_inspection.close_case()
+		var used:bool=clerk.game.entrepreneur.reserve_item(guest_case)
+		if int(node.get_meta("reservation_record",-1))>=0:guest_case={};return "Réservation préparée."
+		if used:return "Scanne le retour de cet exemplaire avant de le réserver."
+		return "Aucune réservation en attente pour ce film."
 	if action=="case_open":
 		if guest_inspection.opened:
 			guest_inspection.close_case()

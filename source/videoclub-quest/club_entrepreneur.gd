@@ -6,6 +6,7 @@ var game
 var state:Rules=Rules.new()
 var office_screen:MeshInstance3D
 var calendar_label:Label3D
+var calendar_canvas:Control
 var watch:Label3D
 var sign:Label3D
 var sun:DirectionalLight3D
@@ -30,10 +31,17 @@ var locate_id:=-1
 var release_today:=-1
 var sound:AudioStreamPlayer3D
 var ledgers:Dictionary={}
+var poster_placement=preload("res://entrepreneur_poster_placement.gd").new()
+var guest_board:=false
+var guest_drill:=false
+var guest_placing:=false
+var guest_poster_order:=-1
+var guest_board_node:Node3D
 var order_serial:=100
 
 func setup(g) -> void:
 	game=g
+	poster_placement.setup(self)
 	state.initialize(game.layout.movies,randi())
 	game.clerk.max_basket=4
 	game.clerk.shift.started=false
@@ -97,8 +105,8 @@ func build_backstore() -> void:
 		light.shadow_enabled=false
 		add_child(light)
 	World.solid(self,Vector3(-3.8,.75,-12.9),Vector3(2.5,.06,1.0),"a88963")
-	for x in [-4.8,-2.8]:
-		for z in [-13.2,-12.6]:Props.box(self,Vector3(x,.37,z),Vector3(.06,.74,.06),"525b60")
+	World.desk_base(self,Vector3(-3.8,0,-12.9),2.5,1.0)
+	game.layout.colliders.append({"min":[-5.05,0,-13.4],"max":[-2.55,.8,-12.4]})
 	Props.label(self,"ASSEMBLAGE · PLANCHES ET VIS",Vector3(-3.8,1.65,-13.45),.0009,28)
 	drill=World.drill(self)
 	drill.position=Vector3(-3.1,.94,-12.8)
@@ -108,26 +116,47 @@ func build_backstore() -> void:
 		var pin:=Props.cylinder(screw_box,Vector3((i%4-.5)*.025,.065,(i/4)*.025),.004,.055,"b5bdc1",.7)
 		pin.rotation.x=.4
 	World.solid(self,Vector3(3.7,.72,-13.6),Vector3(2.8,.06,1.0),"b59a73")
-	Props.box(self,Vector3(3.6,1.09,-13.7),Vector3(.55,.47,.44),"bcbba9")
+	World.desk_base(self,Vector3(3.7,0,-13.6),2.8,1.0,true)
+	game.layout.colliders.append({"min":[2.3,0,-14.1],"max":[5.1,.8,-13.1]})
+	var monitor:=World.office_monitor(self)
+	monitor.position=Vector3(3.6,1.12,-13.7)
 	office_screen=MeshInstance3D.new()
 	var quad:=QuadMesh.new()
 	quad.size=Vector2(.44,.32)
 	office_screen.mesh=quad
-	office_screen.position=Vector3(3.6,1.1,-13.468)
+	office_screen.position=Vector3(3.6,1.145,-13.462)
 	add_child(office_screen)
 	var mat:=StandardMaterial3D.new()
 	mat.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.albedo_texture=game.clerk.terminal.get_texture()
 	office_screen.material_override=mat
-	Props.box(self,Vector3(3.6,.78,-13.15),Vector3(.55,.025,.18),"b9b7a7")
-	for row in 4:
-		for col in 12:Props.box(self,Vector3(3.36+col*.042,.797,-13.21+row*.035),Vector3(.034,.009,.025),"d8d4c4")
+	var keyboard:=World.office_keyboard(self)
+	keyboard.position=Vector3(3.6,.78,-13.15)
 	game.clerk.target(office_screen,"enterprise",.28,3)
 	calendar_label=Props.label(self,"",Vector3(1.4,1.7,-14.26),.00085,29)
 	var calendar_back:=Props.box(self,Vector3(1.4,1.7,-14.29),Vector3(1.35,1.20,.018),"eee8d2")
 	calendar_back.material_override=Props.material("eee8d2")
 	calendar_label.modulate=Color("202c3b")
 	calendar_label.outline_size=0
+	calendar_label.hide()
+	var calendar_view:=SubViewport.new()
+	calendar_view.size=Vector2i(768,672)
+	calendar_view.disable_3d=true
+	calendar_view.render_target_update_mode=SubViewport.UPDATE_ONCE
+	add_child(calendar_view)
+	calendar_canvas=preload("res://entrepreneur_calendar.gd").new()
+	calendar_canvas.size=Vector2(768,672)
+	calendar_view.add_child(calendar_canvas)
+	var paper:=MeshInstance3D.new()
+	var paper_quad:=QuadMesh.new();paper_quad.size=Vector2(1.30,1.15)
+	paper.mesh=paper_quad;paper.position=Vector3(1.4,1.7,-14.255)
+	var paper_material:=StandardMaterial3D.new()
+	paper_material.albedo_texture=calendar_view.get_texture()
+	paper_material.roughness=.9
+	paper_material.texture_filter=BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	paper.material_override=paper_material
+	paper.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(paper)
 	Props.cylinder(self,Vector3(1.4,2.28,-14.25),.014,.005,"979d9e",.7).rotation.x=PI/2
 	Props.box(self,Vector3(.2,.015,-11.2),Vector3(2,.01,1.5),"7c8c91")
 	Props.label(self,"RÉCEPTION DES COLIS",Vector3(.2,1.6,-11.7),.001,34)
@@ -207,6 +236,7 @@ func refresh_calendar() -> void:
 		text+=(" X  " if number<int(date.day) else "(%02d)"%number if number==int(date.day) else "%02d  "%number)
 		if (offset+number)%7==0:text+="\n"
 	calendar_label.text=text
+	if calendar_canvas:calendar_canvas.configure(state)
 
 func tick(dt:float) -> void:
 	for order in state.orders:
@@ -358,6 +388,36 @@ func prepare_customer(customer:Dictionary) -> void:
 			customer.business_reservation=int(appointments[0].record)
 			customer.recommendation=false
 		customer.visit_balance=int(game.clerk.accounts.ensure(int(customer.account_id)).balance)
+	apply_regular_appearance(customer)
+
+func apply_regular_appearance(customer:Dictionary) -> void:
+	var account:int=customer.account_id
+	var ledger:Dictionary=ledgers.get(account,{})
+	if not ledger.has("appearance"):ledger.appearance=int(customer.get("appearance",0))
+	var appearance:int=clampi(int(ledger.appearance),0,5)
+	if appearance!=int(customer.get("appearance",0)):
+		if load("res://customer_actor.gd").replace(customer.node,appearance):customer.appearance=appearance
+	ledgers[account]=ledger
+
+func assess_return_damage(data:Dictionary,source:Node3D=null) -> void:
+	var damaged:bool=data.get("returned_damage",false)
+	var account:int=data.get("return_account",-1)
+	var cycle:int=data.get("return_cycle",-1)
+	if is_instance_valid(source):
+		damaged=bool(source.get_meta("returned_damage",false))
+		account=int(source.get_meta("return_account",-1))
+		cycle=int(source.get_meta("return_cycle",-1))
+	if not damaged or not data.get("dirty",false) or account<0 or cycle<0:return
+	var ledger:Dictionary=ledgers.get(account,{})
+	var assessed:Dictionary=ledger.get("damage_cycles",{})
+	var key:=str(cycle)
+	if assessed.has(key):return
+	assessed[key]=true
+	ledger.damage_cycles=assessed
+	ledger.damage=int(ledger.get("damage",0))+1
+	ledger.balance=int(ledger.get("balance",0))+300
+	ledgers[account]=ledger
+	game._message("Rayures constatées : 3 $ de frais ajoutés au dossier du client. À réclamer à sa prochaine visite.")
 
 func take_reservation(customer:Dictionary) -> Dictionary:
 	var id:int=customer.get("business_reservation",-1)
@@ -471,12 +531,19 @@ func action(value:int,hand:int) -> void:
 		elif state.phase=="closed":next_day()
 		else:game._message("Fermeture automatique à minuit.")
 	elif value==2:
+		if guest_drill:game._message("Ton collègue utilise la perceuse.");return
 		drill_hand=-1 if drill_hand==hand else hand
 	elif value==3:game.clerk.desktop.open_program(5)
 	elif value==4:take_board(hand)
 	elif value>=100:open_parcel(value-100)
 
 func open_parcel(id:int) -> void:
+	if guest_poster_order==id:
+		game._message("Ton collègue place cette affiche.")
+		return
+	if poster_placement.active():
+		game._message("Pose l’affiche en cours ou annule avec la poignée.")
+		return
 	var orders:Array=state.orders.filter(func(order):return int(order.id)==id)
 	if orders.is_empty():return
 	var order:Dictionary=orders[0]
@@ -501,8 +568,15 @@ func open_parcel(id:int) -> void:
 			var header:Label3D=shelf_nodes[shelf].get_node("CategoryHeader")
 			header.text=str(state.shelves[shelf].genre).to_upper()
 	else:
-		state.posters.append({"movie":order.value,"day":state.day})
-		place_poster(order.value)
+		if is_instance_valid(ghost):
+			game._message("Pose d’abord l’étagère en cours.")
+			return
+		poster_placement.begin(order)
+		return
+	consume_order(order)
+
+func consume_order(order:Dictionary) -> void:
+	var id:int=order.id
 	state.orders.erase(order)
 	if packages.has(id):
 		var parcel:Node3D=packages[id]
@@ -610,13 +684,25 @@ func begin_placement() -> void:
 	assembly_node.hide()
 
 func mobile_hint() -> String:
+	if is_remote_guest():
+		if guest_board:return "Placer la planche"
+		if guest_drill and not assembly.is_empty() and int(assembly.boards)==6:return "Visser %d / 4"%(int(assembly.get("screws",0))+1)
+		if is_instance_valid(ghost) and not guest_placing:return "Ton collègue place l’étagère"
+	if poster_placement.active():return "Poser l’affiche" if poster_placement.valid else "Vise un mur plein"
 	if is_instance_valid(ghost):return "Poser l’étagère" if placement_valid else "Déplace la visée au sol"
 	if board_hand>=0:return "Placer la planche"
 	if drill_hand>=0 and not assembly.is_empty() and int(assembly.boards)==6:return "Visser %d / 4"%(int(assembly.get("screws",0))+1)
 	return ""
 
 func mobile_use() -> bool:
+	if is_remote_guest():
+		if guest_board:remote_command({"op":"place_board"});return true
+		if guest_drill and not assembly.is_empty() and int(assembly.boards)==6:remote_command({"op":"screw"});return true
+	if poster_placement.active():
+		poster_placement.confirm()
+		return true
 	if is_instance_valid(ghost):
+		if is_remote_guest() and not guest_placing:return true
 		if placement_valid:finish_placement()
 		return true
 	if board_hand>=0:
@@ -630,11 +716,16 @@ func mobile_use() -> bool:
 	return false
 
 func take_board(hand:int) -> void:
+	if guest_board:game._message("Ton collègue tient déjà la planche suivante.");return
 	if assembly.is_empty() or int(assembly.boards)>=6 or board_hand>=0:return
 	board=Props.box(self,Vector3.ZERO,Vector3(.35,.025,.18),"b58b5b")
 	board_hand=hand
 
 func interact(hand:int,grip:bool) -> bool:
+	if poster_placement.active():
+		if grip:poster_placement.cancel()
+		else:poster_placement.confirm()
+		return true
 	if game.held and not game.clerk.held_service.is_empty() and game.held_hand==hand:
 		if game.held.global_position.distance_to(Vector3(2.7,1.2,-7.2))<.55:
 			if reserve_held():return true
@@ -657,6 +748,15 @@ func interact(hand:int,grip:bool) -> bool:
 	return false
 
 func update_tools(dt:float) -> void:
+	poster_placement.tick()
+	if is_remote_guest():
+		if guest_board and is_instance_valid(guest_board_node):guest_board_node.global_transform=game.hands[1].global_transform*Transform3D(Basis.IDENTITY,Vector3(0,0,-.12))
+		if guest_drill:drill.global_transform=game.hands[1].global_transform*Transform3D(Basis.IDENTITY,Vector3(0,0,-.08))
+	if not is_remote_guest() and (guest_board or guest_drill):
+		var avatar=game.clerk.lan.remote_avatar
+		if is_instance_valid(avatar) and avatar.valid_pose:
+			if guest_board and is_instance_valid(guest_board_node):guest_board_node.global_transform=avatar.targets[2]*Transform3D(Basis.IDENTITY,Vector3(0,0,-.12))
+			if guest_drill:drill.global_transform=avatar.targets[2]*Transform3D(Basis.IDENTITY,Vector3(0,0,-.08))
 	if drill_hand>=0:drill.global_transform=game.hands[drill_hand].global_transform*Transform3D(Basis.IDENTITY,Vector3(0,0,-.08))
 	if board_hand>=0 and is_instance_valid(board):board.global_transform=game.hands[board_hand].global_transform*Transform3D(Basis.IDENTITY,Vector3(0,0,-.12))
 	if not assembly.is_empty() and int(assembly.boards)==6 and drill_hand>=0:
@@ -667,6 +767,8 @@ func update_tools(dt:float) -> void:
 		if (drill.global_position.distance_to(point)<.45 or aligned) and game.hands[drill_hand].get_float(&"trigger")>.6:
 			fasten_screw(dt)
 	if is_instance_valid(ghost):
+		if not is_remote_guest() and guest_placing:return
+		if is_remote_guest() and not guest_placing:return
 		var ray:Node3D=game.aim_hands[1]
 		var direction:Vector3=-ray.global_basis.z
 		if direction.y<-.06:
@@ -716,6 +818,10 @@ func snap_placement(position:Vector3,angle:float,model:int) -> Transform3D:
 	return Transform3D(basis,p)
 
 func finish_placement() -> void:
+	if is_remote_guest():
+		if guest_placing:remote_command({"op":"place_shelf","point":[ghost.position.x,ghost.position.y,ghost.position.z],"angle":placement_angle})
+		return
+	guest_placing=false
 	var entry:Dictionary={"model":assembly.model,"pose":ghost.transform,"genre":""}
 	state.shelves.append(entry)
 	ghost.queue_free()
@@ -728,6 +834,19 @@ func finish_placement() -> void:
 	rebuild_navigation()
 	game._message("Étagère assemblée et placée. Ouvre les colis de films, puis range-les.")
 
+func is_remote_guest() -> bool:
+	return game.touch_controls!=null and game.touch_controls.coop_panel.connected
+
+func remote_command(command:Dictionary) -> bool:
+	if not is_remote_guest():return false
+	game.touch_controls.coop_panel.send("enterprise","",JSON.stringify(command))
+	return true
+
+func release_guest_tools() -> void:
+	guest_board=false;guest_drill=false;guest_placing=false;guest_poster_order=-1
+	if is_instance_valid(guest_board_node):guest_board_node.queue_free();guest_board_node=null
+	if drill_hand<0:drill.position=Vector3(-3.1,.94,-12.8);drill.rotation=Vector3.ZERO
+
 func add_shelf(entry:Dictionary) -> void:
 	var node:=World.shelf(self,Rules.SHELF_COLUMNS[int(entry.model)])
 	node.transform=entry.pose
@@ -736,7 +855,7 @@ func add_shelf(entry:Dictionary) -> void:
 	var body:=World.solid(node,Vector3(0,.9,0),Vector3(width,1.8,.34),"333a42")
 	body.get_child(0).hide()
 	var bounds: AABB=entry.pose*AABB(Vector3(-width/2,0,-.17),Vector3(width,1.8,.34))
-	game.layout.colliders.append({"min":[bounds.position.x,0,bounds.position.z],"max":[bounds.end.x,1.8,bounds.end.z]})
+	game.layout.colliders.append({"min":[bounds.position.x,0,bounds.position.z],"max":[bounds.end.x,1.8,bounds.end.z],"business_shelf":true})
 	if not str(entry.get("genre","")).is_empty():
 		node.get_node("CategoryHeader").text=str(entry.genre).to_upper()
 
@@ -752,13 +871,17 @@ func rebuild_navigation() -> void:
 		game.dvd_grid[cell].append(record.id)
 	game.lod_last_eye=Vector3.INF
 
+func poster_pose(index:int) -> Transform3D:
+	return state.posters[index].get("pose",Transform3D(Basis.IDENTITY,Vector3(-3.3+(index%8)*.83,1.9+(int(index/8)%2)*.85,-7.82)))
+
 func place_poster(movie:int,poster_index:int=-1) -> void:
 	var index:=poster_index if poster_index>=0 else state.posters.size()-1
 	var poster:=MeshInstance3D.new()
+	poster.set_meta("business_poster",true)
 	var quad:=QuadMesh.new()
 	quad.size=Vector2(.55,.78)
 	poster.mesh=quad
-	poster.position=Vector3(-3.3+(index%8)*.83,1.9+(int(index/8)%2)*.85,-7.82)
+	poster.transform=poster_pose(index)
 	add_child(poster)
 	var mat:=StandardMaterial3D.new()
 	var path:String=str(game.layout.movies[movie].get("frontCover","")).replace("./","res://")
@@ -793,6 +916,9 @@ func sell_copy(id:int) -> bool:
 
 func reserve_held() -> bool:
 	var item:Dictionary=game.clerk.held_service
+	return reserve_item(item)
+
+func reserve_item(item:Dictionary) -> bool:
 	var record:Dictionary=item.get("record",{})
 	if record.is_empty() or not state.stock.has(int(record.id)):return false
 	for reservation in state.reservations:
@@ -812,7 +938,8 @@ func reserve_held() -> bool:
 		node.collision_layer=0
 		node.collision_mask=0
 		game.clerk.cases.erase(item)
-		game.clerk.clear_hand()
+		if item==game.clerk.held_service:game.clerk.clear_hand()
+		if node.has_meta("guest_held"):node.remove_meta("guest_held")
 		node.set_meta("reservation_record",record.id)
 		game._message("Réservation prête pour le client %03d."%reservation.account)
 		return true
@@ -833,7 +960,14 @@ func cancel_reservation(index:int) -> void:
 
 func update_locator() -> void:
 	highlighted.hide()
-	if locate_id<0:return
+	if locate_id<0 or locate_id>=game.dvd_records.size():return
+	if is_remote_guest():
+		var mirror=game.touch_controls.coop_panel.mirror
+		if is_instance_valid(mirror):
+			for item in mirror.state.get("cases",[]):
+				if int(item.get("record",-1))!=locate_id:continue
+				var node:Node3D=mirror.nodes.get("cases"+str(item.id))
+				if is_instance_valid(node):highlighted.global_transform=node.global_transform;highlighted.show();return
 	var record:Dictionary=game.dvd_records[locate_id]
 	for item in game.clerk.cases:
 		if not item.get("record",{}).is_empty() and int(item.record.id)==locate_id:

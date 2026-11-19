@@ -18,7 +18,7 @@ static func empty_shop(game) -> void:
 			var arrays:Array=node.mesh.surface_get_arrays(surface)
 			if arrays.is_empty():continue
 			var vertices:PackedVector3Array=arrays[Mesh.ARRAY_VERTEX]
-			var indices:PackedInt32Array=arrays[Mesh.ARRAY_INDEX]
+			var indices:PackedInt32Array=arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX]!=null else PackedInt32Array()
 			if indices.is_empty():
 				for index in vertices.size():indices.append(index)
 			var kept:=PackedInt32Array()
@@ -93,7 +93,7 @@ static func batch_props(parent:Node3D) -> void:
 			var arrays:Array=child.mesh.surface_get_arrays(surface)
 			var vertices:PackedVector3Array=arrays[Mesh.ARRAY_VERTEX]
 			var normals:PackedVector3Array=arrays[Mesh.ARRAY_NORMAL]
-			var indices:PackedInt32Array=arrays[Mesh.ARRAY_INDEX]
+			var indices:PackedInt32Array=arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX]!=null else PackedInt32Array()
 			if indices.is_empty():
 				for index in vertices.size():indices.append(index)
 			for index in indices:
@@ -133,3 +133,74 @@ static func drill(parent:Node3D) -> Node3D:
 	Props.box(node,Vector3(0,-.13,.025),Vector3(.09,.035,.08),"303940")
 	for index in range(4):Props.box(node,Vector3(.039,.025,-.035+index*.017),Vector3(.002,.025,.005),"22282d")
 	return node
+
+static func office_monitor(parent:Node3D) -> Node3D:
+	var node:=Node3D.new();parent.add_child(node)
+	var tool:=SurfaceTool.new();tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rings:Array=[]
+	for section in [Vector3(.278,.235,.225),Vector3(.270,.228,.10),Vector3(.145,.147,-.22)]:
+		var ring:PackedVector3Array=[]
+		for corner in 4:
+			var center:=Vector2((1 if corner in [0,3] else -1)*(section.x-.025),(1 if corner<2 else -1)*(section.y-.025))
+			for step in 5:
+				var angle:=corner*PI/2+step*PI/8
+				ring.append(Vector3(center.x+cos(angle)*.025,center.y+sin(angle)*.025,section.z))
+		rings.append(ring)
+	for section in range(rings.size()-1):
+		for index in rings[section].size():
+			var next: int=(index+1)%rings[section].size()
+			triangle(tool,rings[section][index],rings[section+1][index],rings[section][next])
+			triangle(tool,rings[section][next],rings[section+1][index],rings[section+1][next])
+	for index in rings.back().size():triangle(tool,Vector3(0,0,-.22),rings.back()[(index+1)%rings.back().size()],rings.back()[index])
+	var shell:=MeshInstance3D.new();shell.mesh=tool.commit()
+	var plastic:=StandardMaterial3D.new();plastic.albedo_color=Color("bdbba7");plastic.roughness=.48
+	shell.material_override=plastic;node.add_child(shell)
+	# Recessed dark gasket, a wide lower bezel, power control and indicator.
+	for side in [-1,1]:Props.box(node,Vector3(side*.237,.025,.228),Vector3(.025,.343,.014),"676961")
+	Props.box(node,Vector3(0,.201,.228),Vector3(.45,.022,.014),"676961")
+	Props.box(node,Vector3(0,-.152,.228),Vector3(.45,.022,.014),"676961")
+	Props.box(node,Vector3(0,-.192,.23),Vector3(.50,.05,.018),"b7b49e")
+	var power:=Props.cylinder(node,Vector3(.204,-.191,.244),.013,.007,"898e84");power.rotation.x=PI/2
+	Props.box(node,Vector3(.171,-.19,.246),Vector3(.008,.005,.004),"7cbb7a")
+	for index in range(4):Props.box(node,Vector3(.045+index*.026,-.19,.243),Vector3(.014,.008,.007),"8e9389")
+	# Ventilation follows the taper on the rear shell. All slots share a material draw.
+	for index in range(14):
+		var z:float=.06-index*.017
+		var half_width:float=lerpf(.270,.145,(.10-z)/.32)
+		for side in [-1,1]:
+			var slot:=Props.box(node,Vector3(side*(half_width+.001),.055,z),Vector3(.002,.105,.006),"4a4f48")
+			slot.rotation.y=side*.37
+	Props.box(node,Vector3(0,-.075,-.224),Vector3(.16,.095,.008),"53594f")
+	Props.box(node,Vector3(-.025,-.08,-.23),Vector3(.048,.017,.01),"54749b")
+	Props.box(node,Vector3(.046,-.08,-.23),Vector3(.026,.027,.01),"272d2c")
+	Props.cylinder(node,Vector3(0,-.29,-.025),.066,.12,"aaa995")
+	Props.box(node,Vector3(0,-.355,.015),Vector3(.35,.025,.26),"aead98")
+	batch_props(node)
+	return node
+
+static func triangle(tool:SurfaceTool,a:Vector3,b:Vector3,c:Vector3) -> void:
+	tool.set_normal((b-a).cross(c-a).normalized())
+	tool.add_vertex(a);tool.add_vertex(b);tool.add_vertex(c)
+
+static func office_keyboard(parent:Node3D) -> Node3D:
+	var node:=Node3D.new();parent.add_child(node)
+	Props.box(node,Vector3.ZERO,Vector3(.57,.025,.19),"b9b7a7")
+	for row in 4:
+		for column in 12:
+			Props.box(node,Vector3(-.24+column*.039,.019,-.062+row*.033),Vector3(.033,.013,.027),"d8d4c4")
+	Props.box(node,Vector3(-.05,.019,.072),Vector3(.25,.013,.024),"d8d4c4")
+	batch_props(node)
+	return node
+
+static func desk_base(parent:Node3D,center:Vector3,width:float,depth:float,drawers:bool=false) -> void:
+	var node:=Node3D.new();parent.add_child(node)
+	node.position=Vector3(center.x,0,center.z)
+	for side in [-1,1]:
+		for end in [-1,1]:Props.box(node,Vector3(side*(width/2-.1),.35,end*(depth/2-.1)),Vector3(.055,.70,.055),"555f62")
+	Props.box(node,Vector3(0,.58,-depth/2+.08),Vector3(width-.2,.13,.035),"555f62")
+	if drawers:
+		Props.box(node,Vector3(width/2-.37,.35,0),Vector3(.55,.69,depth-.15),"b5a68c")
+		for row in 3:
+			Props.box(node,Vector3(width/2-.37,.13+row*.22,depth/2-.067),Vector3(.51,.20,.018),"c6b79d")
+			Props.box(node,Vector3(width/2-.37,.15+row*.22,depth/2-.052),Vector3(.13,.018,.024),"697374")
+	batch_props(node)

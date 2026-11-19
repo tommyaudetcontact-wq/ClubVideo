@@ -59,7 +59,7 @@ func is_playing()->bool:
 	return game.clerk.shift.started and not game.clerk.shift.summary
 
 func announce(ip:String,replying:bool=false):
-	send({"type":"presence","name":display_name,"playing":is_playing(),"available":available,"hosting":game.clerk.lan.server!=null,"reply":replying},ip)
+	send({"type":"presence","name":display_name,"playing":is_playing(),"available":available,"hosting":game.clerk.lan.server!=null,"mode":"entrepreneur" if game.entrepreneur_mode else "streamer" if game.streamer_mode else "normal","reply":replying},ip)
 
 func set_available(value:bool):
 	start()
@@ -180,7 +180,7 @@ func receive(packet:Variant,ip:String,now:int):
 		if not available:return
 		var hosting:bool=packet.get("hosting",false)==true
 		var peer_name:=str(packet.get("name","Joueur")).strip_edges().left(20)
-		peers[sender]={"id":sender,"name":peer_name,"ip":ip,"seen":now,"ready":ready,"hosting":hosting}
+		peers[sender]={"id":sender,"name":peer_name,"ip":ip,"seen":now,"ready":ready,"hosting":hosting,"mode":str(packet.get("mode","normal"))}
 		if old.is_empty() or old.get("ready")!=ready or old.get("name")!=peer_name or old.get("hosting")!=hosting:
 			changed.emit()
 		if available and (old.is_empty() or old.get("ready")!=ready) and not packet.get("reply",false):announce(ip,true)
