@@ -1,0 +1,20 @@
+[
+  {
+    "platform": "Quest",
+    "apk": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\outputs\\VideoClub-Quest-preview.apk",
+    "size": 1134700589,
+    "missing_fictional_textures": [],
+    "legacy_case_files": [],
+    "trailer_count": 60,
+    "sha256": "b5773be588f0f46c5f78ca350a5e7c6738abadf8e84e728e03b67ea5374fe2b6"
+  },
+  {
+    "platform": "Android",
+    "apk": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\outputs\\VideoClub-Android-preview.apk",
+    "size": 1128827829,
+    "missing_fictional_textures": [],
+    "legacy_case_files": [],
+    "trailer_count": 60,
+    "sha256": "faea68f4ab7817241bca40fa3da36d6ad30dffac28ab426c49c7a7c9c0abdf28"
+  }
+]

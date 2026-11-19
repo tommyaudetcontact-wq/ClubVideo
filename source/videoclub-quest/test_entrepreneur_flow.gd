@@ -123,5 +123,40 @@ func _initialize():
 	load("res://clerk_inventory.gd").bind(returned.node,record)
 	check(c.scan_item(returned) and b.state.stock[int(record.id)].returned_scanned,"scan recovers return")
 	check(not record.get("pending_return",true),"pending return cleared")
+	b.state.phase="open"
+	b.answer_phone()
+	check(b.state.reservations.size()==1,"phone creates reservation")
+	var reservation:Dictionary=b.state.reservations[0]
+	var reserved_record:Dictionary=c.reserve_stock(int(reservation.movie))
+	check(not reserved_record.is_empty(),"reserved title available")
+	if reserved_record.is_empty():quit(1);return
+	var reserved_case:Dictionary=c.new_case(reserved_record.movie,Vector3(1,1.2,-6),"shelve")
+	reserved_case.record=reserved_record
+	load("res://clerk_inventory.gd").bind(reserved_case.node,reserved_record)
+	c.pick_case(reserved_case,0,false)
+	check(b.reserve_held() and reservation.ready,"hand-held reservation placed in rack")
+	check(c.held_service.is_empty() and not reserved_case in c.cases,"rack clears hand and service item")
+	b.cancel_reservation(0)
+	check(b.state.reservations.is_empty(),"reservation cancelled")
+	var cancelled:Dictionary=c.cases.back()
+	check(int(cancelled.record.id)==int(reserved_record.id),"cancel restores exact copy")
+	shelve(cancelled)
+	c.customer_delay=0
+	check(c.customers.spawn_customer(),"recommendation customer arrives")
+	var advice_customer:Dictionary=c.customers.customers.back()
+	b.prepare_recommendation(advice_customer)
+	advice_customer.node.position=Vector3(-.6,0,-5.05)
+	c.customer_ready(advice_customer)
+	check(c.active==advice_customer and advice_customer.items.is_empty(),"recommendation starts without invented case")
+	var matches:Array=g.dvd_records.filter(func(copy):return b.state.stock.has(int(copy.id)) and not copy.get("clerk_reserved",true) and str(g.layout.movies[copy.movie].genre)==advice_customer.request_genre and b.review_tag(copy.movie)==advice_customer.request_review and ("nouveau" if b.state.is_new(copy.movie) else "vieux" if b.state.rental(g.layout.movies[copy.movie])==375 else "standard")==advice_customer.request_age)
+	check(not matches.is_empty(),"requested recommendation exists")
+	if matches.is_empty():quit(1);return
+	var advised:Dictionary=matches[0]
+	c.reserve_exact(advised)
+	var advised_case:Dictionary=c.new_case(advised.movie,Vector3(1,1.2,-6),"shelve")
+	advised_case.record=advised
+	load("res://clerk_inventory.gd").bind(advised_case.node,advised)
+	check(c.scan_item(advised_case) and advice_customer.recommendation_met,"matching recommendation becomes scannable rental")
+	check(advice_customer.items.size()==1 and advice_customer.price_titles==[advised.movie],"recommendation billed once")
 	print("ENTREPRENEUR_WORKFLOW_COMPLETE failures=",failures)
 	quit(1 if failures else 0)

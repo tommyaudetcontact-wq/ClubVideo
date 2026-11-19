@@ -889,7 +889,11 @@ func restore_reservation_visual(reservation:Dictionary) -> void:
 	node.set_meta("reservation_record",id)
 
 func prepare_recommendation(customer:Dictionary) -> void:
-	var pool:Array=state.stock.values().filter(func(entry):return entry.get("shelved",false) and not entry.get("sold",false))
+	var pool:Array=[]
+	for id in state.stock:
+		var entry:Dictionary=state.stock[id]
+		var record:Dictionary=game.dvd_records[int(id)]
+		if entry.get("shelved",false) and not entry.get("sold",false) and not record.get("clerk_reserved",true) and not record.get("loose",false):pool.append(entry)
 	if pool.is_empty():customer.recommendation=false;return
 	var entry:Dictionary=pool[state.rng.randi_range(0,pool.size()-1)]
 	var id:int=entry.movie
