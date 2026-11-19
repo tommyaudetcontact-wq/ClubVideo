@@ -300,6 +300,7 @@ func reserve_stock(id:int)->Dictionary:
 		return record
 	return {}
 func reserve_exact(record:Dictionary):
+	if game.entrepreneur:game.entrepreneur.take_stock(record)
 	record.clerk_reserved=true
 	if locks:locks.update_slot(record)
 	var zero=Transform3D(Basis.IDENTITY.scaled(Vector3.ZERO),Vector3.ZERO)
@@ -308,6 +309,7 @@ func reserve_exact(record:Dictionary):
 	game._update_cover_lod(game.head.global_position,true)
 func restore_stock(record:Dictionary):
 	if record.is_empty():return
+	if game.entrepreneur and not game.entrepreneur.can_shelve(record):return
 	record.clerk_reserved=false
 	if locks:locks.update_slot(record)
 	record.group.multimesh.set_instance_transform(record.index,record.local)
@@ -315,7 +317,8 @@ func restore_stock(record:Dictionary):
 		game.shell.multimesh.set_instance_transform(record.shell_index,game.shell.global_transform.affine_inverse()*record.world)
 	game._update_cover_lod(game.head.global_position,true)
 func select_film(c:Dictionary)->bool:
-	c.record=reserve_stock(c.movie)
+	c.record=game.entrepreneur.take_reservation(c) if game.entrepreneur else {}
+	if c.record.is_empty():c.record=reserve_stock(c.movie)
 	if c.record.is_empty():
 		var candidates=range(game.layout.movies.size())
 		candidates.shuffle()
@@ -335,8 +338,11 @@ func select_film(c:Dictionary)->bool:
 	var roll=randf()
 	var difficulty=clampf((shift.day-1)/8.0,0.0,1.0)
 	var wanted=mini(max_basket,3 if roll<.15+.20*difficulty else (2 if roll<.45+.30*difficulty else 1))
+	if game.entrepreneur:wanted=game.entrepreneur.basket_size(c)
 	var candidates=range(game.layout.movies.size())
 	candidates.shuffle()
+	if game.entrepreneur:
+		candidates=game.entrepreneur.rank_titles(game.entrepreneur.state.stock.values().filter(func(entry):return entry.get("shelved",false) and not entry.get("sold",false)).map(func(entry):return int(entry.movie)))
 	for id in candidates:
 		if c.reservations.size()>=wanted:break
 		if id==c.movie:continue
@@ -480,7 +486,7 @@ func terminal_content(tab:int)->String:
 				title+="[%s] %s\n"%["OK" if item.scanned else "À VOIR",str(game.layout.movies[item.movie].title).left(23)]
 			for missing in active.missing:
 				title+="REMPLACER : %s\n"%str(game.layout.movies[missing].title).left(24)
-			if int(active.get("discount",0))>0:title+="FORFAIT 3 CLASSIQUES : 5.00 $\n"
+			if int(active.get("discount",0))>0:title+="FORFAIT 4 STANDARDS : 18.00 $\n" if game.entrepreneur else "FORFAIT 3 CLASSIQUES : 5.00 $\n"
 			title+="Antivols : %s\nPaiement : %s\n"%["RETIRÉS" if unlocked else "À RETIRER","REÇU" if paid else "À ENCAISSER"]
 			title+="Attente sans limite\n"
 			if not active.missing.is_empty():title+="Vérifie un autre exemplaire."
@@ -495,7 +501,8 @@ func terminal_content(tab:int)->String:
 		title+="RETOURS\nLes films arrivent dans la chute.\nAucuns frais pour les rayures.\nVérification et surfaceuse au choix.\nRemets l’antivol avant le rangement."
 	return title
 func interact(hand:int,grip:bool)->bool:
-	if shift:shift.started=true
+	if game.entrepreneur and game.entrepreneur.interact(hand,grip):return true
+	if shift and not game.entrepreneur:shift.started=true
 	if not grip and not wallet.occupied(hand) and inspection.try_take_open_disc(hand):return true
 	if not grip and inspection.lid_hand>=0:return true
 	if not grip and hand!=game.held_hand and hand!=secondary_hand and not wallet.occupied(hand) and desktop.point(desktop.project_ray(game.aim_hands[hand]),true):return true
@@ -563,7 +570,7 @@ func interact(hand:int,grip:bool)->bool:
 		if t.action in ["money","tender","handoff","scan"]:continue
 		if t.action=="phone" and not phone_enabled:continue
 		if t.action=="tender" and not tender_note.visible:continue
-		if grip and t.action not in ["money","tender","phone","drawer"]:continue
+		if grip and t.action not in ["money","tender","phone","drawer","enterprise"]:continue
 		var offset:Vector3=t.node.global_position-ray.global_position
 		var depth=offset.dot(direction)
 		if p.distance_to(t.node.global_position)<t.radius or (depth>0 and depth<nearest and (offset-direction*depth).length()<t.radius):
@@ -632,6 +639,9 @@ func set_drawer_open(open:bool):
 
 
 func action(which:String,hand:int,value:int=0):
+	if which=="enterprise" and game.entrepreneur:
+		game.entrepreneur.action(value,hand)
+		return
 	match which:
 		"page":desktop.open_program(value)
 		"door":door.rotation.y=-PI/2
@@ -667,8 +677,10 @@ func action(which:String,hand:int,value:int=0):
 			phone.position=Vector3(0,0,-.06)
 			ringing=false
 			phone_audio.stop()
-			reminders.append("Rappeler Julie : disponibilité de Shrek.")
-			game._message("Julie : « Avez-vous Shrek ce soir ? Pouvez-vous me rappeler ? »\nLa demande est inscrite sur l'ordinateur, onglet Rappels.")
+			if game.entrepreneur:game.entrepreneur.answer_phone()
+			else:
+				reminders.append("Rappeler Julie : disponibilité de Shrek.")
+				game._message("Julie : « Avez-vous Shrek ce soir ? Pouvez-vous me rappeler ? »\nLa demande est inscrite sur l'ordinateur, onglet Rappels.")
 	refresh_terminal()
 func handoff_rental():
 	if held_service.is_empty():return
@@ -678,6 +690,7 @@ func handoff_rental():
 
 func handoff_item(item:Dictionary)->bool:
 	if active.is_empty() or item.is_empty():return false
+	if game.entrepreneur:game.entrepreneur.offer_recommendation(item)
 	if item.movie in active.get("missing",[]) and item.kind in ["sorting","shelve"]:
 		active.missing.erase(item.movie)
 		item.kind="rental"
@@ -748,6 +761,7 @@ func try_finish_checkout():
 		shift.lost_sales+=maxi(0,price-collected)
 		for missing in active.get("missing",[]):shift.lost_sales+=Pricing.unit(game.layout.movies[missing])
 		shift.record_sale(earned)
+		if game.entrepreneur:game.entrepreneur.record_sale(earned,account)
 		if collected>0:accounts.settle(account,mini(collected,int(active.get("account_due",0))))
 		rentals+=1
 	finalize_return_batch(int(active.id))
@@ -991,8 +1005,9 @@ func deliver_return(job:Dictionary,customer:Dictionary={},at_counter:bool=false)
 			var slide=create_tween()
 			slide.tween_property(returned.node,"position",destination,.6)
 			slide.tween_callback(func():returned.node.freeze=false)
-	returned.scanned=true
-	accounts.scan_return(returned.node)
+	returned.scanned=game.entrepreneur==null
+	if game.entrepreneur:game.entrepreneur.physical_return(returned,job)
+	else:accounts.scan_return(returned.node)
 	returned.task="Retour à traiter : "+str(game.layout.movies[job.movie].title)+" — vérifier ou réparer au choix, remettre en rayon."
 	tasks.append(returned.task)
 	refresh_terminal()
@@ -1150,6 +1165,7 @@ func note_case_set_aside(item:Dictionary):
 	if not item.is_empty() and has_identified_mismatch(item.node,int(item.movie)):
 		flag_wrong_case(item)
 func adopt_held_case()->Dictionary:
+	if game.entrepreneur and not game.held_record.is_empty():game.entrepreneur.take_stock(game.held_record)
 	if not held_service.is_empty():return held_service
 	if not game.held or game.held_record.is_empty():return {}
 	var original=game.held
@@ -1165,6 +1181,9 @@ func adopt_held_case()->Dictionary:
 	for key in meta:item.node.set_meta(key,meta[key])
 	original.visible=false
 	original.reparent(game,false)
+	if game.layout.movies[record.movie].get("fictional",false) and game.held_pool.get(record.movie)==original:
+		game.held_pool.erase(record.movie)
+		original.queue_free()
 	if record.has("loose_body") and is_instance_valid(record.loose_body):
 		record.loose_body.queue_free()
 		record.erase("loose_body")
@@ -1180,6 +1199,7 @@ func has_identified_mismatch(node:Node3D,title:int)->bool:
 
 
 func accept_replacement(item:Dictionary)->bool:
+	if game.entrepreneur and game.entrepreneur.offer_recommendation(item):return true
 	if active.is_empty() or active.get("is_return",false):return false
 	if item.record.is_empty() or item.movie not in active.missing:return false
 	active.missing.erase(item.movie)
@@ -1236,6 +1256,7 @@ func scan_held()->bool:
 
 func scan_item(item:Dictionary)->bool:
 	if item.kind=="streamer_gift":return false
+	if game.entrepreneur:game.entrepreneur.scan_return(item)
 	var node:Node3D=item.node
 	# Also recover a known wrong copy set down before this release, or held in
 	# the other hand. Unopened copies never reveal their disc contents here.
@@ -1288,6 +1309,7 @@ func refresh_invoice():
 func complete_refund(amount:int):
 	if active.is_empty() or not active.get("is_refund",false):return
 	shift.refunds+=amount
+	if game.entrepreneur:game.entrepreneur.record_refund(amount)
 	var customer=active
 	active={}
 	tender_parts=[]
@@ -1323,6 +1345,7 @@ func finalize_return_batch(batch:int,mix_chance:float=.20):
 		left-=int(job.charge)
 	for job in jobs:
 		job.time=due
+		if game.entrepreneur:game.entrepreneur.schedule_return(job)
 		if not job.get("billed",true):job.charge=0
 		if job.get("complaint",false):job.refund=int(job.charge)
 	if jobs.size()<2 or randf()>=mix_chance:return

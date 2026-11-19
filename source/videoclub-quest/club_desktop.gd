@@ -11,6 +11,7 @@ var targets: Array[Button] = []
 var hovered: Button
 var reset_button:Button
 var reset_customer:=-1
+var business_view:Control
 
 func setup(owner_clerk):
 	clerk = owner_clerk
@@ -44,6 +45,12 @@ func setup(owner_clerk):
 	button(window,Rect2(422,614,390,46),"Défiler",func():scroll.scroll_vertical=0 if scroll.scroll_vertical>=scroll.get_v_scroll_bar().max_value-scroll.size.y-4 else scroll.scroll_vertical+310,Color("3561a6"))
 	button(window,Rect2(18,558,794,46),"Réinitialiser le paiement",confirm_reset_payment,Color("36547f"))
 	reset_button=targets.back()
+	if clerk.game.entrepreneur_mode:
+		button(self,Rect2(394,730,240,36),"Mon entreprise",func():open_program(5),Color("347fc1"))
+		business_view=load("res://entrepreneur_desktop.gd").new()
+		window.add_child(business_view)
+		business_view.setup(self)
+		business_view.hide()
 	cursor=Polygon2D.new()
 	cursor.polygon=PackedVector2Array([Vector2.ZERO,Vector2(0,28),Vector2(7,20),Vector2(14,32),Vector2(19,29),Vector2(12,17),Vector2(23,17)])
 	cursor.color=Color("fff3ad")
@@ -89,6 +96,17 @@ func open_program(index:int):
 
 func refresh():
 	if not details:return
+	if business_view:
+		business_view.visible=app==5
+		details.get_parent().visible=app!=5
+		targets[8].visible=app!=5
+		targets[9].visible=app!=5
+		reset_button.visible=app==0 and clerk.can_reset_payment()
+		if app==5:
+			title.text="Mon entreprise · Gestion Vidéo Club"
+			business_view.refresh()
+			get_viewport().render_target_update_mode=SubViewport.UPDATE_ONCE
+			return
 	title.text="Gestion Vidéo Club  /  "+(PROGRAMS[app] if app<4 else "Coop Wi-Fi")
 	var touch=clerk.game.touch_controls
 	if app<4 and touch and touch.coop_panel and touch.coop_panel.connected and app<touch.coop_panel.pages.size():
@@ -126,14 +144,17 @@ func run_action():
 	refresh()
 
 func project_ray(ray:Node3D)->Vector2:
-	if not clerk.screen:return Vector2(-1,-1)
-	var start:Vector3=clerk.screen.to_local(ray.global_position)
-	var direction:Vector3=clerk.screen.global_basis.inverse()*(-ray.global_basis.z)
+	var display:MeshInstance3D=clerk.screen
+	if clerk.game.entrepreneur and clerk.game.entrepreneur.office_screen.global_position.distance_to(ray.global_position)<1.7:
+		display=clerk.game.entrepreneur.office_screen
+	if not display:return Vector2(-1,-1)
+	var start:Vector3=display.to_local(ray.global_position)
+	var direction:Vector3=display.global_basis.inverse()*(-ray.global_basis.z)
 	if absf(direction.z)<.001:return Vector2(-1,-1)
 	var distance:float=-start.z/direction.z
 	if distance<0 or distance>1.65:return Vector2(-1,-1)
 	var point:Vector3=start+direction*distance
-	var display_size:Vector2=clerk.screen.mesh.size
+	var display_size:Vector2=display.mesh.size
 	if absf(point.x)>display_size.x*.5 or absf(point.y)>display_size.y*.5:return Vector2(-1,-1)
 	return (Vector2(.5,.5)+Vector2(point.x,-point.y)/display_size)*size
 

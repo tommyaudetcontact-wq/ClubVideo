@@ -35,6 +35,11 @@ static func bind(node:Node3D,record:Dictionary):
 	node.set_meta("inspected",false)
 	node.set_meta("disc_mismatch_seen",false)
 	node.set_meta("dirty",record.get("dirty",false))
+	if record.get("pending_return",false):
+		node.set_meta("needs_relock",true)
+		node.set_meta("return_account",int(record.get("return_account",-1)))
+		node.set_meta("return_cycle",int(record.get("return_cycle",-1)))
+		node.set_meta("return_checked",false)
 	load("res://clerk_locks.gd").bind_visual(node,record)
 static func put(node:Node3D,id:int,uid:int):
 	node.set_meta("disc_movie",id)

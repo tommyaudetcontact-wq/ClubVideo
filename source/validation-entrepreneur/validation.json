@@ -1,0 +1,12 @@
+{
+  "requested": 200,
+  "complete_sets": 200,
+  "textures": 800,
+  "missing_ids": [],
+  "exact_duplicate_sheets": [],
+  "decoded_textures": 800,
+  "texture_errors": [],
+  "flat_texture_warnings": [],
+  "crop_warnings": [],
+  "total_texture_bytes": 165791310
+}

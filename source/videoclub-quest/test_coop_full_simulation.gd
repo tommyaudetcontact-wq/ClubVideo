@@ -21,6 +21,11 @@ func _initialize():
 	assert(host.clerk.tender==0 and not host.clerk.tender_note.visible and not item.scanned and host.clerk.price==0)
 	host.clerk.pick_case(item,0,false)
 	assert(host.clerk.scan_held() and host.clerk.tender>0 and host.clerk.price>0)
+	# This scenario exercises giving change; exact random tender belongs to the day test.
+	host.clerk.tender=2000
+	host.clerk.tender_parts=[2000]
+	shopper.original_tender=[2000]
+	host.clerk.refresh_tender_visual()
 	var origin:Vector3=Vector3(-1.4,1.36,-5.95)
 	host.clerk.clear_hand()
 	item.node.reparent(host.clerk)

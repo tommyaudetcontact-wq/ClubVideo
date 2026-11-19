@@ -41,6 +41,9 @@ func route(c:Dictionary,target:Vector3)->bool:
 	return not c.path.is_empty()
 func spawn_customer(return_only:bool=false)->bool:
 	if customers.size()>=clerk.shift.capacity() or population()>=MAX_VISIBLE_PEOPLE:return false
+	if game.entrepreneur and not return_only and not game.entrepreneur.available_stock():return false
+	var return_job:Dictionary=clerk.take_due_return() if return_only else {}
+	if return_only and return_job.is_empty():return false
 	var appearance:int=randi_range(0,5) if game.streamer_mode else next_id%6
 	var n=Props.customer(self,appearance)
 	n.position=Vector3(-4.0,0,9.0)
@@ -63,10 +66,11 @@ func spawn_customer(return_only:bool=false)->bool:
 	elif remaining>=1 and group<.44:
 		c.companions.append((int(c.id)%6+randi_range(1,5))%6)
 	attach_companions(c)
-	c.return_job=clerk.take_due_return() if return_only else {}
+	c.return_job=return_job
 	c.account_id=int(c.return_job.get("account_id",-1))
 	if c.account_id<0:c.account_id=clerk.accounts.choose_account(customers.map(func(customer):return int(customer.get("account_id",-1))))
 	c.visit_balance=int(clerk.accounts.ensure(c.account_id).balance)
+	if game.entrepreneur:game.entrepreneur.prepare_customer(c)
 	c.return_and_rent=false
 	if c.return_job.is_empty():clerk.shift.spawned()
 	c.visit_mask=VisitIcons.reason_mask(c)
@@ -104,14 +108,14 @@ func _physics_process(dt):
 	entry_cooldown=maxf(0,entry_cooldown-dt)
 	var due:bool=clerk.returns_due.any(func(job):return float(job.time)<=clerk.elapsed)
 	var open:bool=clerk.shift.started and not clerk.shift.closing and not clerk.shift.summary
-	if not game.streamer_mode and population()<MAX_VISIBLE_PEOPLE and open and entry_cooldown<=0:
+	if population()<MAX_VISIBLE_PEOPLE and (open or game.streamer_mode or (game.entrepreneur and game.entrepreneur.state.phase=="closing")) and entry_cooldown<=0:
 		if due:
 			spawn_customer(true)
 			entry_cooldown=1.5
-		elif spawn_timer<=0 and clerk.shift.can_spawn():
+		elif open and not game.streamer_mode and spawn_timer<=0 and clerk.shift.can_spawn():
 			spawn_customer(false)
 			entry_cooldown=1.5
-			spawn_timer=next_arrival_delay()
+			spawn_timer=game.entrepreneur.arrival_delay() if game.entrepreneur else next_arrival_delay()
 	queue_timer-=dt
 	if queue_timer<=0:
 		queue_timer=.25
@@ -321,6 +325,11 @@ func aisle_for(shelf:Vector3)->Vector3:
 	walk_cache[key]=best
 	return best
 func begin_browse(c:Dictionary):
+	if game.entrepreneur and c.get("recommendation",false):
+		game.entrepreneur.prepare_recommendation(c)
+		if c.get("recommendation_pending",false):
+			join_queue(c)
+			return
 	if not c.has("selection_left"):c.selection_left=randf_range(30,180)
 	if not clerk.select_film(c):
 		dismiss(c)

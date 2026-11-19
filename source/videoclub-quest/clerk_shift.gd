@@ -52,6 +52,9 @@ func spawned():
 func rush_duration()->float:
 	return OPEN_SECONDS+maxi(0,wave-1)*RUSH_INCREMENT
 func tick(dt:float):
+	if clerk.game.entrepreneur:
+		clerk.game.entrepreneur.tick(dt)
+		return
 	if not enabled or not started or summary:return
 	if not closing and arrived_customers>=target_customers and clerk.customers.customers.is_empty() and clerk.active.is_empty() and clerk.waiting.is_empty() and clerk.returns_due.is_empty():
 		closing=true
@@ -61,6 +64,7 @@ func record_sale(total:int):
 	served+=1
 	revenue+=total
 func finish()->bool:
+	if clerk.game.entrepreneur:return clerk.game.entrepreneur.close_day()
 	if clerk.game.streamer_mode:return false
 	if summary:return true
 	if not closing:
@@ -110,6 +114,9 @@ func finish()->bool:
 		report+="\n\nSEMAINE %s\nPertes : %.2f $ · abandons : %d · remboursements : %.2f $\nÉcarts de caisse cumulés : %.2f $\nDisques abîmés restants : %d · éléments à ranger : %d\nClique pour commencer lundi."%["PARFAITE !" if week_perfect else "À AMÉLIORER",(week_losses+week_refunds)/100.0,week_abandoned,week_refunds/100.0,week_cash_error/100.0,scratched,untidy]
 	return true
 func next_day():
+	if clerk.game.entrepreneur:
+		clerk.game.entrepreneur.next_day()
+		return
 	day+=1
 	target_customers+=randi_range(1,2)
 	arrived_customers=0
@@ -151,6 +158,7 @@ func remaining_scratches()->int:
 	return count
 
 func text()->String:
+	if clerk.game.entrepreneur:return clerk.game.entrepreneur.status()
 	if clerk.game.streamer_mode:return "MODE STREAMER · QUART LIBRE\nArrivées manuelles · aucun jour à clôturer."
 	if summary:return report
 	if not started:return "JOUR %d · %s · PRÊT\n%d clients locataires, arrivées variées, puis retours et close.\nObjectif vendredi : semaine parfaite.\nLe bac À démêler reste à part."%[day,weekday(),target_customers]

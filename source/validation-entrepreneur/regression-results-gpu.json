@@ -1,0 +1,51 @@
+[
+  {
+    "test": "test_catalogue_migration-gpu",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 5.05,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_catalogue_migration-gpu.log"
+  },
+  {
+    "test": "test_entrepreneur_rules-gpu",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 1.5,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_entrepreneur_rules-gpu.log"
+  },
+  {
+    "test": "test_day0100-gpu",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 3.53,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_day0100-gpu.log"
+  },
+  {
+    "test": "test_disc096-gpu",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 4.02,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_disc096-gpu.log"
+  },
+  {
+    "test": "test_capture0103-gpu",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 3.53,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_capture0103-gpu.log"
+  },
+  {
+    "test": "test_entrepreneur_flow-gpu",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 6.56,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_entrepreneur_flow-gpu.log"
+  },
+  {
+    "test": "test_entrepreneur_flow-touch-gpu",
+    "passed": true,
+    "exit_code": 0,
+    "seconds": 6.53,
+    "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_entrepreneur_flow-touch-gpu.log"
+  }
+]

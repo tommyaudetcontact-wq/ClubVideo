@@ -3,7 +3,7 @@ const VERSION=2
 const CASE_META=["basket_owner","disc_movie","disc_uid","disc_mismatch_seen","dirty","inspected","antitheft","sort_slot","in_basket","in_sort_tray","barcode_scanned","needs_relock","return_account","return_cycle","return_checked","returned_damage"]
 const SHIFT_FIELDS=["quota_model","target_customers","arrived_customers","week_losses","week_abandoned","week_refunds","week_cash_error","week_perfect","day_model","rush_model","day","duration","time_left","closing","summary","started","served","abandoned","lost_sales","missed_scans","revenue","refunds","returned","restocked","damaged","initial_cash","wave","break_left","report","business_balance"]
 const COUNTER_FIELDS=["price","tender","tender_parts","tender_received","tender_deposited","paid","change","drawer_open","page","rentals","elapsed","customer_delay","chute_serial","tasks","reminders"]
-const CLIENT_FIELDS=["cash_delta","original_tender","cash_reset_wait","appearance","selection_left","nav_goal","queue_joined","pending_finish","await_cash","abandon_wait_cash","patience_limit","patience_started","rental_remaining","queue_slot","rental_count","visit_mask","is_refund","refund_due","children_mess_count","children_mess_delay","id","state","cursor","wait","messy","movie","patience","patience_bonus","missing","handed","is_return","replace_title","replacement_movie","replacement_queue","family","companions","children_played","handoff_wait","return_and_rent","browse_index","price_titles","discount","cash_started","next_mess","mess_done","account_id","visit_balance","account_due","offer_ready","subtotal","gst","qst","billed_titles"]
+const CLIENT_FIELDS=["business_reservation","recommendation","recommendation_pending","recommendation_met","recommendation_text","request_genre","request_age","request_review","cash_delta","original_tender","cash_reset_wait","appearance","selection_left","nav_goal","queue_joined","pending_finish","await_cash","abandon_wait_cash","patience_limit","patience_started","rental_remaining","queue_slot","rental_count","visit_mask","is_refund","refund_due","children_mess_count","children_mess_delay","id","state","cursor","wait","messy","movie","patience","patience_bonus","missing","handed","is_return","replace_title","replacement_movie","replacement_queue","family","companions","children_played","handoff_wait","return_and_rent","browse_index","price_titles","discount","cash_started","next_mess","mess_done","account_id","visit_balance","account_due","offer_ready","subtotal","gst","qst","billed_titles"]
 var game
 var save_path="user://club-save.dat"
 var autosave_clock=0.0
@@ -34,7 +34,7 @@ func resume_prompt():
 func _process(dt):
 	if save_thread and not save_thread.is_alive():flush_worker()
 	if tools_run or load_failed or get_tree().paused or guest_coop():return
-	if not game.clerk.shift.started:return
+	if not game.clerk.shift.started and not game.entrepreneur:return
 	autosave_clock+=dt
 	if autosave_clock>=60:
 		autosave_clock=0
@@ -63,10 +63,10 @@ func _notification(what):
 func record_id(record:Dictionary)->int:return int(record.get("id",-1))
 func pack_job(job:Dictionary)->Dictionary:
 	if job.is_empty():return {}
-	return {"movie":job.movie,"time":job.get("time",0.0),"record":record_id(job.record),"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0)),"locked":bool(job.get("locked",false)),"batch":int(job.get("batch",-1)),"billed":bool(job.get("billed",true)),"complaint":bool(job.get("complaint",false)),"charge":int(job.get("charge",0)),"others":job.get("others",[]).map(func(other):return pack_job(other))}
+	return {"business_due_day":job.get("business_due_day",999999),"movie":job.movie,"time":job.get("time",0.0),"record":record_id(job.record),"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0)),"locked":bool(job.get("locked",false)),"batch":int(job.get("batch",-1)),"billed":bool(job.get("billed",true)),"complaint":bool(job.get("complaint",false)),"charge":int(job.get("charge",0)),"others":job.get("others",[]).map(func(other):return pack_job(other))}
 func unpack_job(job:Dictionary)->Dictionary:
 	if job.is_empty():return {}
-	return {"movie":job.movie,"time":job.time,"record":game.dvd_records[job.record],"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0)),"locked":bool(job.get("locked",false)),"batch":int(job.get("batch",-1)),"billed":bool(job.get("billed",true)),"complaint":bool(job.get("complaint",false)),"charge":int(job.get("charge",0)),"others":job.get("others",[]).map(func(other):return unpack_job(other))}
+	return {"business_due_day":job.get("business_due_day",999999),"movie":job.movie,"time":job.time,"record":game.dvd_records[job.record],"account_id":int(job.get("account_id",-1)),"rental_id":int(job.get("rental_id",-1)),"refund":int(job.get("refund",0)),"locked":bool(job.get("locked",false)),"batch":int(job.get("batch",-1)),"billed":bool(job.get("billed",true)),"complaint":bool(job.get("complaint",false)),"charge":int(job.get("charge",0)),"others":job.get("others",[]).map(func(other):return unpack_job(other))}
 
 func pack_case(item:Dictionary,node:Node3D)->Dictionary:
 	var result={"movie":item.movie,"kind":item.kind,"scanned":item.get("scanned",false),"task":item.get("task",""),"record":record_id(item.get("record",{})),"transform":node.global_transform,"meta":{}}
@@ -79,6 +79,7 @@ func snapshot()->Dictionary:
 	var c=game.clerk
 	var state={"version":VERSION,"catalogue":game.layout.movies.size(),"records":[],"cases":[],"clients":[],"active":-1,"waiting":[],"returns":[],"loose_discs":[],"cash":[],"shift":{},"counter":{},"repair":{},"till":c.till.duplicate(),"spawn_timer":c.customers.spawn_timer,"next_id":c.customers.next_id,"processed":c.repairs.processed,"options":{"manual":game.modes.manual_mode,"rain":game.modes.rain_enabled,"teleport":game.teleportation.enabled}}
 	state.return_schedule_version=2
+	if game.entrepreneur:state.entrepreneur=game.entrepreneur.snapshot()
 	if game.streamer_mode:
 		state.streamer_fallen=game.streamer.pack_fallen()
 		state.streamer_challenge={"duration":game.streamer.duration_index,"remaining":game.streamer.challenge_remaining,"report":game.streamer.challenge_report,"stats":game.streamer.challenge_stats.duplicate()}
@@ -94,6 +95,9 @@ func snapshot()->Dictionary:
 	if game.touch_profile and game.touch_controls and game.touch_controls.basket_carried:
 		state.basket_transform=game.touch_controls.basket_resting_pose
 	for record in game.dvd_records:
+		if game.entrepreneur and not game.entrepreneur.state.stock.has(int(record.id)):
+			state.records.append(null)
+			continue
 		state.records.append({"movie":record.movie,"disc_movie":record.get("disc_movie",record.movie),"disc_uid":record.get("disc_uid",record.id),"dirty":record.get("dirty",false),"locked":record.get("locked",true),"reserved":record.get("clerk_reserved",false)})
 	var case_indices:Dictionary={}
 	for i in c.cases.size():
@@ -184,7 +188,7 @@ func read_state()->Dictionary:
 	return {}
 
 func migrate_state(state:Dictionary)->Dictionary:
-	if state.get("version",0)!=1:return state
+	if state.get("version",0)!=1:return migrate_catalogue(state)
 	var s=state.duplicate(true)
 	for entry in s.get("cases",[]):
 		var p:Vector3=entry.transform.origin
@@ -211,6 +215,50 @@ func migrate_state(state:Dictionary)->Dictionary:
 		entry.transform.origin=Vector3(1.3+(disc_index%11)*.16,.916+.004*(disc_index/44),-8.55-.16*((disc_index/11)%4))
 		disc_index+=1
 	s.version=VERSION
+	return migrate_catalogue(s)
+
+func migrated_movie(record:int,fallback:int) -> int:
+	if fallback<0:return -1
+	return int(game.dvd_records[record].movie) if record>=0 and record<game.dvd_records.size() else posmod(fallback,game.layout.movies.size())
+
+func migrate_return_title(job:Dictionary) -> void:
+	if job.is_empty():return
+	job.movie=migrated_movie(int(job.get("record",-1)),int(job.get("movie",0)))
+	for other in job.get("others",[]):migrate_return_title(other)
+
+func migrate_catalogue(state:Dictionary) -> Dictionary:
+	# Preserve physical copy/disc identity and finances when replacing the legacy catalogue.
+	# A different shelf layout requires a new game; never guess or overwrite that save.
+	if int(state.get("catalogue",0))==game.layout.movies.size() or state.has("entrepreneur"):return state
+	if state.get("records",[]).size()!=game.dvd_records.size():return state
+	var s:=state.duplicate(true)
+	for index in s.records.size():
+		var record:Dictionary=s.records[index]
+		record.movie=migrated_movie(index,0)
+		record.disc_movie=migrated_movie(int(record.get("disc_uid",index)),int(record.get("disc_movie",0)))
+	for item in s.get("cases",[]):
+		var old_disc:int=item.meta.get("disc_movie",item.movie)
+		item.movie=migrated_movie(int(item.get("record",-1)),int(item.movie))
+		item.meta.disc_movie=-1 if old_disc<0 else migrated_movie(int(item.meta.get("disc_uid",-1)),int(item.movie))
+	for client in s.get("clients",[]):
+		var titles:Dictionary={}
+		for item_index in client.get("items",[]):
+			if item_index<0 or item_index>=s.cases.size():continue
+			var old_item:Dictionary=state.cases[item_index]
+			titles[int(old_item.movie)]=int(s.cases[item_index].movie)
+		client.movie=migrated_movie(int(client.get("record",-1)),int(client.get("movie",0)))
+		for field in ["price_titles","missing","billed_titles","replacement_queue"]:
+			if client.has(field):client[field]=client[field].map(func(id):return titles.get(int(id),posmod(int(id),game.layout.movies.size())))
+		for field in ["replace_title","replacement_movie"]:
+			if client.has(field) and int(client[field])>=0:client[field]=titles.get(int(client[field]),posmod(int(client[field]),game.layout.movies.size()))
+		migrate_return_title(client.get("return_job",{}))
+	for job in s.get("returns",[]):migrate_return_title(job)
+	for account in s.get("accounts",{}).get("accounts",{}).values():
+		for loan in account.get("rentals",{}).values():loan.movie=migrated_movie(int(loan.get("record",-1)),int(loan.movie))
+	for disc in s.get("loose_discs",[]):disc.data.movie=migrated_movie(int(disc.data.get("uid",-1)),int(disc.data.movie))
+	if not s.get("repair",{}).is_empty():s.repair.data.movie=migrated_movie(int(s.repair.data.get("uid",-1)),int(s.repair.data.movie))
+	s.catalogue=game.layout.movies.size()
+	s.catalogue_migrated_from=int(state.get("catalogue",0))
 	return s
 
 func valid_state(s:Dictionary)->bool:
@@ -219,6 +267,9 @@ func valid_state(s:Dictionary)->bool:
 	for key in ["cases","clients","waiting","returns","loose_discs","cash","shift","counter","repair","till"]:
 		if not s.has(key):return false
 	for i in range(s.records.size()):
+		if s.records[i]==null:
+			if not game.entrepreneur:return false
+			continue
 		if s.records[i].movie!=game.dvd_records[i].movie:return false
 	for item in s.cases:
 		if item.record>=s.records.size() or item.record< -1:return false
@@ -235,6 +286,7 @@ func restore_file()->bool:
 func restore(s:Dictionary)->bool:
 	if not valid_state(s):return false
 	var c=game.clerk
+	if game.entrepreneur:game.entrepreneur.restore(s.get("entrepreneur",{}))
 	# Restore is used only into a fresh scene; never append into a running session.
 	if not c.cases.is_empty() or not c.customers.customers.is_empty():return false
 	c.accounts.restore(s.get("accounts",{}))
@@ -248,11 +300,14 @@ func restore(s:Dictionary)->bool:
 		game.streamer.refresh_wrist()
 	if s.has("loose_locks"):c.locks.restore(s.loose_locks)
 	for i in range(s.records.size()):
+		if s.records[i]==null:continue
 		var record:Dictionary=game.dvd_records[i]
 		var saved:Dictionary=s.records[i]
 		for key in ["disc_movie","disc_uid","dirty"]:record[key]=saved[key]
 		record.locked=saved.get("locked",true)
 		record.clerk_reserved=saved.reserved
+		if game.entrepreneur and not record.clerk_reserved:
+			record.group.multimesh.set_instance_transform(record.index,record.local)
 		c.locks.update_slot(record)
 		if record.clerk_reserved:
 			var zero=Transform3D(Basis.IDENTITY.scaled(Vector3.ZERO),Vector3.ZERO)
@@ -316,6 +371,7 @@ func restore(s:Dictionary)->bool:
 		if not customer.has("companions"):customer.companions=[6+int(saved.id)%2] if saved.get("family",false) else []
 		c.customers.attach_companions(customer)
 		c.customers.customers.append(customer)
+		if game.entrepreneur and customer.get("recommendation_pending",false):game.entrepreneur.show_recommendation(customer)
 	c.active={} if s.active<0 else c.customers.customers[s.active]
 	for index in s.waiting:
 		if index>=0:c.waiting.append(c.customers.customers[index])

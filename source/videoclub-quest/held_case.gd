@@ -33,7 +33,7 @@ static func build(item:Node3D, entry:Dictionary)->void:
  var ps3=platform=="PlayStation 3" or platform=="PS3"
  for side in ["front","back","spine"]:
   var m=StandardMaterial3D.new()
-  m.albedo_texture=load("res://cover_textures.gd").get_cover("res://assets/covers/%02d-%s.jpg"%[entry.id,side])
+  m.albedo_texture=load("res://cover_textures.gd").get_cover(load("res://cover_textures.gd").path_for(entry,side))
   m.roughness=.16
   m.clearcoat_enabled=true
   m.clearcoat=.8

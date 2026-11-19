@@ -91,10 +91,10 @@ func update(stick: Vector2, delta: float) -> void:
 		_hide_target()
 
 func _floor_y(p: Vector3) -> float:
-	return 0.0 if absf(p.x)<5.8 and p.z> -9.6 and p.z<7.2 else -0.075
+	return 0.0 if absf(p.x)<5.8 and p.z> (-14.3 if game.entrepreneur_mode else -9.6) and p.z<7.2 else -0.075
 
 func valid_destination(p: Vector3) -> bool:
-	return p.x> -30 and p.x<30 and p.z> -9.0 and p.z<40 and not game._blocked(p)
+	return p.x> -30 and p.x<30 and p.z> (-14.1 if game.entrepreneur_mode else -9.0) and p.z<40 and not game._blocked(p)
 
 func trace(start: Vector3, direction: Vector3) -> Dictionary:
 	var points: Array[Vector3] = [start]

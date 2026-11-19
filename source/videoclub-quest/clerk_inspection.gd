@@ -292,12 +292,13 @@ func create_disc(disc_id:int,dirty:bool)->MeshInstance3D:
 	var m=ShaderMaterial.new()
 	m.shader=load("res://clerk_disc.gdshader")
 	var scan="res://assets/discs/%02d.png"%disc_id
+	if disc_id>=0 and game.layout.movies[disc_id].has("disc_label"):scan=game.layout.movies[disc_id].disc_label
 	if not ResourceLoader.exists(scan):scan="res://assets/discs/%02d.jpg"%disc_id
 	if disc_id>=0 and not ResourceLoader.exists(scan):scan="res://assets/covers/%02d-front.jpg"%disc_id
 	if ResourceLoader.exists(scan):
 		m.set_shader_parameter("label_texture",load(scan))
 		m.set_shader_parameter("has_label",true)
-		if disc_id==0:m.set_shader_parameter("label_rect",Vector4(.065,.06,.90,.87))
+		if disc_id==0 and not game.layout.movies[disc_id].get("fictional",false):m.set_shader_parameter("label_rect",Vector4(.065,.06,.90,.87))
 	result.material_override=m
 	m.set_shader_parameter("scratched",dirty)
 	if disc_id>=0 and game.layout.movies[disc_id].get("console","")=="GameCube":result.scale=Vector3(.667,.667,1)

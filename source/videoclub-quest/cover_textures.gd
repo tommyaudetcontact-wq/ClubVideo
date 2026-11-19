@@ -2,7 +2,16 @@ extends RefCounted
 # Shared full-resolution paper textures: held covers and near-shelf overlays
 # reference the same GPU texture. Normalize RGB mipchains before upload.
 static var cache:Dictionary={}
+static var fictional_recent:Array[String]=[]
+static func path_for(entry:Dictionary,side:String)->String:
+ return str(entry.get("cover_base","res://assets/covers/%02d"%int(entry.id)))+"-"+side+".jpg"
 static func get_cover(path:String)->Texture2D:
+ if path.begins_with("res://assets/fictional/"):
+  fictional_recent.erase(path)
+  fictional_recent.append(path)
+  if not cache.has(path):cache[path]=load(path)
+  while fictional_recent.size()>32:cache.erase(fictional_recent.pop_front())
+  return cache[path]
  if cache.has(path):return cache[path]
  var source:Texture2D=load(path)
  if not source:return null

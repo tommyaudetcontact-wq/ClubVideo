@@ -230,6 +230,15 @@ func setup(g):
 	var continue_button:=add_button(menu,"Continuer la sauvegarde",continue_solo)
 	continue_button.disabled=not FileAccess.file_exists(game.session.save_path) and not FileAccess.file_exists(game.session.save_path+".bak")
 	add_button(menu,"Nouvelle partie",confirm_new_game)
+	add_button(menu,"Quitter Entrepreneur" if game.entrepreneur else "Mode Entrepreneur",func():
+		if coop_panel.connected:coop_panel.reset("Partie quittée.")
+		if game.entrepreneur:game.entrepreneur.switch_mode()
+		else:
+			if not game.session.load_failed:game.session.save_game(false)
+			get_tree().set_meta("entrepreneur_mode",true)
+			get_tree().set_meta("streamer_mode",false)
+			get_tree().paused=false
+			get_tree().reload_current_scene())
 	add_button(menu,"Son des bandes-annonces",func():game.modes._activate(7))
 	var avatar_button:=add_button(menu,"Avatar : "+game.clerk_model_name(),func():
 		game.toggle_clerk_model()
@@ -263,7 +272,7 @@ func show_start_menu():
 
 func play_solo():
 	if game.modes.menu_open:toggle_menu()
-	game.clerk.shift.started=true
+	if not game.entrepreneur:game.clerk.shift.started=true
 	if not game.trailer_player.is_playing():game._play_ambient_trailer()
 	game._message("Partie solo démarrée. Le club est ouvert.")
 
@@ -611,7 +620,15 @@ func use_target():
 		elif target.action=="surface_drop":drop_on_surface()
 		elif not target.action.is_empty():coop_panel.send(target.action,target.get("id",""),target.get("target",""))
 		return
-	clerk.shift.started=true
+	if not game.entrepreneur:clerk.shift.started=true
+	if game.entrepreneur:
+		if not tap_aim:sync_hands()
+		if game.entrepreneur.mobile_use():return
+		for business_target in clerk.targets:
+			if is_instance_valid(business_target.node) and business_target.action=="enterprise" and aimed(business_target.node.global_position,business_target.radius)<INF:
+				if int(business_target.value)==3:open_desktop()
+				game.entrepreneur.action(int(business_target.value),CASE_HAND)
+				return
 	if not tap_aim:sync_hands()
 	if near(clerk.repairs.station) and aimed(clerk.repairs.station,.25)<INF:
 		use_disc("repair")
@@ -943,6 +960,14 @@ func coop_case_target()->Dictionary:
 	return result
 
 func refresh_action(over_desktop:bool):
+	if game.entrepreneur and not coop_panel.connected:
+		var business_hint:String=game.entrepreneur.mobile_hint()
+		if not business_hint.is_empty():
+			primary_button.text=business_hint
+			action_hint.text="Établi : planches, puis quatre vis. Pose ensuite l’étagère au sol."
+			flip_button.visible=is_instance_valid(game.entrepreneur.ghost)
+			flip_button.text="Tourner l’étagère"
+			return
 	if coop_panel.connected:
 		var holding:bool=not coop_panel.guest_case_id.is_empty()
 		var target:=coop_interaction()
@@ -1012,6 +1037,9 @@ func toggle_case():
 	if clerk.inspection.opened:clerk.inspection.finish_lid(true)
 
 func flip_item():
+	if game.entrepreneur and is_instance_valid(game.entrepreneur.ghost):
+		game.entrepreneur.placement_angle+=PI/2
+		return
 	if action_busy():return
 	if coop_panel.connected:
 		coop_panel.send("disc_flip" if not coop_panel.guest_disc.is_empty() else "case_flip")

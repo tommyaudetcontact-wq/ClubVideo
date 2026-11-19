@@ -5,6 +5,9 @@ var rain_enabled := true
 var trailers_muted := false
 var menu_open := false
 var menu_page=0
+const RESET_PAYMENT_ROW:=11
+const ENTREPRENEUR_ROW:=12
+var confirm_payment_customer:=-1
 var invite_mode := true
 var confirm_new=false
 var confirm_load=false
@@ -35,8 +38,9 @@ func _build_menu() -> void:
 	add_child(panel)
 	var back:=MeshInstance3D.new()
 	var quad:=QuadMesh.new()
-	quad.size=Vector2(.98,1.52)
+	quad.size=Vector2(1.12,1.80)
 	back.mesh=quad
+	back.position.y=-.12
 	var material:=StandardMaterial3D.new()
 	material.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.albedo_color=Color("101d30")
@@ -51,7 +55,7 @@ func _build_menu() -> void:
 	title.modulate=Color("f2c362")
 	panel.add_child(title)
 	panel_title=title
-	for row in range(11):
+	for row in range(ENTREPRENEUR_ROW+1):
 		var label:=Label3D.new()
 		label.font_size=33
 		label.pixel_size=.00075
@@ -69,8 +73,23 @@ func _refresh_labels() -> void:
 	for label in labels:
 		label.modulate=Color("123968")
 		label.outline_size=0
+	labels[RESET_PAYMENT_ROW].text=""
+	labels[ENTREPRENEUR_ROW].text=""
+	if menu_page==4:
+		for label in labels:label.text=""
+		labels[0].text="Retour"
+		labels[1].text="Quitter le mode entrepreneur" if game.entrepreneur_mode else "Commencer / continuer · Entrepreneur"
+		labels[2].text="Sauvegarde dédiée · Mai 2012"
+		labels[3].text="Commander · assembler · louer · développer"
+		if game.entrepreneur:
+			labels[2].text=game.entrepreneur.state.hour()+" · JOUR "+str(game.entrepreneur.state.day)
+			labels[3].text="Néon OUVERT · démarrer la journée" if game.entrepreneur.state.phase=="preparation" else "Clôturer" if game.entrepreneur.state.phase=="closing" else "Commencer le lendemain" if game.entrepreneur.state.phase=="closed" else "Boutique ouverte"
+			labels[4].text="Sauvegarder"
+			labels[5].text="Nouvelle entreprise · confirmer" if confirm_new else "Nouvelle entreprise"
+		return
 	if menu_page==3:
 		game.streamer.menu_labels(labels)
+		_refresh_payment_label()
 		panel_title.text="VIDÉO CLUB · STREAMER"
 		return
 	if messenger:
@@ -104,13 +123,20 @@ func _refresh_labels() -> void:
 	labels[2].text="Rangement manuel : "+("ACTIVÉ" if manual_mode else "ASSISTÉ")
 	labels[3].text="Pluie extérieure : "+("ACTIVÉE" if rain_enabled else "DÉSACTIVÉE")
 	labels[4].text="Ranger tous les DVD au sol"
-	labels[5].text="Netflix · test : "+("ACTIVÉ" if game.netflix.enabled else "DÉSACTIVÉ")
-	labels[6].text="Ouvrir Netflix / connexion"
+	labels[5].text="Catalogue : 200 films fictifs"
+	labels[6].text="Bandes-annonces : lecture aléatoire"
 	labels[7].text="Son des bandes-annonces : "+("COUPÉ" if trailers_muted else "ACTIVÉ")
 	labels[8].text="Partie · sauvegarder / continuer / nouvelle"
 	labels[9].text="Mode Streamer · B + Y" if game.streamer_mode else "Coop Wi-Fi"
+	labels[ENTREPRENEUR_ROW].text="Mode Entrepreneur · gestion de la boutique"
+	_refresh_payment_label()
+
+func _refresh_payment_label() -> void:
+	if game.clerk and game.clerk.can_reset_payment():
+		labels[RESET_PAYMENT_ROW].text="Confirmer la réinitialisation" if confirm_payment_customer==int(game.clerk.active.id) else "Réinitialiser le paiement"
 
 func toggle_pause() -> void:
+	confirm_payment_customer=-1
 	confirm_new=false
 	confirm_load=false
 	menu_open=not menu_open
@@ -142,11 +168,52 @@ func _menu_hit(origin: Vector3,direction: Vector3) -> int:
 	if t<0 or t>3:return -1
 	var p:=a+d*t
 	if absf(p.x)>.43:return -1
-	for i in range(11):
+	for i in range(labels.size()):
 		if absf(p.y-(.43-i*.108))<.045:return i
 	return -1
 
 func _activate(row: int) -> void:
+	if row==ENTREPRENEUR_ROW and menu_page==0:
+		menu_page=4
+		_refresh_labels()
+		return
+	if menu_page==4:
+		match row:
+			0:menu_page=0
+			1:
+				if game.entrepreneur:game.entrepreneur.switch_mode()
+				else:
+					if game.session and not game.session.load_failed:game.session.save_game(false)
+					get_tree().set_meta("entrepreneur_mode",true)
+					get_tree().set_meta("streamer_mode",false)
+					get_tree().paused=false
+					get_tree().reload_current_scene()
+				return
+			3:
+				if game.entrepreneur:
+					match game.entrepreneur.state.phase:
+						"preparation":game.entrepreneur.open_day()
+						"closing":game.entrepreneur.close_day()
+						"closed":game.entrepreneur.next_day()
+			4:game.session.save_game()
+			5:
+				if confirm_new:game.session.new_game()
+				else:confirm_new=true
+		_refresh_labels()
+		return
+	if row==RESET_PAYMENT_ROW:
+		if menu_page not in [0,3] or not game.clerk or not game.clerk.can_reset_payment():return
+		var customer:=int(game.clerk.active.id)
+		if confirm_payment_customer==customer:
+			confirm_payment_customer=-1
+			if game.clerk.reset_payment():
+				toggle_pause()
+				return
+		else:
+			confirm_payment_customer=customer
+		_refresh_labels()
+		return
+	confirm_payment_customer=-1
 	if menu_page==3:
 		game.streamer.menu_action(row)
 		return
@@ -188,8 +255,8 @@ func _activate(row: int) -> void:
 			rain_enabled=not rain_enabled
 			for rain in rain_nodes:rain.emitting=rain_enabled
 		4:restore_loose_dvds()
-		5:game.netflix.toggle()
-		6:OS.shell_open("https://www.netflix.com/ca-fr/login")
+		5:game._message("Le catalogue contient uniquement nos 200 films fictifs.")
+		6:game._message("Les bandes-annonces jouent en arrière-plan, indépendamment des boîtiers.")
 		8:menu_page=1
 		10:game.toggle_clerk_model()
 		9:
@@ -359,6 +426,7 @@ func try_loose_pickup(hand_index: int,by_grip: bool) -> bool:
 	for record in loose_dvds:
 		if not record.has("loose_body") or not is_instance_valid(record.loose_body):continue
 		var body:RigidBody3D=record.loose_body
+		if body.get_meta("customer_animating",false):continue
 		if game.hands[hand_index].global_position.distance_to(body.global_position)>.20:continue
 		body.freeze=true
 		body.collision_mask=0

@@ -1,9 +1,19 @@
 extends RefCounted
 static func unit(movie:Dictionary)->int:
+	if movie.has("business_rent"):return int(movie.business_rent)
 	if movie.get("console","")!="":return 495 if int(movie.id)%2==0 else 595
 	if int(movie.get("year",2000))<=1995:return 275
 	return 375 if int(movie.get("year",2000))<=2001 else 425
 static func quote(movies:Array,ids:Array)->Dictionary:
+	if not movies.is_empty() and movies[0].has("business_rent"):
+		var business_total:=0
+		var standard:=0
+		for id in ids:
+			var amount:=unit(movies[int(id)])
+			business_total+=amount
+			if amount==500:standard+=1
+		var business_discount:=int(standard/4)*200
+		return {"total":business_total-business_discount,"subtotal":business_total-business_discount,"gst":0,"qst":0,"discount":business_discount,"bundles":int(standard/4)}
 	var total=0
 	var classics=0
 	for id in ids:

@@ -60,6 +60,7 @@ var screen_title: Label
 var trailer_banner: Label
 var trailer_player: VideoStreamPlayer
 var trailer_streams: Dictionary = {}
+var trailer_titles:Dictionary={}
 var active_trailer := -1
 var trailer_timer := 0.0
 var screen_timer := 0.0
@@ -78,6 +79,7 @@ var poster_cache: Dictionary = {}
 var lod_last_eye := Vector3.INF
 var lod_last_examined := 0
 var lod_groups: Dictionary = {}
+var lod_recent:Dictionary={}
 var lod_timer := 0.0
 var lod_selected: Dictionary = {}
 var diagnostics_worker:Thread
@@ -87,9 +89,12 @@ var lod_occlusion_tests := 0
 
 var streamer
 var streamer_mode:bool=false
+var entrepreneur_mode:bool=false
+var entrepreneur
 
 func _ready() -> void:
-	streamer_mode=OS.has_feature("quest") and bool(get_tree().get_meta("streamer_mode",false))
+	entrepreneur_mode=bool(get_tree().get_meta("entrepreneur_mode",false)) or "--entrepreneur" in OS.get_cmdline_user_args()
+	streamer_mode=not entrepreneur_mode and OS.has_feature("quest") and bool(get_tree().get_meta("streamer_mode",false))
 	var avatar_settings:=ConfigFile.new()
 	if avatar_settings.load("user://avatar.cfg")==OK:
 		clerk_model=1 if avatar_settings.get_value("avatar","clerk_model",0)==1 else 0
@@ -110,7 +115,8 @@ func _ready() -> void:
 	load("res://catalogue_expansion.gd").expand(self)
 	load("res://scene_refresh.gd").remove_rear_shelves(self)
 	load("res://clerk_workspace.gd").expand(self)
-	load("res://games_catalogue.gd").install(self)
+	load("res://fictional_catalogue.gd").install(self)
+	if entrepreneur_mode:load("res://entrepreneur_world.gd").empty_shop(self)
 	_prepare_world()
 	var exterior := Node3D.new()
 	exterior.set_script(load("res://exterior_continuation.gd"))
@@ -129,6 +135,7 @@ func _ready() -> void:
 	teleportation.setup(self)
 	_prepare_screens()
 	_index_dvds()
+	load("res://fictional_catalogue.gd").attach_records(self)
 	_prepare_cover_lod()
 	_prepare_held_pool()
 	if startup:await startup.stage(82.0,"Préparation du comptoir et des clients…")
@@ -139,7 +146,7 @@ func _ready() -> void:
 	add_child(modes)
 	netflix=load("res://netflix_mode.gd").new()
 	add_child(netflix)
-	netflix.setup(self)
+	# Legacy streaming-provider cases are intentionally unavailable.
 	modes.setup(self)
 	load("res://material_relief.gd").apply(model)
 	load("res://scene_refresh.gd").apply_surfaces(self)
@@ -153,6 +160,10 @@ func _ready() -> void:
 	lobby=preload("res://club_lobby.gd").new()
 	add_child(lobby)
 	lobby.setup(self)
+	if entrepreneur_mode:
+		entrepreneur=load("res://club_entrepreneur.gd").new()
+		add_child(entrepreneur)
+		entrepreneur.setup(self)
 	if xr_active or touch_profile:
 		local_clerk_avatar=preload("res://club_peer_pose.gd").new()
 		add_child(local_clerk_avatar)
@@ -162,6 +173,7 @@ func _ready() -> void:
 	add_child(session)
 	if touch_profile and not OS.has_feature("android"):session.save_path="user://touch-playtest.dat"
 	if streamer_mode:session.save_path="user://club-streamer.dat"
+	if entrepreneur_mode:session.save_path="user://club-entrepreneur.dat"
 	if OS.has_feature("quest"):
 		streamer=preload("res://club_streamer.gd").new()
 		add_child(streamer)
@@ -192,7 +204,7 @@ func _request_refresh_rate() -> void:
 
 func _restore_instances() -> void:
 	dvd_atlas_material = StandardMaterial3D.new()
-	dvd_atlas_material.albedo_texture = load("res://assets/dvd-atlas.png")
+	dvd_atlas_material.albedo_color = Color("17191b")
 	dvd_atlas_material.roughness = 0.65
 	dvd_atlas_material.metallic_specular = 0.12
 	dvd_atlas_material.shading_mode = BaseMaterial3D.SHADING_MODE_PER_VERTEX
@@ -427,6 +439,7 @@ func _prepare_screens() -> void:
 			var path := "res://assets/"+str(entry.file)
 			if ResourceLoader.exists(path):
 				trailer_streams[int(entry.id)] = load(path)
+				trailer_titles[int(entry.id)]=str(entry.get("title","Bandes-annonces"))
 	var banner := Label.new()
 	trailer_banner = banner
 	banner.text = "VIDÉO CLUB · APERÇU DE DÉMONSTRATION"
@@ -472,7 +485,8 @@ func _play_trailer(id: int) -> void:
 	trailer_player.stream = trailer_streams[id]
 	trailer_player.visible = true
 	screen_picture.visible = false
-	trailer_banner.text = ("JEUX VIDÉO · "+str(layout.movies[id].get("console",""))) if layout.movies[id].get("kind","")=="game" else "VIDÉO CLUB · BANDE-ANNONCE"
+	trailer_banner.text = "VIDÉO CLUB · BANDES-ANNONCES"
+	screen_title.text=str(trailer_titles.get(id,"Bandes-annonces"))
 	trailer_player.play()
 	screen_view.render_target_update_mode = SubViewport.UPDATE_ONCE
 	print("VIDEOCLUB_TRAILER_STARTED id=",id)
@@ -512,6 +526,7 @@ func _nearby_dvd_indices(p: Vector3, radius: float) -> Array:
 	return result
 
 func _prepare_held_pool() -> void:
+	if entrepreneur_mode:return
 	for id in dvd_groups:
 		var item := Node3D.new()
 		item.name = "DVDPool%d" % id
@@ -522,27 +537,30 @@ func _prepare_held_pool() -> void:
 
 
 func _prepare_cover_lod() -> void:
-	for id in dvd_groups:
-		var pair: Array = []
-		for side in ["front","back"]:
-			var quad := QuadMesh.new()
-			quad.size = Vector2(0.131,float(layout.movies[id].get("caseHeight",.19))-.004)
-			var mat := StandardMaterial3D.new()
-			mat.albedo_texture = load("res://cover_textures.gd").get_cover("res://assets/covers/%02d-%s.jpg" % [id,side])
-			mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-			mat.roughness = 0.65
-			quad.material = mat
-			var mm := MultiMesh.new()
-			mm.transform_format = MultiMesh.TRANSFORM_3D
-			mm.mesh = quad
-			mm.instance_count = COVER_DETAIL_BUDGET
-			mm.visible_instance_count = 0
-			var node := MultiMeshInstance3D.new()
-			node.multimesh = mm
-			node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			add_child(node)
-			pair.append(node)
-		lod_groups[id] = pair
+	if entrepreneur_mode:return
+	for id in dvd_groups:_create_cover_lod(id)
+
+func _create_cover_lod(id:int) -> void:
+	var pair: Array = []
+	for side in ["front","back"]:
+		var quad := QuadMesh.new()
+		quad.size = Vector2(0.131,float(layout.movies[id].get("caseHeight",.19))-.004)
+		var mat := StandardMaterial3D.new()
+		if not layout.movies[id].get("fictional",false):mat.albedo_texture = load("res://cover_textures.gd").get_cover(load("res://cover_textures.gd").path_for(layout.movies[id],side))
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+		mat.roughness = 0.65
+		quad.material = mat
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = quad
+		mm.instance_count = COVER_DETAIL_BUDGET
+		mm.visible_instance_count = 0
+		var node := MultiMeshInstance3D.new()
+		node.multimesh = mm
+		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(node)
+		pair.append(node)
+	lod_groups[id] = pair
 
 func _update_cover_lod(eye: Vector3, force := false) -> void:
 	var forward := -head.global_basis.z.normalized()
@@ -579,10 +597,16 @@ func _update_cover_lod(eye: Vector3, force := false) -> void:
 		if xr_active and not _cover_in_view(eye,record.world.origin,forward):
 			continue
 		var id: int = record.movie
+		if not lod_groups.has(id):_create_cover_lod(id)
+		if not counts.has(id):counts[id]=[0,0]
+		lod_recent[id]=Time.get_ticks_msec()
 		var front:Vector3=record.world.basis.z.normalized()
 		for side in range(2):
 			var facing:float=front.dot(eye-record.world.origin)*(1.0 if side==0 else -1.0)
 			if facing < -.035:continue
+			var paper:StandardMaterial3D=lod_groups[id][side].multimesh.mesh.material
+			if not paper.albedo_texture:
+				paper.albedo_texture=load("res://cover_textures.gd").get_cover(load("res://cover_textures.gd").path_for(layout.movies[id],"front" if side==0 else "back"))
 			var slot:int=counts[id][side]
 			var offset := Transform3D(Basis(Vector3.UP,PI if side==1 else 0.0),Vector3(0,0,-0.0082 if side==1 else 0.0082))
 			lod_groups[id][side].multimesh.set_instance_transform(slot,record.world*offset)
@@ -593,6 +617,15 @@ func _update_cover_lod(eye: Vector3, force := false) -> void:
 			var node=lod_groups[id][side]
 			node.multimesh.visible_instance_count = counts[id][side]
 			node.visible=counts[id][side]>0
+	if not lod_recent.is_empty():
+		var idle:Array=lod_groups.keys().filter(func(id):return counts.get(id,[0,0])==[0,0])
+		idle.sort_custom(func(a,b):return int(lod_recent.get(a,0))<int(lod_recent.get(b,0)))
+		var limit:=maxi(24,lod_groups.size()-idle.size()+8)
+		while lod_groups.size()>limit and not idle.is_empty():
+			var old_id:int=idle.pop_front()
+			for node in lod_groups[old_id]:node.queue_free()
+			lod_groups.erase(old_id)
+			lod_recent.erase(old_id)
 
 func _cover_in_view(eye: Vector3, center: Vector3, forward: Vector3) -> bool:
 	var ray := center-eye
@@ -855,7 +888,7 @@ func _move_player(delta: Vector3) -> void:
 		var p := head.global_position
 		var before := p
 		p[axis] += delta[axis]
-		if p.x>-30 and p.x<30 and p.z>-9.0 and p.z<40 and (not _blocked(p) or _escaping_collision(before,p)):
+		if p.x>-30 and p.x<30 and p.z>(-14.1 if entrepreneur_mode else -9.0) and p.z<40 and (not _blocked(p) or _escaping_collision(before,p)):
 			origin.position[axis] += delta[axis]
 
 func _escaping_collision(before:Vector3,after:Vector3)->bool:
@@ -940,6 +973,11 @@ func _take(record: Dictionary, hand_index: int, by_grip: bool) -> void:
 	if shell and record.shell_index>=0:
 		shell.multimesh.set_instance_transform(record.shell_index,zero)
 	movie_id = int(record.movie)
+	if not held_pool.has(movie_id):
+		var item:=Node3D.new()
+		load("res://held_case.gd").build(item,layout.movies[movie_id])
+		add_child(item)
+		held_pool[movie_id]=item
 	held = held_pool[movie_id]
 	held.reparent(dvd_grip_anchors[hand_index],false)
 	held.position = Vector3.ZERO
@@ -947,12 +985,6 @@ func _take(record: Dictionary, hand_index: int, by_grip: bool) -> void:
 	held.visible = true
 	load("res://clerk_inventory.gd").bind(held,record)
 	_update_cover_lod(head.global_position,true)
-	screen_title.text = layout.movies[movie_id].title
-	if not poster_cache.has(movie_id):
-		var poster_path := ("res://assets/covers/%02d-front.jpg" if movie_id>=24 else "res://assets/posters/%02d.png") % movie_id
-		poster_cache[movie_id]=load(poster_path)
-	screen_picture.texture = poster_cache[movie_id]
-	_play_trailer(movie_id)
 	screen_view.render_target_update_mode = SubViewport.UPDATE_ONCE
 	var authenticity := "Dos reconstitué pour la démonstration"
 	if movie_id<cover_info.size() and cover_info[movie_id].get("verified",false):
@@ -967,7 +999,7 @@ func _add_true_covers(parent: Node3D, id: int) -> void:
 	if id>=cover_info.size():
 		return
 	for side in ["front","back"]:
-		var path := "res://assets/covers/%02d-%s.jpg" % [id,side]
+		var path:String=load("res://cover_textures.gd").path_for(layout.movies[id],side)
 		if not ResourceLoader.exists(path):
 			continue
 		var plane := MeshInstance3D.new()

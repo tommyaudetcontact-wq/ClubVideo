@@ -557,7 +557,7 @@ func guest_money(action:String,request:Dictionary)->String:
 			if not clerk.drawer_open or not (clerk.tender_received or clerk.active.get("await_cash",false)) or p.distance_to(clerk.drawer.global_position)>1.8:return "Ouvre le tiroir et encaisse le paiement."
 			if not clerk.till.has(value) or int(clerk.till[value])<=0:return "Cette pièce ou ce billet n’est plus disponible."
 			clerk.till[value]-=1
-			clerk.track_cash_delta(value,-1,int(clerk.active.id))
+			clerk.track_cash_delta(value,-1,int(clerk.active.get("id",-1)))
 			add_guest_money(value,false,clerk.active.get("id",-1))
 	elif action=="cash_pick":
 		if guest_cash.size()>=32:return "Main pleine."
