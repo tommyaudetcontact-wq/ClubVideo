@@ -1,0 +1,24 @@
+[
+  {
+    "name": "VideoClub-VR-Quest3S-v0.11.2.apk",
+    "bytes": 756209738,
+    "sha256": "8d3291be189f9d6d35151cd50a224fb486b928021f44893755d3d954fd03e31e",
+    "metadata": "package: name='com.videoclub.quest' versionCode='91' versionName='0.11.2' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'",
+    "videos": [
+      "assets/assets/trailers/00.ogv",
+      "assets/assets/trailers/01.ogv",
+      "assets/assets/trailers/02.ogv"
+    ]
+  },
+  {
+    "name": "VideoClub-Android-Jeu-v0.11.2.apk",
+    "bytes": 750336978,
+    "sha256": "85db88ceb9ce1813dfc931ea7fb4983066d87ec90c171d6e7eb252fb93e27d66",
+    "metadata": "package: name='com.videoclub.android' versionCode='43' versionName='0.11.2' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'",
+    "videos": [
+      "assets/assets/trailers/00.ogv",
+      "assets/assets/trailers/01.ogv",
+      "assets/assets/trailers/02.ogv"
+    ]
+  }
+]
