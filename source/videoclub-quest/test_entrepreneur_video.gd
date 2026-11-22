@@ -10,13 +10,10 @@ func _initialize():
 	var b=g.entrepreneur;var c=g.clerk
 	b.buy_shelf(0);b.tick(11);var order:Dictionary=b.state.orders[0]
 	b.open_parcel(int(order.id))
-	check(b.assembly.stage=="site" and b.packages.has(int(order.id)),"shelf parcel remains until built")
-	b.ghost.transform=b.snap_placement(Vector3(0,0,1),PI/4,0)
-	b.finish_placement()
-	check(b.assembly.stage=="boards" and b.assembly_node.transform==b.assembly.pose,"assembly snapped at 45 degrees on selected site")
+	check(b.assembly.stage=="boards" and b.packages.has(int(order.id)),"carton starts assembly where deposited")
 	for i in 6:b.take_board(1);b.place_board()
-	for i in 4:b.fasten_screw(.61)
-	check(b.state.shelves.size()==1 and b.packages.is_empty(),"parcel consumed once after all six boards and four screws")
+	for i in 10:b.fasten_screw(.61)
+	check(b.state.shelves.size()==1 and b.packages.is_empty(),"parcel consumed once after all six boards and ten screws")
 	b.state.cash=100000
 	var movie:int=b.state.offers[0]
 	for i in 21:check(b.buy_film(movie),"order copy")
@@ -53,7 +50,7 @@ func _initialize():
 	check(g.shelf_ray(record.world.origin+record.world.basis.z, -record.world.basis.z,2).get("id",-1)==record.id,"moved stock still selectable")
 	var view=c.desktop.business_view;c.desktop.open_program(5);view.page=0;view.refresh()
 	view.scroll_rows(1);check(view.offset==1,"continuous scroll advances one row")
-	check(view.thumbnails[3].texture!=null,"catalogue contains actual cover thumbnails")
+	check(view.film_cards.size()==3,"catalogue displays larger film cards")
 	check(b.calendar_canvas.previews.size()==3,"calendar displays three forthcoming covers")
 	print("ENTREPRENEUR_VIDEO_COMPLETE failures=",failures)
 	quit(1 if failures else 0)

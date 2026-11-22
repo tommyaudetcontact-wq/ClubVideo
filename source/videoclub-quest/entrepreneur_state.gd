@@ -15,12 +15,14 @@ var bundles:Array=[]
 var next_bundle:=3
 var next_release:=6
 var releases:Dictionary={}
+var release_days:Dictionary={}
 var upcoming:Array=[]
 var ratings:Dictionary={}
 var shelves:Array=[]
 var stock:Dictionary={}
 var orders:Array=[]
 var posters:Array=[]
+var decorations:Array=[]
 var reservations:Array=[]
 var daily_receipts:=0
 var daily_refunds:=0
@@ -36,6 +38,14 @@ func initialize(movies:Array,seed_value:int) -> void:
 	while upcoming.size()<mini(24,future.size()+upcoming.size()) and not future.is_empty():
 		upcoming.append(future.pop_at(rng.randi_range(0,future.size()-1)))
 	roll_offers(movies)
+	plan_releases()
+
+func plan_releases() -> void:
+	var date:=next_release
+	for id in upcoming:
+		if release_days.has(int(id)):date=int(release_days[int(id)])
+		else:release_days[int(id)]=date
+		date+=rng.randi_range(5,14)
 
 func calendar() -> Dictionary:
 	return Time.get_date_dict_from_unix_time(START_DATE+(day-1)*86400)
@@ -84,7 +94,7 @@ func roll_offers(movies:Array) -> void:
 		if not upcoming.is_empty():
 			released=int(upcoming.pop_front())
 			releases[released]=day
-		next_release=day+rng.randi_range(5,14)
+		next_release=int(release_days.get(int(upcoming[0]),day+rng.randi_range(5,14))) if not upcoming.is_empty() else day+14
 	offers=[]
 	var pool:Array=catalogue.filter(func(movie):return not upcoming.has(int(movie.id))).map(func(movie):return int(movie.id))
 	var offer_count:=mini(pool.size(),rng.randi_range(15,25))
@@ -115,10 +125,10 @@ func buy(kind:String,value:int,price:int,contents:Array=[]) -> bool:
 	cash-=price
 	if kind=="films":
 		for order in orders:
-			if order.kind=="films" and not order.delivered and order.contents.size()+contents.size()<=20:
+			if order.kind=="films" and not order.get("opened",false) and order.contents.size()+contents.size()<=20:
 				order.contents.append_array(contents)
 				return true
-	orders.append({"id":next_order,"kind":kind,"value":value,"contents":contents.duplicate(),"remaining":10.0,"delivered":false})
+	orders.append({"id":next_order,"kind":kind,"value":value,"contents":contents.duplicate(),"remaining":0.0,"delivered":false})
 	next_order+=1
 	return true
 
@@ -146,7 +156,7 @@ func next_day(movies:Array) -> void:
 
 func snapshot() -> Dictionary:
 	var result:Dictionary={}
-	for field in ["day","phase","played","cash","weather","offers","bundles","next_bundle","next_release","releases","upcoming","ratings","shelves","stock","orders","posters","reservations","daily_receipts","daily_refunds","next_order","report"]:
+	for field in ["day","phase","played","cash","weather","offers","bundles","next_bundle","next_release","releases","release_days","upcoming","ratings","shelves","stock","orders","posters","decorations","reservations","daily_receipts","daily_refunds","next_order","report"]:
 		var value:Variant=get(field)
 		result[field]=value.duplicate(true) if value is Array or value is Dictionary else value
 	result.rng_seed=rng.seed
@@ -159,3 +169,5 @@ func restore(saved:Dictionary) -> void:
 		if saved.has(field):set(field,saved[field])
 	rng.seed=int(saved.get("rng_seed",1))
 	rng.state=int(saved.get("rng_state",rng.state))
+	if not saved.has("release_days"):
+		release_days.clear();plan_releases()

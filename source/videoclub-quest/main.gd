@@ -93,7 +93,7 @@ var entrepreneur_mode:bool=false
 var entrepreneur
 
 func _ready() -> void:
-	entrepreneur_mode=bool(get_tree().get_meta("entrepreneur_mode",false)) or "--entrepreneur" in OS.get_cmdline_user_args()
+	entrepreneur_mode=bool(get_tree().get_meta("entrepreneur_mode",OS.has_feature("android") and not bool(get_tree().get_meta("streamer_mode",false)))) or "--entrepreneur" in OS.get_cmdline_user_args()
 	streamer_mode=not entrepreneur_mode and OS.has_feature("quest") and bool(get_tree().get_meta("streamer_mode",false))
 	var avatar_settings:=ConfigFile.new()
 	if avatar_settings.load("user://avatar.cfg")==OK:
@@ -433,8 +433,9 @@ func _prepare_screens() -> void:
 	trailer_player.finished.connect(_play_ambient_trailer)
 	screen_view.add_child(trailer_player)
 	trailer_player.visible = false
-	if FileAccess.file_exists("res://assets/trailers.json"):
-		var entries: Array = JSON.parse_string(FileAccess.get_file_as_string("res://assets/trailers.json"))
+	var trailer_manifest:="res://assets/trailers-test.json" if OS.has_feature("lite_trailers") else "res://assets/trailers.json"
+	if FileAccess.file_exists(trailer_manifest):
+		var entries: Array = JSON.parse_string(FileAccess.get_file_as_string(trailer_manifest))
 		for entry in entries:
 			var path := "res://assets/"+str(entry.file)
 			if ResourceLoader.exists(path):
@@ -791,6 +792,7 @@ func _physics_process(delta: float) -> void:
 		if grip and not previous_grip[i]:
 			_interact(i,true)
 		if not grip and previous_grip[i] and clerk:
+			if entrepreneur:entrepreneur.release_grip(i)
 			clerk.wallet.release_grip(i)
 			clerk.basket.release(i)
 			clerk.locks.release(i)
@@ -806,7 +808,7 @@ func _physics_process(delta: float) -> void:
 
 func _update_crouch(stick:Vector2,delta:float)->void:
 	var crouch_pressed=stick.y<-.55 and absf(stick.x)<.55
-	var target=-maxf(0.0,head.position.y-.60) if crouch_pressed else 0.0
+	var target=-maxf(0.0,head.position.y-.95) if crouch_pressed else 0.0
 	var next=move_toward(crouch_offset,target,delta*1.8)
 	origin.position.y+=next-crouch_offset
 	crouch_offset=next

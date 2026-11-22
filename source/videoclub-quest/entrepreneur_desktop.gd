@@ -10,12 +10,13 @@ var message:Label
 var rows:Array[Button]=[]
 var row_ids:Array=[]
 var thumbnails:Array[Control]=[]
+var film_cards:Array[Control]=[]
 var wheel_accumulator:=0.0
 var category_button:Button
 var calendar_preview:TextureRect
 var primary:Button
 var secondary:Button
-const TABS:=["Commandes","Inventaire","Clients","Réservations","Calendrier","Rayons"]
+const TABS:=["Commandes","Inventaire","Clients","Réserv.","Calendrier","Rayons"]
 
 func setup(owner_desktop) -> void:
 	desktop=owner_desktop
@@ -25,9 +26,9 @@ func setup(owner_desktop) -> void:
 		var tab:=index
 		add_button(Rect2(index*135,0,131,40),TABS[index],func():page=tab;offset=0;selected=-1;refresh())
 	heading=desktop.label(self,Rect2(8,48,794,62),25,Color("17396b"))
-	for index in range(5):
+	for index in range(3):
 		var row:=index
-		add_button(Rect2(8,120+index*62,794,56),"",func():select_row(row))
+		add_button(Rect2(8,114+index*108,735,103),"",func():select_row(row))
 		rows.append(desktop.targets.back())
 		rows.back().alignment=HORIZONTAL_ALIGNMENT_LEFT
 		var style:StyleBoxFlat=rows.back().get_theme_stylebox("normal").duplicate()
@@ -39,12 +40,15 @@ func setup(owner_desktop) -> void:
 		rows.back().add_theme_color_override("font_hover_color",Color("17396b"))
 		rows.back().add_theme_font_size_override("font_size",20)
 		var thumb:Control=load("res://entrepreneur_thumbnail.gd").new()
-		thumb.position=Vector2(12,122+index*62);thumb.size=Vector2(64,52);thumb.mouse_filter=Control.MOUSE_FILTER_IGNORE
+		thumb.position=Vector2(12,136+index*108);thumb.size=Vector2(64,52);thumb.mouse_filter=Control.MOUSE_FILTER_IGNORE
 		add_child(thumb);thumbnails.append(thumb)
+		var card:Control=load("res://entrepreneur_card.gd").new()
+		card.position=Vector2(12,116+index*108);card.size=Vector2(725,102);card.mouse_filter=Control.MOUSE_FILTER_IGNORE
+		add_child(card);film_cards.append(card)
 	message=desktop.label(self,Rect2(8,435,794,42),19,Color("17396b"))
 	message.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
-	add_button(Rect2(8,518,135,40),"Précédent",func():offset=maxi(0,offset-5);refresh())
-	add_button(Rect2(151,518,135,40),"Suivant",func():offset+=5;refresh())
+	add_button(Rect2(8,518,135,40),"Précédent",func():offset=maxi(0,offset-3);refresh())
+	add_button(Rect2(151,518,135,40),"Suivant",func():offset+=3;refresh())
 	add_button(Rect2(294,518,248,40),"",act)
 	primary=desktop.targets.back()
 	add_button(Rect2(550,518,252,40),"",alternate)
@@ -53,6 +57,8 @@ func setup(owner_desktop) -> void:
 
 	add_button(Rect2(8,482,794,30),"Catégorie suivante",func():selected_genre=(selected_genre+1)%10;refresh())
 	category_button=desktop.targets.back()
+	add_button(Rect2(750,114,52,150),"▲",func():scroll_rows(-1))
+	add_button(Rect2(750,272,52,150),"▼",func():scroll_rows(1))
 	calendar_preview=TextureRect.new();calendar_preview.position=Vector2(135,116);calendar_preview.size=Vector2(530,310)
 	calendar_preview.expand_mode=TextureRect.EXPAND_IGNORE_SIZE;calendar_preview.stretch_mode=TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	calendar_preview.mouse_filter=Control.MOUSE_FILTER_IGNORE;add_child(calendar_preview);calendar_preview.hide()
@@ -63,7 +69,7 @@ func scroll_rows(amount:int) -> void:
 	desktop.get_viewport().render_target_update_mode=SubViewport.UPDATE_ONCE
 
 func scroll_input(axis:float,dt:float) -> bool:
-	if not visible or not desktop.cursor.visible or not Rect2(global_position+Vector2(8,110),Vector2(794,320)).has_point(desktop.cursor.position):return false
+	if not visible or not desktop.cursor.visible:return false
 	if absf(axis)<.35:wheel_accumulator=0;return false
 	wheel_accumulator+=dt
 	if wheel_accumulator>.16:wheel_accumulator=0;scroll_rows(-1 if axis>0 else 1)
@@ -89,7 +95,10 @@ func refresh() -> void:
 		0:
 			for model in range(3):
 				row_ids.append({"kind":"shelf","id":model})
-				descriptions.append("Étagère · %d DVD côte à côte · %d places · %.2f $"%[state.SHELF_COLUMNS[model],state.SHELF_COLUMNS[model]*4,state.SHELF_PRICES[model]/100.0])
+				descriptions.append("Étagère · %d DVD côte à côte\n%d places · %.2f $"%[state.SHELF_COLUMNS[model],state.SHELF_COLUMNS[model]*4,state.SHELF_PRICES[model]/100.0])
+			for decor_id in 4:
+				row_ids.append({"kind":"decoration","id":decor_id})
+				descriptions.append("%s · %.2f $"%[business.decor.NAMES[decor_id],business.decor.PRICES[decor_id]/100.0])
 			for index in state.bundles.size():
 				row_ids.append({"kind":"bundle","id":index})
 				descriptions.append("Lot de %d films · %.2f $"%[state.bundles[index].movies.size(),state.bundles[index].price/100.0])
@@ -97,7 +106,7 @@ func refresh() -> void:
 				row_ids.append({"kind":"film","id":id})
 				var movie:Dictionary=business.game.layout.movies[id]
 				descriptions.append("%s · %d · %.2f $\n%s · %s · %.1f/5 · %s"%[str(movie.title).left(28),int(movie.year),state.purchase_price(movie)/100.0,str(movie.genre),"NOUVEAU" if state.is_new(id) else "VIEUX" if state.rental(movie)==375 else "STANDARD",state.ratings[id],business.review_tag(id)])
-			message.text="Sélectionne un achat, puis Commander. Livraison au backstore après 10 s. Les prix de location affichés sont tout compris."
+			message.text="Commande confirmée = colis disponible immédiatement au backstore."
 			primary.text="Commander"
 			secondary.text="Affiche du film · 15 $"
 		1:
@@ -145,13 +154,22 @@ func refresh() -> void:
 			message.text="Choix : %s. Commande une étiquette, puis ouvre son colis : elle sera posée sur ce rayon."%str(state.CATEGORIES[selected_genre])
 			primary.text="Déplacer le rayon"
 			secondary.text="Étiquette · 3 $"
-	offset=clampi(offset,0,maxi(0,descriptions.size()-5))
+	offset=clampi(offset,0,maxi(0,descriptions.size()-3))
 	for index in rows.size():
 		var position_index:=offset+index
 		rows[index].visible=page!=4 and position_index<descriptions.size()
 		thumbnails[index].visible=rows[index].visible
+		film_cards[index].visible=false
 		if rows[index].visible:
 			rows[index].text=descriptions[position_index]
+			film_cards[index].hide()
+			if position_index<row_ids.size() and row_ids[position_index].kind in ["film","stock"]:
+				var item:Dictionary=row_ids[position_index]
+				var id:int=int(item.id) if item.kind=="film" else int(state.stock[item.id].movie)
+				var movie:Dictionary=business.game.layout.movies[id]
+				var classification:="NOUVEAU" if state.is_new(id) else "CLASSIQUE" if state.rental(movie)==375 else "STANDARD"
+				film_cards[index].configure(movie,classification,"%d · %.2f $ · %.1f/5"%[int(movie.year),state.purchase_price(movie)/100.0,float(state.ratings[id])])
+				film_cards[index].show();rows[index].text="";thumbnails[index].hide()
 			if position_index<row_ids.size():thumbnails[index].show_item(row_ids[position_index],business)
 			rows[index].modulate=Color("ffe4a4") if selected==position_index else Color.WHITE
 	category_button.visible=page==5
@@ -188,6 +206,7 @@ func act() -> void:
 		0:
 			match item.kind:
 				"shelf":success=business.buy_shelf(item.id)
+				"decoration":success=business.decor.buy(item.id)
 				"film":success=business.buy_film(item.id)
 				"bundle":
 					var batch:Dictionary=business.state.bundles[item.id]
@@ -209,6 +228,7 @@ func act() -> void:
 			var reservation:Dictionary=business.state.reservations[item.id]
 			var copies:Array=business.state.stock.keys().filter(func(id):return business.state.stock[id].movie==reservation.movie and not business.state.stock[id].get("sold",false))
 			if not copies.is_empty():business.locate_id=int(copies[0])
+	business.flush_orders()
 	refresh()
 
 func alternate() -> void:
@@ -239,6 +259,7 @@ func alternate() -> void:
 		5:
 			var ok:bool=business.state.buy("sign",selected_genre,300,[int(item.id)])
 			business.game._message("Étiquette commandée pour ce rayon." if ok else "Fonds insuffisants.")
+	business.flush_orders()
 	refresh()
 
 func day_action() -> void:

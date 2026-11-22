@@ -1286,6 +1286,9 @@ func case_drop_target()->Vector3:
 	var basket_point:Vector3=clerk.basket.body.to_global(Vector3(0,.16,0))
 	if near(basket_point,1.8) and aimed(basket_point,.30)<INF:return basket_point
 	var record:Dictionary=clerk.held_service.get("record",{})
+	if game.entrepreneur and not record.is_empty():
+		var slot:Vector3=game.entrepreneur.slots.ray_target(game.head.global_position,-game.aim_hands[1].global_basis.z,int(record.id))
+		if slot.is_finite():return slot
 	if not record.is_empty() and near(record.world.origin,1.45) and aimed(record.world.origin,.23)<INF:
 		return record.world.origin
 	var table:=table_point(.93)

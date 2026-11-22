@@ -3,6 +3,10 @@ const Rules=preload("res://entrepreneur_state.gd")
 const World=preload("res://entrepreneur_world.gd")
 const Props=preload("res://clerk_props.gd")
 var game
+const Build=preload("res://entrepreneur_build.gd")
+var slots=preload("res://entrepreneur_slots.gd").new()
+var active_screw:=-1
+var decor=preload("res://entrepreneur_decor.gd").new()
 var state:Rules=Rules.new()
 var office_screen:MeshInstance3D
 var calendar_label:Label3D
@@ -18,12 +22,14 @@ var assembly:Dictionary={}
 var assembly_node:Node3D
 var ghost:Node3D
 var ghost_label:Label3D
+var placement_hand:=1
 var placement_angle:=0.0
 var placement_valid:=false
 var drill:Node3D
 var drill_hand:=-1
 var board:Node3D
 var board_hand:=-1
+var loose_board:RigidBody3D
 var screw_progress:=0.0
 var second_clock:=0.0
 var phone_remaining:=75.0
@@ -46,6 +52,7 @@ func setup(g) -> void:
 	game=g
 	poster_placement.setup(self)
 	freight.setup(self)
+	slots.setup(self)
 	state.initialize(game.layout.movies,randi())
 	game.clerk.max_basket=4
 	game.clerk.shift.started=false
@@ -67,7 +74,15 @@ func setup(g) -> void:
 		if game.shell and record.shell_index>=0:game.shell.multimesh.set_instance_transform(record.shell_index,zero)
 		game.clerk.locks.update_slot(record)
 	build_backstore()
+	var display:MeshInstance3D=game.clerk.screen
+	var center:Transform3D=display.global_transform
+	center.origin.y+=.13;center.origin+=center.basis.z*.06
+	var monitor:=World.office_monitor(self)
+	monitor.global_transform=center*Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*1.35),Vector3(0,-.025,-.238*1.35))
+	var face:=QuadMesh.new();face.size=Vector2(.594,.432)
+	display.mesh=face;display.global_transform=center
 	build_watch()
+	decor.setup(self)
 	update_prices()
 	apply_weather()
 	refresh_calendar()
@@ -91,7 +106,8 @@ func build_backstore() -> void:
 		if not node.mesh:continue
 		var bounds: AABB=node.global_transform*node.get_aabb()
 		if bounds.position.z<-9.35 and bounds.end.z<-9.2 and bounds.size.y>2:node.hide()
-	World.solid(self,Vector3(0,-.05,-11.7),Vector3(11.5,.1,5.4),"70746e")
+	var floor_body:=World.solid(self,Vector3(0,-.05,-11.7),Vector3(11.5,.1,5.4),"70746e")
+	floor_body.get_child(0).material_override=World.staff_surface("vinyl","70746e")
 	add_wall(Vector3(0,1.65,-14.35),Vector3(11.5,3.3,.12))
 	add_wall(Vector3(-5.72,1.65,-11.7),Vector3(.12,3.3,5.4))
 	add_wall(Vector3(5.72,1.65,-11.7),Vector3(.12,3.3,5.4))
@@ -108,27 +124,34 @@ func build_backstore() -> void:
 		light.omni_range=5
 		light.shadow_enabled=false
 		add_child(light)
-	World.solid(self,Vector3(-3.8,.65,-12.9),Vector3(2.5,.06,1.0),"a88963")
+	var bench_top:=World.solid(self,Vector3(-3.8,.65,-12.9),Vector3(2.5,.06,1.0),"a88963")
+	bench_top.get_child(0).material_override=World.staff_surface("wood","a88963")
 	World.desk_base(self,Vector3(-3.8,-.1,-12.9),2.5,1.0)
 	game.layout.colliders.append({"min":[-5.05,0,-13.4],"max":[-2.55,.7,-12.4]})
 	Props.label(self,"ASSEMBLAGE · PLANCHES ET VIS",Vector3(-3.8,1.65,-13.45),.0009,28)
 	drill=World.drill(self)
-	drill.position=Vector3(-3.1,.94,-12.8)
+	drill.position=Vector3(-3.1,.78,-12.8)
 	game.clerk.target(drill,"enterprise",.13,2)
-	var screw_box:=Props.box(self,Vector3(-2.8,.82,-12.75),Vector3(.15,.09,.12),"bbaa87")
+	var screw_box:=Props.box(self,Vector3(-2.8,.725,-12.75),Vector3(.15,.09,.12),"bbaa87")
 	for i in 7:
 		var pin:=Props.cylinder(screw_box,Vector3((i%4-.5)*.025,.065,(i/4)*.025),.004,.055,"b5bdc1",.7)
 		pin.rotation.x=.4
 	World.solid(self,Vector3(3.7,.72,-13.6),Vector3(2.8,.06,1.0),"b59a73")
 	World.desk_base(self,Vector3(3.7,0,-13.6),2.8,1.0,true)
+	Build.backstore(self,World)
+	var rack_body:=World.solid(self,Vector3(-.825,1.0,-13.86),Vector3(2.2,2.0,.56),"737d83")
+	rack_body.get_child(0).hide()
+	game.layout.colliders.append({"min":[-1.925,0,-14.14],"max":[.275,2,-13.58]})
+	Build.staff_posters(self,game.layout.movies)
 	game.layout.colliders.append({"min":[2.3,0,-14.1],"max":[5.1,.8,-13.1]})
 	var monitor:=World.office_monitor(self)
+	monitor.scale=Vector3.ONE*1.40
 	monitor.position=Vector3(3.6,1.12,-13.7)
 	office_screen=MeshInstance3D.new()
 	var quad:=QuadMesh.new()
-	quad.size=Vector2(.44,.32)
+	quad.size=Vector2(.616,.448)
 	office_screen.mesh=quad
-	office_screen.position=Vector3(3.6,1.145,-13.462)
+	office_screen.position=Vector3(3.6,1.155,-13.367)
 	add_child(office_screen)
 	var mat:=StandardMaterial3D.new()
 	mat.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -136,7 +159,7 @@ func build_backstore() -> void:
 	office_screen.material_override=mat
 	var keyboard:=World.office_keyboard(self)
 	keyboard.position=Vector3(3.6,.78,-13.15)
-	game.clerk.target(office_screen,"enterprise",.28,3)
+	game.clerk.target(office_screen,"enterprise",.40,3)
 	calendar_label=Props.label(self,"",Vector3(1.4,1.7,-14.26),.00085,29)
 	var calendar_back:=Props.box(self,Vector3(1.4,1.7,-14.29),Vector3(1.35,1.20,.018),"eee8d2")
 	calendar_back.material_override=Props.material("eee8d2")
@@ -153,7 +176,7 @@ func build_backstore() -> void:
 	calendar_canvas.movies=game.layout.movies
 	calendar_view.add_child(calendar_canvas)
 	var paper:=MeshInstance3D.new()
-	var paper_quad:=QuadMesh.new();paper_quad.size=Vector2(1.30,1.15)
+	var paper_quad:=QuadMesh.new();paper_quad.size=Vector2(1.55,1.36)
 	paper.mesh=paper_quad;paper.position=Vector3(1.4,1.7,-14.255)
 	var paper_material:=StandardMaterial3D.new()
 	paper_material.albedo_texture=calendar_view.get_texture()
@@ -200,7 +223,8 @@ func build_backstore() -> void:
 		environment.environment.sky.sky_material=sky_material
 
 func add_wall(position:Vector3,size:Vector3) -> void:
-	World.solid(self,position,size,"b6b2a2")
+	var wall:=World.solid(self,position,size,"b6b2a2")
+	wall.get_child(0).material_override=World.staff_surface("plaster","b6b2a2")
 	game.layout.colliders.append({"min":[position.x-size.x/2,0,position.z-size.z/2],"max":[position.x+size.x/2,size.y,position.z+size.z/2]})
 
 func build_watch() -> void:
@@ -209,7 +233,7 @@ func build_watch() -> void:
 	base.position=Vector3(0,.025,.075)
 	Props.box(base,Vector3.ZERO,Vector3(.073,.014,.044),"323c43")
 	Props.box(base,Vector3(0,-.009,0),Vector3(.025,.022,.06),"272e32")
-	watch=Props.label(base,"08:00",Vector3(0,.009,0),.00046,27)
+	watch=Props.label(base,"08:00\n250.00 $",Vector3(0,.009,0),.00046,24)
 	watch.rotation.x=-PI/2
 	watch.modulate=Color("b2e69c")
 	watch.no_depth_test=true
@@ -232,7 +256,7 @@ func apply_weather() -> void:
 	sun.light_energy=(1.0-night)*(.4 if state.weather=="pluie" else .75)
 
 func refresh_calendar() -> void:
-	var key:Array=[state.day,state.next_release,state.next_bundle,state.upcoming.hash()]
+	var key:Array=[state.day,state.next_release,state.next_bundle,state.upcoming.hash(),state.release_days.hash()]
 	if key==calendar_key:return
 	calendar_key=key
 	var date:Dictionary=state.calendar()
@@ -272,7 +296,7 @@ func tick(dt:float) -> void:
 	second_clock+=dt
 	if second_clock>=1:
 		second_clock=0
-		watch.text=state.hour()
+		watch.text=state.hour()+"\n%.2f $"%(state.cash/100.0)
 		apply_weather()
 		update_locator()
 	update_tools(dt)
@@ -514,20 +538,35 @@ func physical_return(item:Dictionary,job:Dictionary) -> void:
 
 func can_shelve(record:Dictionary) -> bool:
 	if not state.stock.has(int(record.id)) or state.stock[int(record.id)].get("sold",false):return false
-	state.stock[int(record.id)].shelved=true
+	var entry:Dictionary=state.stock[int(record.id)]
+	if int(entry.shelf)<0:
+		var room:=free_slots()
+		if room.is_empty():return false
+		entry.shelf=room[0].shelf;entry.slot=room[0].slot
+		move_record(record)
+	entry.shelved=true
 	return true
 
 func buy_film(movie:int) -> bool:
 	if not state.offers.has(movie):return false
-	return state.buy("films",movie,state.purchase_price(game.layout.movies[movie]),[movie])
+	var ok:=state.buy("films",movie,state.purchase_price(game.layout.movies[movie]),[movie])
+	if ok:flush_orders()
+	return ok
 
 func buy_shelf(model:int) -> bool:
-	return model in range(3) and state.buy("shelf",model,Rules.SHELF_PRICES[model])
+	var ok:bool=model in range(3) and state.buy("shelf",model,Rules.SHELF_PRICES[model])
+	if ok:flush_orders()
+	return ok
+
+func flush_orders() -> void:
+	for order in state.orders:
+		if not order.delivered:deliver(order)
+	freight.tick()
 
 func deliver(order:Dictionary) -> void:
 	order.delivered=true
 	var caption:="ÉTAGÈRE · À ASSEMBLER" if order.kind=="shelf" else "FILMS · OUVRIR" if order.kind=="films" else "AFFICHE · OUVRIR"
-	var parcel:=World.parcel(self,Vector3(-.5+packages.size()%3*.6,.25+floorf(packages.size()/3.0)*.26,-11),caption,order.kind=="shelf")
+	var parcel:=World.parcel(self,Vector3(-1.9+(packages.size()%3)*1.9,.135,-10.4-floorf(packages.size()/3.0)*.85),caption,order.kind=="shelf")
 	packages[int(order.id)]=parcel
 	if order.has("pose"):parcel.transform=order.pose
 	freight.refresh(order)
@@ -564,11 +603,26 @@ func open_parcel(id:int) -> void:
 	var order:Dictionary=orders[0]
 	if order.kind=="shelf":
 		if not assembly.is_empty():
-			game._message("Termine l’étagère sur l’établi avant d’ouvrir celle-ci.")
+			game._message("Termine l’étagère en cours avant d’ouvrir celle-ci.")
 			return
-		assembly={"model":order.value,"boards":0,"screws":0,"stage":"site","order":id}
-		begin_placement()
+		if freight.held_id==id:freight.drop_from_hand()
+		if freight.guest_id==id:
+			var point:Vector3=packages[id].position
+			var height:=0.0
+			for box in game.layout.colliders:
+				if point.x>box.min[0] and point.x<box.max[0] and point.z>box.min[2] and point.z<box.max[2] and box.max[1]<point.y+.1:height=maxf(height,float(box.max[1]))
+			packages[id].position.y=height+.135
+		var box_pose:Transform3D=packages[id].global_transform
+		var base:Vector3=box_pose.origin-Vector3(0,.135,0)
+		assembly={"model":order.value,"boards":0,"screws":0,"screw_mask":0,"stage":"boards","order":id,"pose":Transform3D(Basis(Vector3.UP,snappedf(box_pose.basis.get_euler().y,PI/4)),base)}
+		order.opened=true
+		freight.held_id=-1;freight.held_hand=-1;freight.guest_id=-1
+		build_assembly()
+		game._message("Prends une planche à la poignée. Relâche près du contour jaune pour la poser.")
 		return
+	elif order.kind=="decoration":
+		freight.held_id=-1;freight.held_hand=-1;freight.guest_id=-1
+		decor.begin(order);return
 	elif order.kind=="films":
 		freight.open_box(order)
 		return
@@ -588,6 +642,8 @@ func open_parcel(id:int) -> void:
 
 func consume_order(order:Dictionary) -> void:
 	var id:int=order.id
+	if freight.held_id==id:freight.held_id=-1;freight.held_hand=-1
+	if freight.guest_id==id:freight.guest_id=-1
 	state.orders.erase(order)
 	if packages.has(id):
 		var parcel:Node3D=packages[id]
@@ -601,20 +657,21 @@ func free_slots() -> Array:
 		var shelf:Dictionary=state.shelves[index]
 		var capacity:int=Rules.SHELF_COLUMNS[int(shelf.model)]*4
 		for slot in capacity:
-			if not state.stock.values().any(func(entry):return not entry.get("sold",false) and int(entry.shelf)==index and int(entry.slot)==slot):
+			if slots.is_free(index,slot):
 				result.append({"shelf":index,"slot":slot})
 	return result
 
 func receive_film(movie:int,spawn_at:Vector3=Vector3(.1,.8,-11)) -> bool:
-	var room:=free_slots()
-	if room.is_empty():return false
 	var copies:Array=game.dvd_records.filter(func(record):return int(record.movie)==movie and not state.stock.has(int(record.id)))
 	if copies.is_empty():
 		game._message("Limite d’exemplaires pour ce titre. Colis conservé.")
 		return false
 	var record:Dictionary=copies[0]
-	state.stock[int(record.id)]={"movie":movie,"shelf":room[0].shelf,"slot":room[0].slot,"shelved":false,"sold":false,"returned_scanned":true}
-	move_record(record)
+	state.stock[int(record.id)]={"movie":movie,"shelf":-1,"slot":-1,"shelved":false,"sold":false,"returned_scanned":true}
+	record.world=Transform3D(Basis.IDENTITY,spawn_at)
+	record.local=record.group.global_transform.affine_inverse()*record.world
+	record.inverse=record.world.affine_inverse()
+	index_record(record)
 	var item:Dictionary=game.clerk.new_case(movie,spawn_at,"shelve")
 	item.record=record
 	load("res://clerk_inventory.gd").bind(item.node,record)
@@ -623,6 +680,7 @@ func receive_film(movie:int,spawn_at:Vector3=Vector3(.1,.8,-11)) -> bool:
 
 func move_record(record:Dictionary) -> void:
 	var entry:Dictionary=state.stock[int(record.id)]
+	if int(entry.shelf)<0 or int(entry.shelf)>=state.shelves.size():return
 	var shelf:Dictionary=state.shelves[int(entry.shelf)]
 	var columns:int=Rules.SHELF_COLUMNS[int(shelf.model)]
 	var width:=columns*.145
@@ -641,74 +699,90 @@ func move_record(record:Dictionary) -> void:
 func build_assembly() -> void:
 	if is_instance_valid(assembly_node):
 		game.clerk.targets=game.clerk.targets.filter(func(target):return is_instance_valid(target.node) and not assembly_node.is_ancestor_of(target.node))
-		assembly_node.queue_free()
-	assembly_node=Node3D.new()
-	add_child(assembly_node)
+		remove_child(assembly_node);assembly_node.queue_free()
+	assembly_node=Node3D.new();add_child(assembly_node)
 	assembly_node.transform=assembly.get("pose",Transform3D(Basis.IDENTITY,Vector3(-3.8,.69,-12.9)))
 	var width:float=Rules.SHELF_COLUMNS[int(assembly.model)]*.145+.06
-	for index in 6:
-		var position:=Vector3((-1 if index==0 else 1)*(width/2-.013),.92,0) if index<2 else Vector3(0,.55+(index-2)*.35,0)
-		var size:=Vector3(.026,1.84,.34) if index<2 else Vector3(width,.024,.32)
-		var part:=Props.box(assembly_node,position,size,"b58b5b" if index<int(assembly.boards) else "88bbaa")
-		if index>=int(assembly.boards):part.transparency=.82
-	Props.box(assembly_node,Vector3(0,.20,0),Vector3(width,.024,.34),"ac8153")
 	var count:int=assembly.boards
+	for index in 6:
+		var transform:Transform3D=Build.part_pose(width,index)
+		var part:=Props.box(assembly_node,transform.origin,Build.part_size(width,index),"d8bd60" if index==count else "b4bfcc")
+		if index<count:part.material_override=World.laminate()
+		else:part.transparency=.50 if index==count else .91
+	Props.box(assembly_node,Vector3(0,.20,0),Vector3(width-.052,.024,.34),"333a42")
 	if count<6:
-		var spare:=Props.box(assembly_node,Vector3(width/2+.28,.15,.15),Vector3(.30,.024,.25),"ac8153")
-		game.clerk.target(spare,"enterprise",.3,4)
-	Props.label(assembly_node,"Planche %d / 6 · prends puis place dans le contour"%mini(6,count+1) if count<6 else "Visse les quatre vis métalliques",Vector3(0,1.7,0),.0006,25).billboard=BaseMaterial3D.BILLBOARD_ENABLED
+		var spare:=Props.box(assembly_node,Vector3(width/2+.35,.18,.55),Build.part_size(width,count),"b58b5b")
+		spare.name="SpareBoard";spare.rotation.z=PI/2 if count<2 else 0
+		if is_instance_valid(loose_board):spare.hide()
+		if assembly.has("loose_pose"):spare.global_transform=assembly.loose_pose
+		game.clerk.target(spare,"enterprise",.25,4)
+	Props.label(assembly_node,"Planche %d / 6 · relâche la poignée sur le contour jaune"%mini(6,count+1) if count<6 else "Visse chaque jonction · ordre libre",Vector3(0,1.99,0),.0009,29).billboard=BaseMaterial3D.BILLBOARD_ENABLED
 	if count==6:refresh_screws()
-	if count==6 and int(assembly.get("screws",0))>=4:complete_assembly()
 
 func refresh_screws() -> void:
 	var old:=assembly_node.get_node_or_null("Screws")
-	if old:
-		assembly_node.remove_child(old)
-		old.queue_free()
-	var screws:=Node3D.new()
-	screws.name="Screws"
-	assembly_node.add_child(screws)
-	for index in 4:
-		var screw:=World.assembly_screw(screws)
-		screw.name="Screw%d"%index
-		screw.position=screw_position(index)
-		screw.position.z+=0.0 if index<int(assembly.get("screws",0)) else .035
-		if index==int(assembly.get("screws",0)):
-			var ring:=Props.cylinder(screw,Vector3(0,0,-.006),.019,.002,"d6b95e",.4)
-			ring.rotation.x=PI/2
+	if old:assembly_node.remove_child(old);old.queue_free()
+	var screws:=Node3D.new();screws.name="Screws";assembly_node.add_child(screws)
+	var width:float=Rules.SHELF_COLUMNS[int(assembly.model)]*.145+.06
+	for index in 10:
+		var screw:=World.assembly_screw(screws);screw.name="Screw%d"%index
+		screw.transform=Build.screw_pose(width,index)
+		if not Build.done(assembly,index):screw.position+=screw.basis.z*.028
 
 func screw_position(index:int) -> Vector3:
-	var width:float=Rules.SHELF_COLUMNS[int(assembly.model)]*.145+.06
-	return Vector3((-1 if index%2==0 else 1)*(width/2-.035),.55+int(index/2)*1.05,.18)
+	return Build.screw_pose(Rules.SHELF_COLUMNS[int(assembly.model)]*.145+.06,index).origin
+
+func targeted_screw() -> int:
+	if assembly.is_empty() or not is_instance_valid(assembly_node):return -1
+	var ray:Node3D=game.aim_hands[1 if drill_hand<0 else drill_hand]
+	var best:=.10;var result:=-1
+	for i in 10:
+		if Build.done(assembly,i):continue
+		var offset:Vector3=assembly_node.to_global(screw_position(i))-ray.global_position
+		var distance:float=offset.dot(-ray.global_basis.z)
+		var gap:float=(offset+ray.global_basis.z*distance).length()
+		if distance>0 and distance<2.5 and gap<best:best=gap;result=i
+	return result
 
 func screw_point_local() -> Vector3:
-	return screw_position(mini(3,int(assembly.get("screws",0))))
+	var index:=active_screw
+	if index<0:
+		for i in 10:
+			if not Build.done(assembly,i):index=i;break
+	return screw_position(maxi(0,index))
 
 func place_board() -> void:
 	if assembly.is_empty() or int(assembly.boards)>=6:return
+	assembly.erase("loose_pose")
 	assembly.boards+=1
 	if is_instance_valid(board):board.queue_free()
 	board_hand=-1
 	build_assembly()
 
-func fasten_screw(dt:float) -> void:
-	if assembly.is_empty() or int(assembly.boards)!=6 or int(assembly.get("screws",0))>=4:return
+func fasten_screw(dt:float,index:int=-1) -> void:
+	if assembly.is_empty() or int(assembly.boards)!=6:return
+	if not assembly.has("screw_mask"):assembly.screw_mask=(1<<int(assembly.get("screws",0)))-1
+	if index<0:
+		for i in 10:
+			if not Build.done(assembly,i):index=i;break
+	if index<0 or index>=10 or Build.done(assembly,index):return
+	if active_screw!=index:active_screw=index;screw_progress=0
 	screw_progress+=dt
-	ghost_label.position=assembly_node.to_global(screw_point_local())+Vector3(0,.25,0)
-	var screw:Node3D=assembly_node.get_node("Screws/Screw%d"%int(assembly.get("screws",0)))
-	screw.position.z=screw_point_local().z+.035*(1.0-minf(1.0,screw_progress/.6))
-	screw.rotation.z=screw_progress*TAU*3
-	ghost_label.text="Vis %d / 4 · %d %%"%[int(assembly.get("screws",0))+1,mini(100,roundi(screw_progress/.6*100))]
+	var pose:Transform3D=Build.screw_pose(Rules.SHELF_COLUMNS[int(assembly.model)]*.145+.06,index)
+	var screw:Node3D=assembly_node.get_node("Screws/Screw%d"%index)
+	screw.transform=pose;screw.position+=pose.basis.z*.028*(1-minf(1,screw_progress/.6));screw.rotate_object_local(Vector3.FORWARD,screw_progress*TAU*3)
+	ghost_label.position=assembly_node.to_global(pose.origin)+Vector3(0,.14,0)
+	ghost_label.text="Vis %d/10 · %d %%"%[int(assembly.screws)+1,mini(100,roundi(screw_progress/.6*100))]
 	if screw_progress>=.6:
-		assembly.screws=int(assembly.get("screws",0))+1
-		screw_progress=0
-		if int(assembly.screws)>=4:complete_assembly()
+		assembly.screw_mask=int(assembly.screw_mask)|(1<<index);assembly.screws=int(assembly.screws)+1
+		screw_progress=0;active_screw=-1
+		if int(assembly.screws)>=10:complete_assembly()
 		else:refresh_screws()
 
 func begin_placement() -> void:
 	if is_instance_valid(ghost):return
 	drill_hand=-1
-	drill.position=Vector3(-3.1,.94,-12.8)
+	drill.position=Vector3(-3.1,.78,-12.8)
 	drill.rotation=Vector3.ZERO
 	ghost=World.shelf(self,Rules.SHELF_COLUMNS[int(assembly.model)])
 	World.placement_grid(ghost)
@@ -718,22 +792,34 @@ func begin_placement() -> void:
 	if is_instance_valid(assembly_node):assembly_node.hide()
 
 func mobile_hint() -> String:
+	if is_instance_valid(decor.preview):return "Poser la décoration"
+	if slots.ray_target(game.head.global_position,-game.aim_hands[1].global_basis.z).is_finite() and (game.held or (is_remote_guest() and not game.touch_controls.coop_panel.guest_case_id.is_empty())):return "Ranger à cette place"
 	if freight.held_id>=0 and freight.free_item_hand():return freight.hint()
 	if is_remote_guest():
 		if guest_board:return "Placer la planche"
-		if guest_drill and not assembly.is_empty() and int(assembly.boards)==6:return "Visser %d / 4"%(int(assembly.get("screws",0))+1)
+		if guest_drill and not assembly.is_empty() and int(assembly.boards)==6:return "Visser %d / 10"%(int(assembly.get("screws",0))+1)
 		if is_instance_valid(ghost) and not guest_placing:return "Ton collègue place l’étagère"
 	if poster_placement.active():return "Poser l’affiche" if poster_placement.valid else "Vise un mur plein"
 	if is_instance_valid(ghost):return "Poser l’étagère" if placement_valid else "Déplace la visée au sol"
 	if board_hand>=0:return "Placer la planche"
-	if drill_hand>=0 and not assembly.is_empty() and int(assembly.boards)==6:return "Visser %d / 4"%(int(assembly.get("screws",0))+1)
+	if drill_hand>=0 and not assembly.is_empty() and int(assembly.boards)==6:return "Visser %d / 10"%(int(assembly.get("screws",0))+1)
 	return ""
 
 func mobile_use() -> bool:
+	if is_instance_valid(decor.preview):decor.confirm();return true
+	if game.held or (is_remote_guest() and not game.touch_controls.coop_panel.guest_case_id.is_empty()):
+		var point:Vector3=slots.ray_target(game.head.global_position,-game.aim_hands[1].global_basis.z,int(game.held_record.get("id",-1)))
+		if point.is_finite():
+			if is_remote_guest():remote_command({"op":"shelve_at","point":[point.x,point.y,point.z]})
+			else:game.held.global_position=point;game._release()
+			return true
 	if freight.held_id>=0 and freight.free_item_hand():return freight.use(freight.held_id,1)
 	if is_remote_guest():
 		if guest_board:remote_command({"op":"place_board"});return true
-		if guest_drill and not assembly.is_empty() and int(assembly.boards)==6:remote_command({"op":"screw"});return true
+		if guest_drill and not assembly.is_empty() and int(assembly.boards)==6:
+			var index:=targeted_screw()
+			if index>=0:remote_command({"op":"screw","index":index})
+			return true
 	if poster_placement.active():
 		poster_placement.confirm()
 		return true
@@ -746,26 +832,53 @@ func mobile_use() -> bool:
 		else:game._message("Approche-toi de l’établi pour poser la planche.")
 		return true
 	if drill_hand>=0 and not assembly.is_empty() and int(assembly.boards)==6:
-		if game.head.global_position.distance_to(assembly_node.global_position)<2.8:fasten_screw(.61)
+		if game.head.global_position.distance_to(assembly_node.global_position)<2.8 and targeted_screw()>=0:fasten_screw(.61,targeted_screw())
 		else:game._message("Approche-toi de l’établi pour visser.")
 		return true
 	return false
 
 func take_board(hand:int) -> void:
-	if guest_board:game._message("Ton collègue tient déjà la planche suivante.");return
-	if assembly.is_empty() or assembly.get("stage","") in ["site","move"] or int(assembly.boards)>=6 or board_hand>=0:return
+	if guest_board or assembly.is_empty() or assembly.get("stage","")!="boards" or int(assembly.boards)>=6 or board_hand>=0:return
 	if game.held_hand==hand or game.clerk.wallet.occupied(hand):return
-	board=Props.box(self,Vector3.ZERO,Vector3(.35,.025,.18),"b58b5b")
-	board_hand=hand
+	board=Props.box(self,Vector3.ZERO,Build.part_size(Rules.SHELF_COLUMNS[int(assembly.model)]*.145+.06,int(assembly.boards)),"b58b5b")
+	board.material_override=World.laminate();board_hand=hand
+	if is_instance_valid(loose_board):
+		game.clerk.targets=game.clerk.targets.filter(func(target):return target.node!=loose_board)
+		loose_board.queue_free();loose_board=null
+	var spare:=assembly_node.get_node_or_null("SpareBoard")
+	if spare:spare.hide()
+
+func release_grip(hand:int) -> void:
+	if moving_shelf>=0 and hand==placement_hand and is_instance_valid(ghost) and placement_valid:finish_placement();return
+	if freight.held_hand==hand:freight.drop_from_hand()
+	if board_hand!=hand:return
+	var target:Vector3=assembly_node.to_global(Build.part_pose(Rules.SHELF_COLUMNS[int(assembly.model)]*.145+.06,int(assembly.boards)).origin)
+	if board.global_position.distance_to(target)<.38:
+		assembly.erase("loose_pose");place_board()
+	else:
+		var pose:Transform3D=board.global_transform;pose.origin.y=maxf(.10,pose.origin.y)
+		loose_board=RigidBody3D.new();loose_board.name="LooseAssemblyBoard";loose_board.mass=.55;loose_board.continuous_cd=true
+		loose_board.collision_layer=8;loose_board.collision_mask=1|8
+		add_child(loose_board);loose_board.global_transform=pose
+		var shape:=CollisionShape3D.new();var box:=BoxShape3D.new();box.size=Build.part_size(Rules.SHELF_COLUMNS[int(assembly.model)]*.145+.06,int(assembly.boards));shape.shape=box;loose_board.add_child(shape)
+		board.reparent(loose_board);board.transform=Transform3D.IDENTITY
+		assembly.loose_pose=pose;board=null;board_hand=-1;build_assembly()
+		game.clerk.target(loose_board,"enterprise",.30,4)
+		game._message("Planche déposée. Reprends-la et relâche près du contour jaune.")
 
 func interact(hand:int,grip:bool) -> bool:
+	if is_instance_valid(decor.preview):
+		if grip:decor.angle+=PI/4
+		else:decor.confirm()
+		return true
 	if freight.interact(hand,grip):return true
 	if not is_instance_valid(ghost) and grip and not game.held and not is_remote_guest():
 		for index in shelf_nodes.size():
 			var local:Vector3=shelf_nodes[index].to_local(game.hands[hand].global_position)
 			var width:float=Rules.SHELF_COLUMNS[int(state.shelves[index].model)]*.145+.06
-			if absf(local.x)<width/2+.10 and local.y>1.5 and local.y<1.95 and absf(local.z)<.28:
-				start_move_shelf(index);return true
+			var frame:bool=absf(absf(local.x)-width/2)<.10 or absf(local.y-(.20+roundf((local.y-.20)/.35)*.35))<.045
+			if frame and absf(local.x)<width/2+.10 and local.y>.05 and local.y<1.95 and absf(local.z)<.28:
+				placement_hand=hand;start_move_shelf(index);return true
 	if poster_placement.active():
 		if grip:poster_placement.cancel()
 		else:poster_placement.confirm()
@@ -779,42 +892,47 @@ func interact(hand:int,grip:bool) -> bool:
 			placement_angle+=PI/4
 			ghost.rotation.y=placement_angle
 		return true
-	if board_hand==hand:
-		if not grip and game.hands[hand].global_position.distance_to(assembly_node.to_global(Vector3(0,.18,0)))<1.65:
-			place_board()
-		return true
+	if board_hand==hand:return true
 	if drill_hand==hand:
 		if grip:
 			drill_hand=-1
-			drill.position=Vector3(-3.1,.94,-12.8)
+			drill.position=Vector3(-3.1,.78,-12.8)
 			drill.rotation=Vector3.ZERO
 		return true
 	return false
 
 func update_tools(dt:float) -> void:
+	slots.tick(dt)
+	if is_instance_valid(loose_board) and not assembly.is_empty():assembly.loose_pose=loose_board.global_transform
 	freight.tick()
 	poster_placement.tick()
+	decor.tick()
 	if is_remote_guest():
 		if guest_board and is_instance_valid(guest_board_node):guest_board_node.global_transform=game.hands[1].global_transform*Transform3D(Basis.IDENTITY,Vector3(0,0,-.12))
 		if guest_drill:drill.global_transform=game.hands[1].global_transform*Transform3D(Basis.IDENTITY,Vector3(0,0,-.08))
 	if not is_remote_guest() and (guest_board or guest_drill):
 		var avatar=game.clerk.lan.remote_avatar
 		if is_instance_valid(avatar) and avatar.valid_pose:
-			if guest_board and is_instance_valid(guest_board_node):guest_board_node.global_transform=avatar.targets[2]*Transform3D(Basis.IDENTITY,Vector3(0,0,-.12))
-			if guest_drill:drill.global_transform=avatar.targets[2]*Transform3D(Basis.IDENTITY,Vector3(0,0,-.08))
+			if guest_board and is_instance_valid(guest_board_node):guest_board_node.global_transform=(avatar.targets[2] if avatar.tracked_hands else avatar.targets[0]*Transform3D(Basis.IDENTITY,Vector3(.22,-.25,-.55)))*Transform3D(Basis.IDENTITY,Vector3(0,0,-.12))
+			if guest_drill:drill.global_transform=(avatar.targets[2] if avatar.tracked_hands else avatar.targets[0]*Transform3D(Basis.IDENTITY,Vector3(.22,-.25,-.55)))*Transform3D(Basis.IDENTITY,Vector3(0,0,-.08))
 	if drill_hand>=0:drill.global_transform=game.hands[drill_hand].global_transform*Transform3D(Basis.IDENTITY,Vector3(0,0,-.08))
 	if board_hand>=0 and is_instance_valid(board):board.global_transform=game.hands[board_hand].global_transform*Transform3D(Basis.IDENTITY,Vector3(0,0,-.12))
 	if not assembly.is_empty() and int(assembly.boards)==6 and drill_hand>=0:
-		var point:Vector3=assembly_node.to_global(screw_point_local())
-		var aim:Node3D=game.aim_hands[drill_hand]
-		var delta:=point-aim.global_position
-		var aligned:=delta.length()<2.6 and (-aim.global_basis.z).dot(delta.normalized())>.985
-		if (drill.global_position.distance_to(point)<.45 or aligned) and game.hands[drill_hand].get_float(&"trigger")>.6:
-			fasten_screw(dt)
+		var ray:Node3D=game.aim_hands[drill_hand]
+		var best:=.10;var selected:=-1
+		for i in 10:
+			if Build.done(assembly,i):continue
+			var point:Vector3=assembly_node.to_global(screw_position(i))
+			var offset:Vector3=point-ray.global_position;var distance:float=offset.dot(-ray.global_basis.z)
+			var gap:float=(offset+ray.global_basis.z*distance).length()
+			if distance>0 and distance<2.5 and gap<best:best=gap;selected=i
+		if selected>=0 and game.hands[drill_hand].get_float(&"trigger")>.6:fasten_screw(dt,selected)
+		elif active_screw>=0:screw_progress=0;active_screw=-1
+
 	if is_instance_valid(ghost):
 		if not is_remote_guest() and guest_placing:return
 		if is_remote_guest() and not guest_placing:return
-		var ray:Node3D=game.aim_hands[1]
+		var ray:Node3D=game.aim_hands[placement_hand]
 		var direction:Vector3=-ray.global_basis.z
 		placement_valid=false
 		if direction.y<-.06:
@@ -829,15 +947,15 @@ func update_tools(dt:float) -> void:
 func valid_placement(pose:Transform3D,model:int) -> bool:
 	var width:float=Rules.SHELF_COLUMNS[model]*.145+.06
 	var bounds:=pose*AABB(Vector3(-width/2,0,-.18),Vector3(width,1.85,.36))
-	if bounds.position.x< -5.35 or bounds.end.x>5.35 or bounds.position.z< -7.35 or bounds.end.z>5.8:return false
+	if bounds.position.x< -5.63 or bounds.end.x>5.63 or bounds.position.z< -14.15 or bounds.end.z>5.8:return false
 	for box in game.layout.colliders:
 		if box.get("business_shelf",false):continue
 		var low:=Vector3(box.min[0],box.min[1],box.min[2]);var high:=Vector3(box.max[0],box.max[1],box.max[2])
 		if high.y<.1:continue
-		if bounds.grow(.012).intersects(AABB(low,high-low)):return false
+		if bounds.grow(.003).intersects(AABB(low,high-low)):return false
 	var front:=pose*AABB(Vector3(-width/2,0,.18),Vector3(width,1.85,.7))
 	var access:=pose.origin+pose.basis.z*.65
-	if absf(access.x)>5.45 or access.z< -7.4 or access.z>6.1:return false
+	if absf(access.x)>5.65 or access.z< -14.15 or access.z>6.1:return false
 	for shelf in state.shelves:
 		if moving_shelf>=0 and shelf==state.shelves[moving_shelf]:continue
 		var other_width:float=Rules.SHELF_COLUMNS[int(shelf.model)]*.145+.06
@@ -853,7 +971,7 @@ func snap_placement(position:Vector3,angle:float,model:int) -> Transform3D:
 	var half:=Vector3(width/2,0,.18)
 	var extent:=Vector3(absf(basis.x.x)*half.x+absf(basis.z.x)*half.z,0,absf(basis.x.z)*half.x+absf(basis.z.z)*half.z)
 	for wall in [-1,1]:
-		var wall_x:float=wall*(5.34-extent.x)
+		var wall_x:float=wall*(5.61-extent.x)
 		if absf(p.x-wall_x)<.24:p.x=wall_x
 	for shelf in state.shelves:
 		if moving_shelf>=0 and shelf==state.shelves[moving_shelf]:continue
@@ -880,12 +998,17 @@ func start_move_shelf(index:int) -> void:
 	game._message("Vise le sol · gâchette : poser · poignée : tourner de 45°.")
 
 func complete_assembly() -> void:
-	# A newly assembled cabinet already occupies its chosen site.
-	if assembly.has("pose"):
-		if not is_instance_valid(ghost):ghost=World.shelf(self,Rules.SHELF_COLUMNS[int(assembly.model)])
-		ghost.transform=assembly.pose
-		finish_placement()
-	else:begin_placement() # Legacy in-progress save made at the old workbench.
+	if assembly.is_empty():return
+	var entry:Dictionary={"model":assembly.model,"pose":assembly.get("pose",assembly_node.transform),"genre":""}
+	state.shelves.append(entry);add_shelf(entry)
+	var id:int=int(assembly.get("order",-1))
+	for order in state.orders.duplicate():
+		if int(order.id)==id:consume_order(order)
+	if is_instance_valid(assembly_node):assembly_node.queue_free();assembly_node=null
+	assembly={};active_screw=-1;screw_progress=0;guest_drill=false;drill_hand=-1
+	drill.position=Vector3(-3.1,.78,-12.8);drill.rotation=Vector3.ZERO
+	ghost_label.text="";rebuild_navigation()
+	game._message("Étagère assemblée. Prends son cadre pour la placer : rotation de 45°.")
 
 func finish_placement() -> void:
 	if not is_instance_valid(ghost):return
@@ -921,7 +1044,7 @@ func finish_placement() -> void:
 		rebuild_navigation()
 		return
 	guest_drill=false;drill_hand=-1
-	drill.position=Vector3(-3.1,.94,-12.8);drill.rotation=Vector3.ZERO
+	drill.position=Vector3(-3.1,.78,-12.8);drill.rotation=Vector3.ZERO
 	var finished_order:int=int(assembly.get("order",-1))
 	var entry:Dictionary={"model":assembly.model,"pose":ghost.transform,"genre":""}
 	state.shelves.append(entry)
@@ -950,7 +1073,7 @@ func release_guest_tools() -> void:
 	guest_board=false;guest_drill=false;guest_placing=false;guest_poster_order=-1
 	freight.guest_id=-1
 	if is_instance_valid(guest_board_node):guest_board_node.queue_free();guest_board_node=null
-	if drill_hand<0:drill.position=Vector3(-3.1,.94,-12.8);drill.rotation=Vector3.ZERO
+	if drill_hand<0:drill.position=Vector3(-3.1,.78,-12.8);drill.rotation=Vector3.ZERO
 
 func add_shelf(entry:Dictionary) -> void:
 	var node:=World.shelf(self,Rules.SHELF_COLUMNS[int(entry.model)])
@@ -1118,11 +1241,14 @@ func restore(saved:Dictionary) -> void:
 		if order.delivered:
 			order.delivered=false
 			deliver(order)
+	decor.sync()
 	for index in state.posters.size():place_poster(int(state.posters[index].movie),index)
 	if not assembly.is_empty():
 		if assembly.get("stage","")=="move":
 			var index:int=int(assembly.get("moving_index",-1));assembly={};start_move_shelf(index)
-		elif assembly.get("stage","")=="site":begin_placement()
+		elif assembly.get("stage","")=="site":
+			var id:int=int(assembly.get("order",-1));assembly={}
+			if packages.has(id):open_parcel(id)
 		else:build_assembly()
 	for reservation in state.reservations:
 		if reservation.get("ready",false):restore_reservation_visual(reservation)

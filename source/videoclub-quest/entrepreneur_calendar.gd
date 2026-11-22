@@ -5,12 +5,18 @@ var previews:Array=[]
 var date:Dictionary={}
 var cells:Array=[]
 var first_column:=0
+var events:Dictionary={}
 var next_release:Dictionary={}
 var next_bundle:Dictionary={}
 
 func configure(rules) -> void:
 	date=rules.calendar()
 	previews=[]
+	events={}
+	for id in rules.upcoming:
+		var release_day:int=int(rules.release_days.get(int(id),rules.next_release))
+		var release_date:=Time.get_date_dict_from_unix_time(rules.START_DATE+(release_day-1)*86400)
+		if release_date.month==date.month and release_date.year==date.year and int(id)<movies.size():events[int(release_date.day)]=movies[int(id)]
 	for id in rules.upcoming.slice(0,3):
 		if int(id)>=movies.size():continue
 		var movie:Dictionary=movies[int(id)]
@@ -45,6 +51,12 @@ func _draw() -> void:
 			draw_line(center+Vector2(-29,-24),center+Vector2(30,23),Color("8c3c37"),3,true)
 			draw_line(center+Vector2(28,-24),center+Vector2(-30,24),Color("8c3c37"),3,true)
 		elif cell.circled:draw_arc(center,29,.1,TAU+.1,64,Color("a33c35"),3,true)
+		if events.has(int(cell.day)):
+			var title:String=str(events[int(cell.day)].title)
+			draw_rect(Rect2(center+Vector2(-47,-24),Vector2(94,49)),Color(.86,.91,.96,.7))
+			draw_string(font,center+Vector2(-40,-4),str(cell.day),HORIZONTAL_ALIGNMENT_LEFT,-1,22,Color("1b4169"))
+			draw_string(font,center+Vector2(-41,13),title.left(12),HORIZONTAL_ALIGNMENT_LEFT,90,13,Color("174975"))
+			draw_string(font,center+Vector2(-41,25),title.substr(12,12),HORIZONTAL_ALIGNMENT_LEFT,90,13,Color("174975"))
 		if cell.release:draw_string(font,center+Vector2(23,-13),"N",HORIZONTAL_ALIGNMENT_LEFT,-1,20,Color("265a89"))
 		if cell.bundle:draw_string(font,center+Vector2(23,20),"L",HORIZONTAL_ALIGNMENT_LEFT,-1,19,Color("547345"))
 	draw_rect(Rect2(0,482,768,190),Color("e3dec9"))

@@ -16,12 +16,15 @@ func free_item_hand() -> bool:
 	return true
 func hint() -> String:
 	var order:=order_for(held_id)
+	if order.get("kind","")=="shelf":return "Ouvrir le carton ici pour assembler"
 	return "Sortir un film · déposer : bouton Déposer" if order.get("opened",false) else "Ouvrir le carton · déposer : bouton Déposer"
 func use(id:int,hand:int) -> bool:
 	var order:=order_for(id)
-	if order.is_empty() or order.kind!="films":return false
+	if order.is_empty() or order.get("kind","") not in ["films","shelf","decoration"]:return false
 	if b.is_remote_guest():
 		return b.remote_command({"op":"carton_use","id":id})
+	if order.kind!="films":
+		b.open_parcel(id);return true
 	if not order.get("opened",false):open_box(order)
 	else:extract(order,hand)
 	return true
@@ -32,7 +35,7 @@ func open_box(order:Dictionary) -> void:
 func refresh(order:Dictionary) -> void:
 	var id:int=order.id
 	if not b.packages.has(id) or order.kind!="films":return
-	var signature:=[order.get("opened",false),order.contents.duplicate()]
+	var signature:=[order.get("opened",false),order.contents.hash()]
 	if signatures.get(id,[])==signature:return
 	signatures[id]=signature
 	var node:Node3D=b.packages[id]
@@ -48,17 +51,22 @@ func refresh(order:Dictionary) -> void:
 	b.World.batch_props(node)
 	if order.get("opened",false):
 		for index in mini(20,order.contents.size()):
-			var x:float=-.175+(index%10)*.039
-			var z:float=-.08+int(index/10)*.15
-			props.box(node,Vector3(x,0,z),Vector3(.030,.205,.12),"262b32")
-		# One full-resolution cover on the foremost case, other cases use cheap spines.
-		if not order.contents.is_empty():
-			var cover:=MeshInstance3D.new();var quad:=QuadMesh.new();quad.size=Vector2(.115,.17)
-			cover.mesh=quad;cover.position=Vector3(-.175,.01,.132)
-			var mat:=StandardMaterial3D.new();mat.albedo_texture=load(str(b.game.layout.movies[int(order.contents[0])].frontCover).replace("./","res://"))
-			mat.roughness=.65;mat.texture_filter=BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-			cover.material_override=mat;node.add_child(cover)
-		b.World.batch_props(node)
+			var movie:int=order.contents[index]
+			var dvd:=Node3D.new();node.add_child(dvd)
+			dvd.position=Vector3(-.17+(index%10)*.037,0,-.075+int(index/10)*.15)
+			dvd.rotation.y=PI/2
+			# Reuse the exact held-case plastic shell, with economical printed faces.
+			var body:=MeshInstance3D.new();body.mesh=load("res://held_case.gd").rounded_shell(.135,.19,.014)
+			body.material_override=props.material("17191b");dvd.add_child(body)
+			for side in [1,-1]:
+				var cover:=MeshInstance3D.new();var quad:=QuadMesh.new();quad.size=Vector2(.127,.181)
+				cover.mesh=quad;cover.position=Vector3(0,0,side*.0072)
+				if side<0:cover.rotation.y=PI
+				var mat:=StandardMaterial3D.new()
+				mat.albedo_texture=load(load("res://cover_textures.gd").path_for(b.game.layout.movies[movie],"front" if side>0 else "back"))
+				mat.roughness=.45;mat.texture_filter=BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+				cover.material_override=mat;dvd.add_child(cover)
+
 	props.label(node,"%d / 20 FILMS"%order.contents.size(),Vector3(0,.035,.176),.0005,24)
 func extract(order:Dictionary,hand:int,guest:bool=false) -> bool:
 	if order.contents.is_empty():return false
@@ -88,17 +96,17 @@ func take(id:int,hand:int) -> bool:
 func interact(hand:int,grip:bool) -> bool:
 	if b.is_remote_guest():return false
 	if held_id>=0 and hand==held_hand:
-		if grip:drop()
+		if grip:pass # A carton is released when the grip opens.
 		else:use(held_id,1-hand)
 		return true
 	if not grip:return false
 	var point:Vector3=b.game.hands[hand].global_position
 	for id in b.packages:
 		var order:=order_for(int(id))
-		if order.is_empty() or order.kind!="films" or guest_id==int(id):continue
+		if order.is_empty() or order.kind not in ["films","shelf","decoration"] or guest_id==int(id):continue
 		var local:Vector3=b.packages[id].to_local(point)
-		if absf(local.x)<.31 and absf(local.z)<.29 and absf(local.y)<.30:
-			if order.get("opened",false) and absf(local.x)<.19 and local.y>.02:return extract(order,hand)
+		if absf(local.x)<(.99 if order.kind=="shelf" else .31) and absf(local.z)<.29 and absf(local.y)<.30:
+			if order.kind=="films" and order.get("opened",false) and absf(local.x)<.16 and absf(local.z)<.13 and local.y>.07:return extract(order,hand)
 			return take(int(id),hand)
 	return false
 func safe_pose(ray:Node3D) -> Transform3D:
@@ -121,6 +129,17 @@ func safe_pose(ray:Node3D) -> Transform3D:
 		if point.x+.24>box.min[0] and point.x-.24<box.max[0] and point.z+.20>box.min[2] and point.z-.20<box.max[2] and point.y<box.max[1]:point.y=box.max[1]
 	point.y+=.135
 	return Transform3D(Basis.IDENTITY,point)
+func drop_from_hand() -> void:
+	if held_id<0 or b.is_remote_guest():return
+	var point:Vector3=b.packages[held_id].global_position
+	var support:=0.0
+	for box in b.game.layout.colliders:
+		if point.x>box.min[0] and point.x<box.max[0] and point.z>box.min[2] and point.z<box.max[2] and box.max[1]<point.y+.1:support=maxf(support,float(box.max[1]))
+	point.y=support+.135
+	point.x=clampf(point.x,-5.3,5.3);point.z=clampf(point.z,-13.9,6.2)
+	b.packages[held_id].global_transform=Transform3D(Basis(Vector3.UP,snappedf(b.packages[held_id].rotation.y,PI/4)),point)
+	held_id=-1;held_hand=-1
+
 func drop() -> void:
 	if held_id<0:return
 	if b.is_remote_guest():
@@ -130,7 +149,13 @@ func drop() -> void:
 		held_id=-1;held_hand=-1
 func store_poses() -> void:
 	for order in b.state.orders:
-		if b.packages.has(int(order.id)):order.pose=b.packages[int(order.id)].transform
+		if b.packages.has(int(order.id)):
+			order.pose=b.packages[int(order.id)].transform
+			if int(order.id) in [held_id,guest_id]:
+				var point:Vector3=order.pose.origin;var height:=0.0
+				for box in b.game.layout.colliders:
+					if point.x>box.min[0] and point.x<box.max[0] and point.z>box.min[2] and point.z<box.max[2] and box.max[1]<point.y+.1:height=maxf(height,float(box.max[1]))
+				order.pose.origin.y=height+.135
 func tick() -> void:
 	for order in b.state.orders:
 		if order.get("delivered",false):refresh(order)
@@ -138,4 +163,6 @@ func tick() -> void:
 		b.packages[held_id].global_transform=b.game.hands[held_hand].global_transform*Transform3D(Basis.IDENTITY,Vector3(0,-.10,-.28))
 	if guest_id>=0 and b.packages.has(guest_id) and not b.is_remote_guest():
 		var avatar=b.game.clerk.lan.remote_avatar
-		if is_instance_valid(avatar) and avatar.valid_pose:b.packages[guest_id].global_transform=avatar.targets[1]*Transform3D(Basis.IDENTITY,Vector3(0,-.10,-.28))
+		if is_instance_valid(avatar) and avatar.valid_pose:
+			var hand:Transform3D=avatar.targets[1] if avatar.tracked_hands else avatar.targets[0]*Transform3D(Basis.IDENTITY,Vector3(-.30,-.45,-.45))
+			b.packages[guest_id].global_transform=hand*Transform3D(Basis.IDENTITY,Vector3(0,-.10,-.28))

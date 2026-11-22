@@ -40,8 +40,9 @@ func apply(data:Dictionary) -> void:
 		for order in business.state.orders:
 			if int(order.id)==poster_id:business.poster_placement.begin(order);break
 	elif poster_id<0 and business.poster_placement.active():business.poster_placement.cancel(false)
+	business.decor.sync()
 	business.update_prices()
-	business.watch.text=business.state.hour()
+	business.watch.text=business.state.hour()+"\n%.2f $"%(business.state.cash/100.0)
 	business.refresh_calendar()
 	business.apply_weather()
 	business.sign.text="OUVERT" if business.state.phase=="open" else "FERMÉ"
@@ -75,6 +76,7 @@ func refresh_views(assembly:Dictionary) -> void:
 		if business.packages.has(int(order.id)):
 			if order.has("pose"):business.packages[int(order.id)].transform=order.pose
 			business.freight.refresh(order)
+	if business.decor.order_id>=0 and business.freight.order_for(business.decor.order_id).is_empty():business.decor.cancel()
 	for id in business.packages.keys():
 		if delivered.has(id):continue
 		var node:Node3D=business.packages[id]
@@ -102,8 +104,9 @@ func restore_local() -> void:
 	business.state.restore(local_state.rules)
 	business.ledgers=local_state.ledgers.duplicate(true)
 	refresh_views(local_state.get("assembly",{}))
+	business.decor.sync()
 	business.update_prices();business.apply_weather();business.refresh_calendar()
-	business.watch.text=business.state.hour()
+	business.watch.text=business.state.hour()+"\n%.2f $"%(business.state.cash/100.0)
 	business.sign.text="OUVERT" if business.state.phase=="open" else "FERMÉ"
 	business.sign.modulate=Color("86e9be") if business.state.phase=="open" else Color("ec8972")
 	business.ghost_label.text=""

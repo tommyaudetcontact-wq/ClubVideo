@@ -1,0 +1,38 @@
+[
+  {
+    "id": 0,
+    "title": "The Matrix (1999) 720p Trailer",
+    "file": "trailers/00.ogv",
+    "webFile": "./assets/trailers/00.mp4",
+    "durationSeconds": 150.72,
+    "sourcePage": "https://archive.org/details/the-matrix-1999-720p-trailer",
+    "sourceFile": "https://archive.org/download/the-matrix-1999-720p-trailer/The%20Matrix%201999_720p_trailer.mp4",
+    "sha256": "d6275f92060ed738233e24eceef12a0499d95a517179e0dd32d955dbbc9d1610",
+    "rightsStatus": "Private prototype test only; source availability or uploader license label does not clear commercial studio footage rights.",
+    "commercialCleared": false
+  },
+  {
+    "id": 1,
+    "title": "Jurassic Park (French VHS Trailer from 1993)",
+    "file": "trailers/01.ogv",
+    "webFile": "./assets/trailers/01.mp4",
+    "durationSeconds": 170.05,
+    "sourcePage": "https://archive.org/details/jurassicpark-ba-fr-35mm-full-hd-1993",
+    "sourceFile": "https://archive.org/download/jurassicpark-ba-fr-35mm-full-hd-1993/JURASSICPARK_baFR_35mm_fullHD_1993.ia.mp4",
+    "sha256": "09e3a8acea83bfdc17128d5ff3f9d013bb960e2b548f295c3685dbff6cdfaaff",
+    "rightsStatus": "Private prototype test only; source availability or uploader license label does not clear commercial studio footage rights.",
+    "commercialCleared": false
+  },
+  {
+    "id": 2,
+    "title": "SHREK trailer",
+    "file": "trailers/02.ogv",
+    "webFile": "./assets/trailers/02.mp4",
+    "durationSeconds": 109.08,
+    "sourcePage": "https://archive.org/details/ShrekTrailer",
+    "sourceFile": "https://archive.org/download/ShrekTrailer/ShrekTrailer.mp4",
+    "sha256": "a7ce260ed5a1b08770c6f3932309615d9d43a0020ad04ee2dd49a626c90ea51a",
+    "rightsStatus": "Private prototype test only; source availability or uploader license label does not clear commercial studio footage rights.",
+    "commercialCleared": false
+  }
+]

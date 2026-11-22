@@ -1,5 +1,6 @@
 extends PanelContainer
 
+const WorldSync=preload("res://club_world_sync.gd")
 const PeerPose=preload("res://club_peer_pose.gd")
 const Port=39165
 var game
@@ -288,8 +289,8 @@ func receive(reply:Dictionary):
 		return
 	if reply.get("v")!=1:return
 	if reply.get("checkout") is Dictionary:
-		if reply.get("catalogue",0)!=1:
-			reset("Mets les deux appareils à jour : leurs catalogues de films sont différents.")
+		if reply.get("catalogue",0)!=WorldSync.CATALOGUE_REVISION:
+			reset("Mets les deux appareils à jour : leurs versions du jeu ne sont pas compatibles.")
 			return
 		world_in_flight=false
 		if not connected:
@@ -415,7 +416,7 @@ func send(action:String,id:String="",target:String=""):
 	if action.is_empty():
 		world_in_flight=true
 		world_sent_at=Time.get_ticks_msec()
-	var message:={"catalogue":1,"case":selected_case if id.is_empty() else id,"v":1,"grant":grant,"features":["checkout","world_sync","world_delta","business"],"action":action,"target":target,"customer":checkout.get("customer",-1),"coins":selected,"pose":PeerPose.pack(game)}
+	var message:={"catalogue":WorldSync.CATALOGUE_REVISION,"case":selected_case if id.is_empty() else id,"v":1,"grant":grant,"features":["checkout","world_sync","world_delta","business"],"action":action,"target":target,"customer":checkout.get("customer",-1),"coins":selected,"pose":PeerPose.pack(game)}
 	message.merge(PeerPose.appearance(game))
 	socket.put_data((JSON.stringify(message)+"\n").to_utf8_buffer())
 

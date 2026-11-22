@@ -129,7 +129,7 @@ func _add_machine(node: Node3D,spiral: bool) -> void:
 
 func use_machine(index: int) -> bool:
 	var m: Dictionary = machines[index]
-	if m.busy: return false
+	if not m.node.is_visible_in_tree() or m.busy: return false
 	if m.stock<=0:
 		game._message("La distributrice est vide.")
 		return false

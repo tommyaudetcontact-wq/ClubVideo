@@ -789,7 +789,7 @@ func release()->bool:
 	var p:Vector3=game.held.global_position
 	if not game.touch_profile and held_service.kind=="rental" and at_customer_palm(p):
 		if handoff_item(held_service):return true
-	if held_service.kind in ["return","shelve","sorting"] and not has_identified_mismatch(game.held,held_service.movie):
+	if held_service.kind in ["return","shelve","sorting"] and not has_identified_mismatch(game.held,held_service.movie) and (not game.entrepreneur or game.entrepreneur.slots.choose(held_service.record,p)):
 		for record in game.dvd_records:
 			if record==held_service.record and p.distance_to(record.world.origin)<.25:
 				if active.get("is_return",false) and held_service in active.get("items",[]):

@@ -1,0 +1,8 @@
+{
+  "test": "test_entrepreneur_flow-gpu",
+  "passed": true,
+  "exit_code": 0,
+  "seconds": 8.06,
+  "log": "C:\\Users\\recto\\Documents\\Codex\\2026-11-01\\va-x20\\work\\regression-test_entrepreneur_flow-gpu.log",
+  "teardown_warnings": []
+}

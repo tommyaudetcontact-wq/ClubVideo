@@ -10,6 +10,8 @@ static func empty_shop(game) -> void:
 			bays.append(AABB(a-Vector3(.15,0,.25),b-a+Vector3(.3,.5,.5)))
 	bays.append(AABB(Vector3(-5.64,.001,-7.1),Vector3(.55,2.5,13.7)))
 	bays.append(AABB(Vector3(5.09,.001,-7.1),Vector3(.55,2.5,13.7)))
+	for point in [Vector3(-4.9,0,5.35),Vector3(4.9,0,-4.48)]:bays.append(AABB(point+Vector3(-.48,.005,-.48),Vector3(.96,1.4,.96)))
+	for center in [Vector3(1.5,2.55,-2.8),Vector3(-1.5,2.55,3.25),Vector3(1.5,2.55,3.25),Vector3(4.9,2.55,-5.8)]:bays.append(AABB(center+Vector3(-.48,-.4,-.5),Vector3(.96,1.02,1)))
 	for node in game.model.find_children("*","MeshInstance3D",true,false):
 		if not node.mesh:continue
 		var result:=ArrayMesh.new()
@@ -69,8 +71,8 @@ static func shelf(parent:Node3D,columns:int) -> Node3D:
 			Props.cylinder(node,Vector3(side*(width/2-.04),.035,z),.025,.06,"252a30",.7)
 	for row in range(5):
 		var height:=.20+row*.35
-		Props.box(node,Vector3(0,height,0),Vector3(width,.024,.34),"c2a57b").material_override=laminate()
-		Props.box(node,Vector3(0,height+.012,.17),Vector3(width,.033,.012),"b68d52")
+		Props.box(node,Vector3(0,height,0),Vector3(width-.052,.024,.34),"c2a57b").material_override=laminate()
+		Props.box(node,Vector3(0,height+.012,.17),Vector3(width-.052,.033,.012),"b68d52")
 		for side in [-1,1]:
 			var screw:=Props.cylinder(node,Vector3(side*(width/2+.002),height,0),.007,.003,"91989c",.8)
 			screw.rotation.z=PI/2
@@ -125,7 +127,7 @@ static func parcel(parent:Node3D,position:Vector3,caption:String,long_box:bool=f
 	var node:=Node3D.new()
 	parent.add_child(node)
 	node.position=position
-	var size:=Vector3(.65,.22,.36) if long_box else Vector3(.36,.26,.28)
+	var size:=Vector3(1.85,.22,.36) if long_box else Vector3(.36,.26,.28)
 	Props.box(node,Vector3.ZERO,size,"ad8558")
 	Props.box(node,Vector3(0,size.y*.5+.001,0),Vector3(.046,.002,size.z),"d4bd8d")
 	Props.box(node,Vector3(0,0,size.z*.5+.001),Vector3(.046,size.y,.002),"d4bd8d")
@@ -237,7 +239,7 @@ static func laminate() -> StandardMaterial3D:
 	var image:=Image.create(256,256,false,Image.FORMAT_RGB8)
 	for y in 256:
 		for x in 256:
-			var grain:float=noise.get_noise_2d(x*.16,y*2.5)*.08
+			var grain:float=noise.get_noise_2d(x*.7,y*.9)*.012
 			image.set_pixel(x,y,Color(.24+grain,.29+grain,.37+grain))
 	image.generate_mipmaps()
 	laminate_material=StandardMaterial3D.new()
@@ -246,7 +248,7 @@ static func laminate() -> StandardMaterial3D:
 	laminate_material.texture_filter=BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	var bump:=image.duplicate();bump.bump_map_to_normal_map(1.1);bump.generate_mipmaps()
 	laminate_material.normal_texture=ImageTexture.create_from_image(bump)
-	laminate_material.normal_enabled=true;laminate_material.normal_scale=.14
+	laminate_material.normal_enabled=true;laminate_material.normal_scale=.045
 	return laminate_material
 
 static func placement_grid(parent:Node3D) -> void:
@@ -259,3 +261,52 @@ static func placement_grid(parent:Node3D) -> void:
 	var material:=StandardMaterial3D.new();material.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.albedo_color=Color(.45,.85,.68,.42);material.transparency=BaseMaterial3D.TRANSPARENCY_ALPHA
 	node.material_override=material;parent.add_child(node)
+
+static func extract_region(source:Node3D,bounds:AABB,origin:Vector3) -> Node3D:
+	var result:=Node3D.new()
+	for node in source.find_children("*","MeshInstance3D",true,false):
+		if not node.mesh:continue
+		if not (node.global_transform*node.get_aabb()).intersects(bounds):continue
+		for surface in node.mesh.get_surface_count():
+			var arrays:Array=node.mesh.surface_get_arrays(surface)
+			if arrays.is_empty():continue
+			var vertices:PackedVector3Array=arrays[Mesh.ARRAY_VERTEX]
+			var indices:PackedInt32Array=arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX]!=null else PackedInt32Array()
+			var normals:PackedVector3Array=arrays[Mesh.ARRAY_NORMAL]
+			var uvs:PackedVector2Array=arrays[Mesh.ARRAY_TEX_UV] if arrays[Mesh.ARRAY_TEX_UV]!=null else PackedVector2Array()
+			var colors:PackedColorArray=arrays[Mesh.ARRAY_COLOR] if arrays[Mesh.ARRAY_COLOR]!=null else PackedColorArray()
+			if indices.is_empty():
+				for i in vertices.size():indices.append(i)
+			var tool:=SurfaceTool.new();tool.begin(Mesh.PRIMITIVE_TRIANGLES);var count:=0
+			for i in range(0,indices.size(),3):
+				var center:Vector3=node.global_transform*((vertices[indices[i]]+vertices[indices[i+1]]+vertices[indices[i+2]])/3)
+				if not bounds.has_point(center):continue
+				for index in indices.slice(i,i+3):
+					tool.set_normal((node.global_basis.inverse().transposed()*normals[index]).normalized())
+					if not uvs.is_empty():tool.set_uv(uvs[index])
+					if not colors.is_empty():tool.set_color(colors[index])
+					tool.add_vertex(node.global_transform*vertices[index]-origin);count+=1
+			if count:
+				var mesh:=MeshInstance3D.new();mesh.name=str(node.name)+"_piece";mesh.mesh=tool.commit();mesh.material_override=node.get_active_material(surface)
+				mesh.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF;result.add_child(mesh)
+	return result
+
+static var staff_materials:Dictionary={}
+static func staff_surface(kind:String,tint:String) -> StandardMaterial3D:
+	var key:=kind+tint
+	if staff_materials.has(key):return staff_materials[key]
+	var image:=Image.create(256,256,false,Image.FORMAT_RGB8);var noise:=FastNoiseLite.new();noise.seed=783;noise.frequency=.04
+	var color:=Color(tint)
+	for y in 256:
+		for x in 256:
+			var shade:float=1.0+noise.get_noise_2d(x*.4 if kind=="wood" else x,y*2.2 if kind=="wood" else y)*.09
+			if kind=="vinyl":
+				shade*=.88 if ((x/32+y/32)%2)==0 else 1.03
+				if x%32==0 or y%32==0:shade*=.80
+			image.set_pixel(x,y,color*shade)
+	image.generate_mipmaps()
+	var mat:=StandardMaterial3D.new();mat.albedo_texture=ImageTexture.create_from_image(image);mat.roughness=.82 if kind=="plaster" else .62
+	mat.normal_enabled=true;mat.normal_texture=load("res://assets/material-lab/plaster-normal.png" if kind=="plaster" else "res://assets/material-lab/paint-normal.png")
+	mat.uv1_scale=Vector3(4,2,1) if kind=="vinyl" else Vector3(2,2,1)
+	mat.normal_scale=.10;mat.texture_filter=BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	staff_materials[key]=mat;return mat

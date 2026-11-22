@@ -117,7 +117,7 @@ func handle_request(request:Variant):
 		return
 	if not authenticated:
 		if request.get("catalogue",0)!=WorldSync.CATALOGUE_REVISION:
-			send_response({"error":"Mets les deux appareils à jour : leurs catalogues de films sont différents."})
+			send_response({"error":"Mets les deux appareils à jour : leurs versions du jeu ne sont pas compatibles."})
 			disconnect_client()
 			return
 		var token:=str(request.get("grant",""))
@@ -396,7 +396,7 @@ func drop_guest_case():
 	if not is_instance_valid(node):return
 	node.remove_meta("guest_held")
 	var record:Dictionary=item.record
-	if item.kind=="shelve" and not record.is_empty() and node.global_position.distance_to(record.world.origin)<.75:
+	if item.kind=="shelve" and not record.is_empty() and ((clerk.game.entrepreneur and clerk.game.entrepreneur.slots.choose(record,node.global_position)) or (not clerk.game.entrepreneur and node.global_position.distance_to(record.world.origin)<.75)):
 		clerk.restore_stock(record)
 		clerk.cases.erase(item)
 		node.queue_free()

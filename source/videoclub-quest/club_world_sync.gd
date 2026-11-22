@@ -4,7 +4,7 @@ const Actor=preload("res://customer_actor.gd")
 const Props=preload("res://clerk_props.gd")
 const Case=preload("res://held_case.gd")
 const Save=preload("res://club_save.gd")
-const CATALOGUE_REVISION=1
+const CATALOGUE_REVISION=2
 var game
 var host_basket
 var nodes:Dictionary={}
