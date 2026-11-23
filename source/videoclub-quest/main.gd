@@ -31,6 +31,7 @@ var cover_occluders: Array[AABB] = []
 var previous_trigger := [false, false]
 var previous_grip := [false, false]
 var crouch_offset := 0.0
+var lod_slots:Dictionary={}
 var dvd_groups: Dictionary = {}
 var dvd_records: Array = []
 var shell: MultiMeshInstance3D
@@ -157,13 +158,17 @@ func _ready() -> void:
 	clerk=load("res://clerk_simulator.gd").new()
 	add_child(clerk)
 	clerk.setup(self)
+	preload("res://boot_trace.gd").mark("counter-ready",get_tree())
 	lobby=preload("res://club_lobby.gd").new()
 	add_child(lobby)
 	lobby.setup(self)
+	preload("res://boot_trace.gd").mark("lobby-ready",get_tree())
 	if entrepreneur_mode:
+		preload("res://boot_trace.gd").mark("entrepreneur-script",get_tree())
 		entrepreneur=load("res://club_entrepreneur.gd").new()
 		add_child(entrepreneur)
 		entrepreneur.setup(self)
+		preload("res://boot_trace.gd").mark("entrepreneur-ready",get_tree())
 	if xr_active or touch_profile:
 		local_clerk_avatar=preload("res://club_peer_pose.gd").new()
 		add_child(local_clerk_avatar)
@@ -179,6 +184,7 @@ func _ready() -> void:
 		add_child(streamer)
 		streamer.setup(self)
 	session.setup(self)
+	preload("res://boot_trace.gd").mark("save-restored",get_tree())
 	if streamer_mode:clerk.shift.started=true
 	if touch_profile:
 		touch_controls=load("res://touch_game.gd").new()
@@ -585,6 +591,7 @@ func _update_cover_lod(eye: Vector3, force := false) -> void:
 			candidates.append({"index":i,"distance":distance,"priority":distance/(.35+.65*alignment*alignment)})
 	candidates.sort_custom(func(a,b): return a.priority < b.priority)
 	lod_selected.clear()
+	lod_slots.clear()
 	var counts := {}
 	for id in lod_groups:
 		counts[id] = [0,0]
@@ -611,6 +618,8 @@ func _update_cover_lod(eye: Vector3, force := false) -> void:
 			var slot:int=counts[id][side]
 			var offset := Transform3D(Basis(Vector3.UP,PI if side==1 else 0.0),Vector3(0,0,-0.0082 if side==1 else 0.0082))
 			lod_groups[id][side].multimesh.set_instance_transform(slot,record.world*offset)
+			if not lod_slots.has(id):lod_slots[id]=[[],[]]
+			lod_slots[id][side].append(int(record.id))
 			counts[id][side] += 1
 		lod_selected[candidate.index] = true
 	for id in lod_groups:
@@ -694,6 +703,7 @@ func update_vr_glows(delta:float):
 		var glow:=interaction_glow(i)
 		glow.hide()
 		if i==held_hand or i==clerk.secondary_hand or i==clerk.basket.hand:continue
+		if entrepreneur and i in [entrepreneur.drill_hand,entrepreneur.board_hand,entrepreneur.freight.held_hand]:continue
 		var p:=hands[i].global_position
 		var best:=.23
 		var pose:=Transform3D.IDENTITY
@@ -809,7 +819,7 @@ func _physics_process(delta: float) -> void:
 func _update_crouch(stick:Vector2,delta:float)->void:
 	var crouch_pressed=stick.y<-.55 and absf(stick.x)<.55
 	var target=-maxf(0.0,head.position.y-.95) if crouch_pressed else 0.0
-	var next=move_toward(crouch_offset,target,delta*1.8)
+	var next=(crouch_offset if crouch_offset<0 else target) if crouch_pressed else 0.0
 	origin.position.y+=next-crouch_offset
 	crouch_offset=next
 
@@ -922,6 +932,16 @@ func _interact(hand_index: int, by_grip: bool) -> void:
 				if clerk:clerk.inspection.defer_flip(hand_index)
 				else:_flip_held()
 		return
+	if entrepreneur and by_grip:
+		var nearby:Dictionary={}
+		var closest_distance:=.23
+		var hand_point:Vector3=hands[hand_index].global_position
+		for index in _nearby_dvd_indices(hand_point,.3):
+			var record:Dictionary=dvd_records[index]
+			if record.get("loose",false) or record.get("clerk_reserved",false):continue
+			var gap:float=record.world.origin.distance_to(hand_point)
+			if gap<closest_distance:closest_distance=gap;nearby=record
+		if not nearby.is_empty():_take(nearby,hand_index,true);return
 	var hand := aim_hands[hand_index]
 	var p := hand.global_position
 	var direction := -hand.global_basis.z.normalized()
@@ -1053,3 +1073,13 @@ func _use_gum() -> void:
 
 
 
+
+func refresh_cover_poses() -> void:
+	# Move existing detailed paper quads without rebuilding LOD or loading textures.
+	for id in lod_slots:
+		if not lod_groups.has(id):continue
+		for side in 2:
+			var mm:MultiMesh=lod_groups[id][side].multimesh
+			var offset:=Transform3D(Basis(Vector3.UP,PI if side==1 else 0.0),Vector3(0,0,-.0082 if side==1 else .0082))
+			for slot in lod_slots[id][side].size():
+				mm.set_instance_transform(slot,dvd_records[lod_slots[id][side][slot]].world*offset)

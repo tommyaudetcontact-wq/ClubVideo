@@ -73,12 +73,16 @@ static func shelf(parent:Node3D,columns:int) -> Node3D:
 		var height:=.20+row*.35
 		Props.box(node,Vector3(0,height,0),Vector3(width-.052,.024,.34),"c2a57b").material_override=laminate()
 		Props.box(node,Vector3(0,height+.012,.17),Vector3(width-.052,.033,.012),"b68d52")
-		for side in [-1,1]:
-			var screw:=Props.cylinder(node,Vector3(side*(width/2+.002),height,0),.007,.003,"91989c",.8)
-			screw.rotation.z=PI/2
 	Props.box(node,Vector3(0,1.73,.18),Vector3(width,.16,.02),"182d55")
 	# Batch the static cabinet while preserving the different metal/laminate response.
 	batch_props(node)
+	var screws:=Node3D.new();screws.name="Screws";node.add_child(screws)
+	for index in preload("res://entrepreneur_build.gd").SCREW_COUNT:
+		var screw:=assembly_screw(screws);screw.name="Screw%d"%index
+		screw.transform=preload("res://entrepreneur_build.gd").screw_pose(width,index)
+	for screw in screws.get_children():
+		for part in screw.get_children():part.reparent(screws,true)
+	batch_props(screws)
 	var header:=Props.label(node,"VIDÉO CLUB",Vector3(0,1.73,.194),.001,56)
 	header.name="CategoryHeader"
 	header.modulate=Color("f5d782")

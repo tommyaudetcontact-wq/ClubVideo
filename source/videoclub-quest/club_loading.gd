@@ -1,5 +1,6 @@
 extends Node3D
 
+const Trace=preload("res://boot_trace.gd")
 const GAME := "res://main.tscn"
 const ART := ["res://assets/loading/checkout.png", "res://assets/loading/games.png"]
 const TIPS := [
@@ -29,6 +30,8 @@ var xr_view:SubViewport
 var prepared_decor:Resource
 
 func _ready():
+	process_mode=Node.PROCESS_MODE_ALWAYS
+	Trace.mark("loading-ui",get_tree())
 	build_ui()
 	var xr:=XRServer.find_interface("OpenXR")
 	var touch:=OS.has_feature("touchgame") or "--touch-profile" in OS.get_cmdline_user_args()
@@ -144,6 +147,7 @@ func _process(delta:float):
 	refresh_art()
 
 func stage(value:float,message:String):
+	Trace.mark("%d%% · %s"%[roundi(value),message],get_tree())
 	progress.value=maxf(progress.value,value)
 	status.text=message
 	await get_tree().process_frame
@@ -169,6 +173,7 @@ func load_game():
 	get_tree().current_scene=game
 
 func load_resource(path:String,start:float,end:float)->Resource:
+	Trace.mark("resource · "+path,get_tree())
 	if ResourceLoader.load_threaded_request(path)!=OK:return null
 	var state:=ResourceLoader.THREAD_LOAD_IN_PROGRESS
 	while state==ResourceLoader.THREAD_LOAD_IN_PROGRESS:
@@ -180,8 +185,10 @@ func load_resource(path:String,start:float,end:float)->Resource:
 	return ResourceLoader.load_threaded_get(path)
 
 func finish(game:Node):
+	Trace.mark("handoff-start",get_tree())
 	await stage(100.0,"Le vidéoclub est prêt.")
 	if is_instance_valid(xr_quad):xr_quad.queue_free()
 	game.remove_meta("startup_loader")
 	game.process_mode=Node.PROCESS_MODE_INHERIT
+	Trace.mark("ready",get_tree())
 	queue_free()

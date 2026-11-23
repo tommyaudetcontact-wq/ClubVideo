@@ -1,0 +1,12 @@
+{
+  "quest": {
+    "bytes": 756433359,
+    "crc_error": null,
+    "trailers": 3
+  },
+  "android": {
+    "bytes": 750560599,
+    "crc_error": null,
+    "trailers": 3
+  }
+}

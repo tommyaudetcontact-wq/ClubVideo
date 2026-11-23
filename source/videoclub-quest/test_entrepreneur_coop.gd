@@ -82,7 +82,9 @@ func _initialize():
 	guest.touch_controls.sync_hands()
 	check(await wait_for(func():return host.clerk.lan.remote_avatar.targets[0].origin.distance_to(guest.head.global_position)<.1),"guest reaches workshop")
 	guest.entrepreneur.mobile_use()
-	check(await wait_for(func():return guest.entrepreneur.assembly.get("stage","")=="boards"),"guest opens carton at work site")
+	check(await wait_for(func():return guest.entrepreneur.assembly.get("stage","")=="site"),"guest opens carton before selecting construction site")
+	coop.send("enterprise","",JSON.stringify({"op":"place_shelf","point":[-3.8,0,-11.0],"angle":0}))
+	check(await wait_for(func():return guest.entrepreneur.assembly.get("stage","")=="boards"),"guest confirms floor site")
 	print("COOP_BUILD_POSE ",host.entrepreneur.assembly.get("pose")," HEAD ",host.clerk.lan.remote_avatar.targets[0].origin)
 	for step in 6:
 		coop.send("enterprise","",JSON.stringify({"op":"take_board"}))
@@ -94,10 +96,10 @@ func _initialize():
 	coop.send("enterprise","",JSON.stringify({"op":"drill"}))
 	check(await wait_for(func():return guest.entrepreneur.guest_drill),"guest takes shared drill")
 	guest.head.global_position=Vector3(-3.8,1.5,-11.9)
-	for step in 10:
-		coop.send("enterprise","",JSON.stringify({"op":"screw","index":9-step}))
+	for step in 20:
+		coop.send("enterprise","",JSON.stringify({"op":"screw","index":19-step}))
 		var expected:=step+1
-		if step<9:check(await wait_for(func():return int(guest.entrepreneur.assembly.get("screws",0))==expected),"guest fixes screw")
+		if step<19:check(await wait_for(func():return int(guest.entrepreneur.assembly.get("screws",0))==expected),"guest fixes screw")
 		else:check(await wait_for(func():return guest.entrepreneur.state.shelves.size()==2),"guest final screw completes shelf")
 	check(await wait_for(func():return host.entrepreneur.state.shelves.size()==2 and guest.entrepreneur.shelf_nodes.size()==2),"final guest screw completes shared shelf at selected site")
 	guest.head.global_position=host.clerk.screen.global_position+Vector3(0,.25,.6)

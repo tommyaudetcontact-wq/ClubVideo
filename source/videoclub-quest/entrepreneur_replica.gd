@@ -35,6 +35,7 @@ func apply(data:Dictionary) -> void:
 		business.guest_board_node.global_transform=controls.get("board_pose",Transform3D.IDENTITY)
 	elif is_instance_valid(business.guest_board_node):business.guest_board_node.queue_free();business.guest_board_node=null
 	if is_instance_valid(business.ghost) and not business.guest_placing:business.ghost.global_transform=controls.get("ghost",business.ghost.global_transform)
+	if business.moving_shelf>=0 and is_instance_valid(business.ghost):business.preview_stock()
 	var poster_id:int=controls.get("poster",-1)
 	if poster_id>=0 and not business.poster_placement.active():
 		for order in business.state.orders:
@@ -111,3 +112,4 @@ func restore_local() -> void:
 	business.sign.modulate=Color("86e9be") if business.state.phase=="open" else Color("ec8972")
 	business.ghost_label.text=""
 	business.game.dvd_records[0].group.multimesh.visible_instance_count=local_visible
+

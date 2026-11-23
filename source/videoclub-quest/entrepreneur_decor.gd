@@ -12,16 +12,15 @@ var angle:=0.0
 var signature:Array=[]
 func setup(owner_business) -> void:
 	b=owner_business
-	var source:Node3D=load("res://assets/decor.glb").instantiate();b.add_child(source);source.hide()
-	var plant:Node3D=b.World.extract_region(source,AABB(Vector3(-5.38,.005,4.87),Vector3(.96,1.4,.96)),Vector3(-4.9,0,5.35))
-	var tv:Node3D=b.World.extract_region(source,AABB(Vector3(-1.98,2.15,-3.3),Vector3(.96,1.02,1)),Vector3(-1.5,2.55,-2.8))
+	# Prepared offline: never read back or slice the full club mesh on mobile.
+	var plant:Node3D=preload("res://assets/entrepreneur-plant.scn").instantiate()
+	var tv:Node3D=preload("res://assets/entrepreneur-tv.scn").instantiate()
 	var red:Node3D=b.game.gum.duplicate();red.transform=Transform3D.IDENTITY
 	var blue:Node3D=b.game.get_node("SpiralGumballMachine").duplicate();blue.transform=Transform3D.IDENTITY
 	for machine in [red,blue]:
 		for chute in machine.find_children("PhysicalChute","Node",true,false):chute.get_parent().remove_child(chute);chute.queue_free()
 	templates=[plant,red,blue,tv]
 	for template in templates:b.add_child(template);template.hide()
-	source.queue_free()
 	for machine in b.game.candy.machines:machine.node.hide()
 	b.game.layout.colliders=b.game.layout.colliders.filter(func(box):return not (absf(float(box.min[0])+5.42)<.01 and absf(float(box.min[2])-3.80)<.01))
 	for node in b.game.model.find_children("potted-plant*","Node3D",true,false):node.hide()

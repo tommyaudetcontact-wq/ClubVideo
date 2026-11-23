@@ -26,9 +26,16 @@ func setup(g):
 			call_deferred("resume_prompt")
 
 func resume_prompt():
-	while game.xr_active and not game.spawn_centered:await get_tree().process_frame
+	# The loader owns the scene until handoff. Never pause an unfinished XR scene.
+	while game.has_meta("startup_loader"):
+		await get_tree().process_frame
+	while game.xr_active and not game.spawn_centered:
+		await get_tree().process_frame
 	game.clerk.set_physics_process(true)
 	game.clerk.customers.set_physics_process(true)
+	if game.entrepreneur:
+		get_tree().paused=false
+		return
 	if not game.modes.menu_open:game.modes.toggle_pause()
 
 func _process(dt):

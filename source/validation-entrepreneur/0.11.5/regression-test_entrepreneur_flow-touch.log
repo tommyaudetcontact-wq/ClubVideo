@@ -1,0 +1,56 @@
+WARNING: Property not found: 'xr/openxr/extensions/hand_tracking'.
+   at: get_setting_with_override (core/config/project_settings.cpp:435)
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+FICTIONAL_CATALOGUE titles=200 batched_copies=3200
+VIDEOCLUB_SCANNER_MOVED vertices=252
+VIDEOCLUB_READY xr=false dvds=3200 screens=5
+SCRIPT ERROR: Invalid access to property or key 'backCover' on a base object of type 'Dictionary'.
+   at: refresh (res://entrepreneur_freight.gd:66)
+   GDScript backtrace (most recent call first):
+       [0] refresh (res://entrepreneur_freight.gd:66)
+       [1] open_box (res://entrepreneur_freight.gd:33)
+       [2] open_parcel (res://club_entrepreneur.gd:611)
+       [3] _initialize (res://test_entrepreneur_flow.gd:53)
+SCRIPT ERROR: Invalid access to property or key 'backCover' on a base object of type 'Dictionary'.
+   at: refresh (res://entrepreneur_freight.gd:66)
+   GDScript backtrace (most recent call first):
+       [0] refresh (res://entrepreneur_freight.gd:66)
+       [1] extract (res://entrepreneur_freight.gd:88)
+       [2] _initialize (res://test_entrepreneur_flow.gd:57)
+SCRIPT ERROR: Invalid access to property or key 'backCover' on a base object of type 'Dictionary'.
+   at: refresh (res://entrepreneur_freight.gd:66)
+   GDScript backtrace (most recent call first):
+       [0] refresh (res://entrepreneur_freight.gd:66)
+       [1] extract (res://entrepreneur_freight.gd:88)
+       [2] _initialize (res://test_entrepreneur_flow.gd:57)
+SCRIPT ERROR: Invalid access to property or key 'backCover' on a base object of type 'Dictionary'.
+   at: refresh (res://entrepreneur_freight.gd:66)
+   GDScript backtrace (most recent call first):
+       [0] refresh (res://entrepreneur_freight.gd:66)
+       [1] extract (res://entrepreneur_freight.gd:88)
+       [2] _initialize (res://test_entrepreneur_flow.gd:57)
+SCRIPT ERROR: Invalid access to property or key 'backCover' on a base object of type 'Dictionary'.
+   at: refresh (res://entrepreneur_freight.gd:66)
+   GDScript backtrace (most recent call first):
+       [0] refresh (res://entrepreneur_freight.gd:66)
+       [1] extract (res://entrepreneur_freight.gd:88)
+       [2] _initialize (res://test_entrepreneur_flow.gd:57)
+SCRIPT ERROR: Invalid access to property or key 'backCover' on a base object of type 'Dictionary'.
+   at: refresh (res://entrepreneur_freight.gd:66)
+   GDScript backtrace (most recent call first):
+       [0] refresh (res://entrepreneur_freight.gd:66)
+       [1] extract (res://entrepreneur_freight.gd:88)
+       [2] _initialize (res://test_entrepreneur_flow.gd:57)
+SCRIPT ERROR: Invalid access to property or key 'backCover' on a base object of type 'Dictionary'.
+   at: refresh (res://entrepreneur_freight.gd:66)
+   GDScript backtrace (most recent call first):
+       [0] refresh (res://entrepreneur_freight.gd:66)
+       [1] extract (res://entrepreneur_freight.gd:88)
+       [2] _initialize (res://test_entrepreneur_flow.gd:57)
+SCRIPT ERROR: Invalid access to property or key 'backCover' on a base object of type 'Dictionary'.
+   at: refresh (res://entrepreneur_freight.gd:66)
+   GDScript backtrace (most recent call first):
+       [0] refresh (res://entrepreneur_freight.gd:66)
+       [1] extract (res://entrepreneur_freight.gd:88)
+       [2] _initialize (res://test_entrepreneur_flow.gd:57)

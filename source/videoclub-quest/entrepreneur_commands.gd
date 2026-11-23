@@ -100,6 +100,7 @@ static func physical(b,command:Dictionary,position:Vector3) -> String:
 			for box in b.game.layout.colliders:
 				if point.x+.24>box.min[0] and point.x-.24<box.max[0] and point.z+.20>box.min[2] and point.z-.20<box.max[2] and point.y-.13<box.max[1]:point.y=box.max[1]+.135
 			b.packages[id].position=point;b.freight.guest_id=-1;return "Carton déposé."
+		if order.kind=="shelf" and order.get("opened",false):return physical(b,{"op":"take_board"},position)
 		if order.kind!="films":b.open_parcel(id)
 		elif not order.get("opened",false):b.freight.open_box(order)
 		else:b.freight.extract(order,1,true)
@@ -115,6 +116,7 @@ static func physical(b,command:Dictionary,position:Vector3) -> String:
 		if orders[0].kind in ["films","shelf","decoration"]:
 			if b.freight.held_id==id:return "Ton collègue tient ce carton."
 			if b.freight.guest_id!=id:b.freight.guest_id=id;return "Carton pris."
+			if orders[0].kind=="shelf" and orders[0].get("opened",false):return physical(b,{"op":"take_board"},position)
 			if orders[0].kind!="films":b.open_parcel(id)
 			elif not orders[0].get("opened",false):b.freight.open_box(orders[0])
 			else:b.freight.extract(orders[0],1,true)

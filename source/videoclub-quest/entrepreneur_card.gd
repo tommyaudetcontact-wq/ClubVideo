@@ -13,7 +13,7 @@ static func pill_color(text:String) -> Color:
 	return Color.from_hsv(fposmod(float(text.hash())*.61803398875,1.0),.44,.85)
 func configure(movie:Dictionary,classification:String,detail:String) -> void:
 	title=str(movie.title);genre=str(movie.genre).to_lower();kind=classification;subtitle=detail
-	cover=load(str(movie.frontCover).replace("./","res://"));queue_redraw()
+	cover=preload("res://cover_textures.gd").get_cover(preload("res://cover_textures.gd").path_for(movie,"front"));queue_redraw()
 func _draw() -> void:
 	var font:=ThemeDB.fallback_font
 	if cover:draw_texture_rect(cover,Rect2(8,4,66,94),false)

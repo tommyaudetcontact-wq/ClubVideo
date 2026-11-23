@@ -10,9 +10,11 @@ func _initialize():
 	var b=g.entrepreneur;var c=g.clerk
 	b.buy_shelf(0);b.tick(11);var order:Dictionary=b.state.orders[0]
 	b.open_parcel(int(order.id))
+	check(b.assembly.stage=="site" and is_instance_valid(b.ghost),"opening carton precedes site confirmation")
+	b.ghost.transform=b.snap_placement(Vector3(0,0,2),0,0);b.finish_placement()
 	check(b.assembly.stage=="boards" and b.packages.has(int(order.id)),"carton starts assembly where deposited")
 	for i in 6:b.take_board(1);b.place_board()
-	for i in 10:b.fasten_screw(.61)
+	for i in 20:b.fasten_screw(.61)
 	check(b.state.shelves.size()==1 and b.packages.is_empty(),"parcel consumed once after all six boards and ten screws")
 	b.state.cash=100000
 	var movie:int=b.state.offers[0]

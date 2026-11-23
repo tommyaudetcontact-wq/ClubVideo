@@ -1,4 +1,5 @@
 extends RefCounted
+const SCREW_COUNT:=20
 const Props=preload("res://clerk_props.gd")
 static func part_pose(width:float,index:int) -> Transform3D:
 	return Transform3D(Basis.IDENTITY,Vector3((-1 if index==0 else 1)*(width/2-.013),.92,0) if index<2 else Vector3(0,.55+(index-2)*.35,0))
@@ -6,7 +7,7 @@ static func part_size(width:float,index:int) -> Vector3:
 	return Vector3(.026,1.84,.34) if index<2 else Vector3(width-.052,.024,.34)
 static func screw_pose(width:float,index:int) -> Transform3D:
 	var side:float=-1 if index%2==0 else 1
-	return Transform3D(Basis(Vector3.UP,side*PI/2),Vector3(side*(width/2+.003),.20+int(index/2)*.35,0))
+	return Transform3D(Basis(Vector3.UP,side*PI/2),Vector3(side*(width/2+.003),.20+int((index%10)/2)*.35,-.10 if index<10 else .10))
 static func done(assembly:Dictionary,index:int) -> bool:
 	if assembly.has("screw_mask"):return (int(assembly.screw_mask)&(1<<index))!=0
 	return index<int(assembly.get("screws",0))

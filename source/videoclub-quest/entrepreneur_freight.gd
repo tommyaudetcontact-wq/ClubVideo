@@ -23,6 +23,8 @@ func use(id:int,hand:int) -> bool:
 	if order.is_empty() or order.get("kind","") not in ["films","shelf","decoration"]:return false
 	if b.is_remote_guest():
 		return b.remote_command({"op":"carton_use","id":id})
+	if order.kind=="shelf" and order.get("opened",false):
+		b.take_board(hand);return true
 	if order.kind!="films":
 		b.open_parcel(id);return true
 	if not order.get("opened",false):open_box(order)
@@ -34,22 +36,23 @@ func open_box(order:Dictionary) -> void:
 	b.game._message("Carton ouvert : poignée près des boîtiers pour en sortir un. Poignée sur le côté pour transporter le carton.")
 func refresh(order:Dictionary) -> void:
 	var id:int=order.id
-	if not b.packages.has(id) or order.kind!="films":return
-	var signature:=[order.get("opened",false),order.contents.hash()]
+	if not b.packages.has(id) or order.kind not in ["films","shelf"]:return
+	var signature:=[order.get("opened",false),[order.contents, b.assembly.get("boards",0) if order.kind=="shelf" else -1].hash()]
 	if signatures.get(id,[])==signature:return
 	signatures[id]=signature
 	var node:Node3D=b.packages[id]
 	for child in node.get_children():node.remove_child(child);child.queue_free()
 	var props=b.Props
+	var width:float=maxf(1.94,b.Rules.SHELF_COLUMNS[int(order.value)]*.145+.16) if order.kind=="shelf" else .42
 	# Twenty DVD cases fit in two rows. The box is closed by two hinged flaps.
-	props.box(node,Vector3(0,-.115,0),Vector3(.42,.02,.34),"a58155")
+	props.box(node,Vector3(0,-.115,0),Vector3(width,.02,.34),"a58155")
 	for side in [-1,1]:
-		props.box(node,Vector3(side*.205,0,0),Vector3(.01,.24,.34),"b18b5f")
-		props.box(node,Vector3(0,0,side*.165),Vector3(.42,.24,.01),"b89265")
-		var flap:MeshInstance3D=props.box(node,Vector3(0,.125,side*(.25 if order.get("opened",false) else .082)),Vector3(.42,.008,.164),"bd986c")
+		props.box(node,Vector3(side*(width/2-.005),0,0),Vector3(.01,.24,.34),"b18b5f")
+		props.box(node,Vector3(0,0,side*.165),Vector3(width,.24,.01),"b89265")
+		var flap:MeshInstance3D=props.box(node,Vector3(0,.125,side*(.25 if order.get("opened",false) else .082)),Vector3(width,.008,.164),"bd986c")
 		if order.get("opened",false):flap.rotation.x=side*.48
 	b.World.batch_props(node)
-	if order.get("opened",false):
+	if order.get("opened",false) and order.kind=="films":
 		for index in mini(20,order.contents.size()):
 			var movie:int=order.contents[index]
 			var dvd:=Node3D.new();node.add_child(dvd)
@@ -67,7 +70,7 @@ func refresh(order:Dictionary) -> void:
 				mat.roughness=.45;mat.texture_filter=BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 				cover.material_override=mat;dvd.add_child(cover)
 
-	props.label(node,"%d / 20 FILMS"%order.contents.size(),Vector3(0,.035,.176),.0005,24)
+	props.label(node,("PLANCHES · poignée pour sortir" if order.kind=="shelf" else "%d / 20 FILMS"%order.contents.size()),Vector3(0,.035,.176),.0005,24)
 func extract(order:Dictionary,hand:int,guest:bool=false) -> bool:
 	if order.contents.is_empty():return false
 	if (guest and not b.game.clerk.lan.guest_case.is_empty()) or (not guest and (b.game.held or b.game.clerk.secondary_hand==hand or b.game.clerk.wallet.occupied(hand))):
@@ -105,8 +108,10 @@ func interact(hand:int,grip:bool) -> bool:
 		var order:=order_for(int(id))
 		if order.is_empty() or order.kind not in ["films","shelf","decoration"] or guest_id==int(id):continue
 		var local:Vector3=b.packages[id].to_local(point)
-		if absf(local.x)<(.99 if order.kind=="shelf" else .31) and absf(local.z)<.29 and absf(local.y)<.30:
-			if order.kind=="films" and order.get("opened",false) and absf(local.x)<.16 and absf(local.z)<.13 and local.y>.07:return extract(order,hand)
+		if absf(local.x)<(maxf(1.94,b.Rules.SHELF_COLUMNS[int(order.value)]*.145+.16)/2+.08 if order.kind=="shelf" else .31) and absf(local.z)<.29 and absf(local.y)<.30:
+			if order.kind=="shelf" and order.get("opened",false) and hand!=held_hand and local.y>0:
+				b.take_board(hand);return true
+			if order.kind=="films" and order.get("opened",false) and absf(local.x)<.195 and absf(local.z)<.145 and local.y>-.03:return extract(order,hand)
 			return take(int(id),hand)
 	return false
 func safe_pose(ray:Node3D) -> Transform3D:
