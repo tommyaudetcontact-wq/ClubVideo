@@ -6,19 +6,13 @@ OpenGL API 3.3.0 NVIDIA 610.88 - Compatibility - Using Device: NVIDIA - NVIDIA G
 FICTIONAL_CATALOGUE titles=200 batched_copies=3200
 VIDEOCLUB_SCANNER_MOVED vertices=252
 VIDEOCLUB_READY xr=false dvds=3200 screens=5
-FICTIONAL_CATALOGUE titles=200 batched_copies=1629
-VIDEOCLUB_SCANNER_MOVED vertices=252
-VIDEOCLUB_READY xr=false dvds=1629 screens=5
-VIDEOCLUB_TRAILER_STARTED id=31
+VIDEOCLUB_TRAILER_STARTED id=43
 FICTIONAL_CATALOGUE titles=200 batched_copies=3200
 VIDEOCLUB_SCANNER_MOVED vertices=252
 VIDEOCLUB_READY xr=false dvds=3200 screens=5
-VIDEOCLUB_TRAILER_STARTED id=31
-FICTIONAL_CATALOGUE titles=200 batched_copies=1629
-VIDEOCLUB_SCANNER_MOVED vertices=252
-VIDEOCLUB_READY xr=false dvds=1629 screens=5
-ENTREPRENEUR_DROPIN_COMPLETE failures=0
-ERROR: Texture with GL ID of 164: leaked 87380 bytes.
+VIDEOCLUB_TRAILER_STARTED id=12
+STARTUP_HANDOFF_COMPLETE failures=0
+ERROR: Texture with GL ID of 163: leaked 87380 bytes.
    at: ~Utilities (drivers/gles3/storage/utilities.cpp:82)
-ERROR: Texture with GL ID of 165: leaked 87380 bytes.
+ERROR: Texture with GL ID of 164: leaked 87380 bytes.
    at: ~Utilities (drivers/gles3/storage/utilities.cpp:82)
